@@ -134,7 +134,8 @@ static bool favorite_high_contrast;
 static bool code_copy_case;
 static bool footnote_jump_case;
 static bool definition_list_case;
-static bool open_link_case; /* #1071: a link opens a note and selects a place */
+static bool open_link_case;       /* #1071: a link opens a note and selects a place */
+static bool outside_refresh_case; /* #1070: the data folder changed while the window was away */
 static bool outline_case;
 static bool outline_96; /* #975: the same case in 96 DPI windows, as on CI */
 static bool code_copy_visual_case;
@@ -11050,6 +11051,207 @@ static void open_link(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+/* #1070 / ADR0119 stage 3: what another program did to the data folder while the window was
+ * away is read when the window comes back, once nothing holds the window. */
+static void outside_write(struct native_fixture *_Nonnull fixture, const char *_Nonnull note,
+                          const char *_Nonnull text)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *body = nullptr;
+    require(note_text_create(text, strlen(text), &body) == NOTE_TEXT_ACCEPTED &&
+                fixture_store(disk, "schedule", note, body) == NOTE_STORE_STORED,
+            "a note's file is written outside");
+    note_text_destroy(body);
+}
+
+/* Another program deletes the note this case makes. The fixture's folder outlives a run, so the
+ * case also starts by doing this. */
+static void outside_remove(const struct native_fixture *_Nonnull fixture)
+{
+    wchar_t path[storage_native_capacity];
+    size_t length = 0;
+    require(storage_native_path_fill(storage_state_directory(fixture->location), path, &length) &&
+                length + 32 <= storage_native_capacity,
+            "outside note path fits");
+    memcpy(path + length, L"\\schedule\\made-outside.md", 26 * sizeof(wchar_t));
+    (void)DeleteFileW(path);
+}
+
+/* One turn of the message loop's idle work, as the loop gives it when the queue is empty. */
+static void outside_idle(struct folio_window *_Nonnull window)
+{
+    pump(window);
+    if (folio_window_idle_work_ready(window))
+        folio_window_continue_idle_work(window);
+    pump(window);
+}
+
+/* The user goes to another application and comes back. */
+static void outside_return(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SendMessageW(root, WM_ACTIVATEAPP, FALSE, 0);
+    SendMessageW(root, WM_ACTIVATEAPP, TRUE, 0);
+    outside_idle(window);
+}
+
+static bool outside_shows(struct folio_window *_Nonnull window, const wchar_t *_Nonnull text)
+{
+    static wchar_t shown[16384];
+    shown[0] = L'\0';
+    GetWindowTextW(folio_window_accessible_window(window, ACCESSIBLE_BODY), shown,
+                   (int)(sizeof shown / sizeof shown[0]));
+    return wcsstr(shown, text) != nullptr;
+}
+
+/* Whether the status line says exactly this. */
+static bool outside_told(struct folio_window *_Nonnull window, const wchar_t *_Nonnull line)
+{
+    struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
+    struct accessible_view view;
+    return folio_window_accessible_read(window, &item, &view) == S_OK &&
+           wcscmp(view.name, line) == 0;
+}
+
+/* The reading view reads the changed file again and stays where it was being read. */
+static void outside_reading(struct native_fixture *_Nonnull fixture,
+                            struct folio_window *_Nonnull window)
+{
+    static char text[8192];
+    size_t used = (size_t)snprintf(text, sizeof text, "# 長いノート\n\n");
+    for (int line = 1; line <= 150; ++line)
+        used += (size_t)snprintf(text + used, sizeof text - used, "段落 %d\n\n", line);
+    outside_return(window);
+    require(outside_shows(window, L"最初の段落。") && !outside_shows(window, L"段落 150"),
+            "nothing changed outside: the note is as it was");
+    outside_write(fixture, "one", text);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SendMessageW(root, WM_ACTIVATEAPP, TRUE, 0);
+    outside_idle(window);
+    require(!outside_shows(window, L"段落 150"),
+            "an activation that follows no leaving, as at the start, reads nothing");
+    SendMessageW(root, WM_ACTIVATEAPP, FALSE, 0);
+    outside_idle(window);
+    require(!outside_shows(window, L"段落 150"), "nothing is read while the window is away");
+    SendMessageW(root, WM_ACTIVATEAPP, TRUE, 0);
+    outside_idle(window);
+    require(outside_shows(window, L"段落 150"), "the changed file is read on the way back");
+    expect_notice(window, L"外部の変更を読み込みました。");
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SendMessageW(body, EM_LINESCROLL, 0, 40);
+    pump(window);
+    LRESULT first = SendMessageW(body, EM_GETFIRSTVISIBLELINE, 0, 0);
+    require(first > 0, "the long note is scrolled");
+    (void)snprintf(text + used, sizeof text - used, "末尾に足した段落。\n");
+    outside_write(fixture, "one", text);
+    outside_return(window);
+    require(outside_shows(window, L"末尾に足した段落。") &&
+                SendMessageW(body, EM_GETFIRSTVISIBLELINE, 0, 0) == first,
+            "the note is read again and stays where it was being read");
+}
+
+/* A note made outside is in the list on the way back; nothing is read while a surface is open,
+ * and the reading is not dropped: it follows when the surface closes. */
+static void outside_lists(struct native_fixture *_Nonnull fixture,
+                          struct folio_window *_Nonnull window)
+{
+    outside_remove(fixture);
+    outside_return(window);
+    size_t notes = folio_state_note_count(fixture->state);
+    outside_write(fixture, "made-outside", "外で作ったノート。\n");
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_ACTIVATEAPP, FALSE,
+                 0);
+    outside_idle(window);
+    require(folio_state_note_count(fixture->state) == notes,
+            "the list is as it was while the window is away");
+    outside_return(window);
+    require(!folio_window_idle_work_ready(window) ||
+                folio_state_note_count(fixture->state) == notes + 1,
+            "the reading ran in that one turn");
+    require(folio_state_note_count(fixture->state) == notes + 1,
+            "a note made outside is in the list on the way back");
+    struct accessible_request settings = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                          .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &settings) == S_OK,
+            "the settings surface opens");
+    pump(window);
+    outside_write(fixture, "one", "# 面のあいだ\n\n面が開いているあいだに外で書いた。\n");
+    outside_return(window);
+    require(!outside_shows(window, L"面が開いているあいだに外で書いた。"),
+            "nothing is read again while a surface is open");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    outside_idle(window);
+    require(outside_shows(window, L"面が開いているあいだに外で書いた。"),
+            "and the reading follows when the surface closes");
+    outside_remove(fixture);
+    outside_return(window);
+    require(folio_state_note_count(fixture->state) == notes,
+            "a note deleted outside leaves the list");
+}
+
+/* Entering the edit reads a changed file first; an edit that is open is only told. */
+static void outside_editing(struct native_fixture *_Nonnull fixture,
+                            struct folio_window *_Nonnull window)
+{
+    outside_write(fixture, "one", "# 編集の前\n\n編集に入る前に外で書いた。\n");
+    action(window, ACCESSIBLE_EDIT);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
+                outside_shows(window, L"編集に入る前に外で書いた。"),
+            "the edit starts from the file as it is now");
+    outside_write(fixture, "one", "# 編集なし\n\n何も打たずに閲覧へ戻った。\n");
+    action(window, ACCESSIBLE_VIEW);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                outside_shows(window, L"何も打たずに閲覧へ戻った。"),
+            "back in the reading view without edits, the changed file is read at once");
+    action(window, ACCESSIBLE_EDIT);
+    outside_write(fixture, "one", "# リンク\n\n外で書いてからリンクで開く。\n\n次の段落。\n");
+    open_link_send(window, "nenefolio://open?category=schedule&note=one&lines=3");
+    expect_link_exact(folio_window_accessible_window(window, ACCESSIBLE_BODY),
+                      L"外で書いてからリンクで開く。");
+    outside_idle(window);
+    expect_link_exact(folio_window_accessible_window(window, ACCESSIBLE_BODY),
+                      L"外で書いてからリンクで開く。");
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    action(window, ACCESSIBLE_VIEW);
+    outside_idle(window);
+    require(outside_shows(window, L"追記") &&
+                !outside_told(window, L"外部の変更を読み込みました。"),
+            "the app's own save is not a change from outside");
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    outside_write(fixture, "one", "# 編集中\n\n編集中に外で書いた。\n");
+    outside_return(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
+                outside_shows(window, L"追記") && !outside_shows(window, L"編集中に外で書いた。") &&
+                SendMessageW(body, EM_CANUNDO, 0, 0) != 0,
+            "an open edit keeps its text and its Undo");
+    expect_notice(window, L"このノートは外部で変更されました。編集中の本文はそのままです。");
+}
+
+static void outside_refresh(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "outside refresh language");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "outside refresh window");
+    pump(window);
+    open_link_send(window, "nenefolio://open?category=schedule&note=one");
+    puts("outside refresh: the reading view");
+    fflush(stdout);
+    outside_reading(fixture, window);
+    puts("outside refresh: the lists, and a surface in the way");
+    fflush(stdout);
+    outside_lists(fixture, window);
+    puts("outside refresh: editing");
+    fflush(stdout);
+    outside_editing(fixture, window);
+    folio_window_destroy(window);
+}
+
 /* A part of the main window as UIA reads it. */
 static struct accessible_view outline_read(struct folio_window *_Nonnull window,
                                            enum accessible_kind kind)
@@ -11608,6 +11810,8 @@ static void run_window_or_footnote(struct native_fixture *_Nonnull fixture)
         definition_list(fixture);
     else if (outline_case)
         outline_column(fixture);
+    else if (outside_refresh_case)
+        outside_refresh(fixture);
     else if (open_link_case)
         open_link(fixture);
     else
@@ -14721,7 +14925,8 @@ static void select_clipboard_fixture(const char *_Nonnull selector)
     window_place_case = strcmp(selector, "--window-place") == 0;
     footnote_jump_case = strcmp(selector, "--footnote-jump") == 0;
     definition_list_case = strcmp(selector, "--definition-list") == 0;
-    open_link_case = strcmp(selector, "--open-link") == 0;
+    outside_refresh_case = strcmp(selector, "--outside-refresh") == 0;
+    open_link_case = strcmp(selector, "--open-link") == 0 || outside_refresh_case;
     outline_96 = strcmp(selector, "--outline-96") == 0;
     outline_case = strcmp(selector, "--outline") == 0 || outline_96;
     bare_url_visual_case = strcmp(selector, "--bare-url-visual") == 0 || search_key_visual_case ||

@@ -5824,6 +5824,28 @@ enum folio_state_outcome folio_state_document_stale(struct folio_state *_Nonnull
     return FOLIO_STATE_READY;
 }
 
+enum folio_state_outcome folio_state_reload_document(struct folio_state *_Nonnull state)
+{
+    if (state->document != FOLIO_DOCUMENT_NAMED)
+        return FOLIO_STATE_NOTHING_SELECTED;
+    enum folio_state_outcome outcome =
+        render_note(state, category_ledger_name(state->categories, state->selected_category),
+                    note_ledger_name(state->notes[state->selected_category], state->selected_note));
+    if (outcome != FOLIO_STATE_READY)
+        return outcome;
+    /* The same note with another body: what was derived from the old one goes. */
+    folio_state_close_tag_edit(state);
+    folio_state_refresh_note_times(state);
+    folio_state_close_history(state);
+    state->select_notice = FOLIO_STATE_READY;
+    open_uneditable_in_view(state);
+    /* The body shown is the file's from here on. A search copy that could not be replaced
+     * stays pending, and the next intent's synchronize replaces it. */
+    if (refresh_copy(state) != FOLIO_STATE_READY)
+        state->copy_pending = true;
+    return FOLIO_STATE_READY;
+}
+
 /* 名前（ASCII の大小は問わない）のカテゴリの番号。 */
 static bool locate_category(const struct folio_state *_Nonnull state, const char *_Nonnull name,
                             size_t *_Nonnull out)
