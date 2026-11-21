@@ -115,8 +115,8 @@ struct persistence_adapter
     size_t trashes;
     char trashed_category[64];
     char trashed_note[256];
-    char created_category[64]; /* 最後に作るよう求められたカテゴリ名（複製） */
-    char written_body[256];    /* 最後に書かれた本文（終端付き） */
+    char created_category[64];               /* 最後に作るよう求められたカテゴリ名（複製） */
+    char written_body[256];                  /* 最後に書かれた本文（終端付き） */
     const char *_Nullable request_bodies[4]; /* data/.requests の依頼のファイル（古い順） */
     size_t request_count;
     size_t requests_taken;
@@ -2035,8 +2035,7 @@ static void verify_take_open_request(void)
                 request == nullptr && !pending,
             "then nothing is left");
     adapter.request_outcome = REQUEST_OUT_OF_MEMORY;
-    require(folio_state_take_open_request(state, &request, &pending) ==
-                    FOLIO_STATE_OUT_OF_MEMORY &&
+    require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_OUT_OF_MEMORY &&
                 request == nullptr && !pending && adapter.note_writes == 0 && adapter.writes == 0,
             "the adapter's failure is typed; taking a request writes nothing");
     folio_state_destroy(state);
@@ -2064,8 +2063,7 @@ static void verify_take_open_request_allocation(void)
         request = nullptr;
         adapter.requests_taken = 0;
         allocation_probe_fail_at(nth);
-        enum folio_state_outcome outcome =
-            folio_state_take_open_request(state, &request, &pending);
+        enum folio_state_outcome outcome = folio_state_take_open_request(state, &request, &pending);
         allocation_probe_fail_at(0);
         require(outcome == FOLIO_STATE_OUT_OF_MEMORY && request == nullptr,
                 "an allocation failure while taking a request is typed");

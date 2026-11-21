@@ -1,8 +1,8 @@
 /* ADR0119 の決定 6: data/.requests/open-*.json（外から置かれる「開く」依頼のファイル）を、
  * 古い順に 1 つずつ取り出して消す。中身は解釈しない（検証は core の open_request）。
  * いまの時刻を読むので adapters に置く（ARC-007）。 */
-#ifndef NENEFOLIO_REQUEST_FILES_H
-#define NENEFOLIO_REQUEST_FILES_H
+#ifndef NENEFOLIO_REQUEST_FILE_H
+#define NENEFOLIO_REQUEST_FILE_H
 #include "request_outcome.h"
 #include <stddef.h>
 /* folder（data の下の .requests。終端付き）の、更新のいちばん古い open-*.json を 1 つ取り出す。
@@ -11,7 +11,7 @@
  * - capacity より大きいもの・更新から 5 分より古いものは、読まずに消して DISCARDED。
  * - いま読めないファイル（書いている途中など）は、消さずに次を見る。
  * フォルダが無い・該当が無いなら NONE。一度に見るのは古いほうから 32 個まで。 */
-[[nodiscard]] enum request_outcome request_files_take(const wchar_t *_Nonnull folder,
-                                                      char *_Nonnull buffer, size_t capacity,
-                                                      size_t *_Nonnull length);
+[[nodiscard]] enum request_outcome request_file_take(const wchar_t *_Nonnull folder,
+                                                     char *_Nonnull buffer, size_t capacity,
+                                                     size_t *_Nonnull length);
 #endif

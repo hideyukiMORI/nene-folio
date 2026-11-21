@@ -472,8 +472,7 @@ folio_state_reload_document(struct folio_state *_Nonnull state);
  * 一覧も選択も変えない。開くのは呼ぶ側で、リンクと同じ道（locate_open_request → 切り替え）。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_take_open_request(struct folio_state *_Nonnull state,
-                              struct open_request *_Nullable *_Nonnull out,
-                              bool *_Nonnull pending);
+                              struct open_request *_Nullable *_Nonnull out, bool *_Nonnull pending);
 /* #1071 / ADR0118: 外から来た「開く」依頼のノートが、いまの一覧のどこにあるか。
  * 引く前に、カテゴリの台帳と、そのカテゴリのノートの台帳を読み直す（依頼を書いた側が、直前に
  * ノートを外で作っていることがある。読み直しても書かない＝ADR0117 の決定 6）。名前は ASCII の

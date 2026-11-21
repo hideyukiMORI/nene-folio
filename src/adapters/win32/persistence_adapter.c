@@ -1,5 +1,5 @@
 #include "persistence_adapter.h"
-#include "request_files.h"
+#include "request_file.h"
 
 #include "category_contents.h"
 #include "category_ledger.h"
@@ -1814,7 +1814,7 @@ static enum request_outcome take_open_request(struct persistence_adapter *_Nonnu
     wchar_t folder[path_capacity];
     if (!compose(adapter, nullptr, L".requests", folder))
         return REQUEST_NONE;
-    return request_files_take(folder, buffer, capacity, length);
+    return request_file_take(folder, buffer, capacity, length);
 }
 
 struct persistence_port persistence_adapter_port(struct persistence_adapter *_Nonnull adapter)

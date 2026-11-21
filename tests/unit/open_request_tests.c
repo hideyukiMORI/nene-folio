@@ -319,12 +319,15 @@ static void verify_file_refused(void)
         "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\",\"lines\":3}",
         "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\",\"lines\":\"8-3\"}",
         "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\",\"text\":\"a\\nb\"}",
-        "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\",\"text\":\"a\\u0000b\"}",
         "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\",\"text\":[\"a\"]}",
         "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\",\"extra\":[1,}",
     };
     for (size_t at = 0; at < sizeof malformed / sizeof malformed[0]; ++at)
         expect_file(malformed[at], OPEN_REQUEST_MALFORMED);
+    /* A NUL written as an escape is a control character like the others. */
+    expect_file("{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\","
+                "\"text\":\"\\u0000\"}",
+                OPEN_REQUEST_MALFORMED);
     expect_file("{\"version\":1,\"action\":\"open\",\"category\":\"..\",\"note\":\"b\"}",
                 OPEN_REQUEST_NAME_INVALID);
     expect_file("{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"a/b\"}",

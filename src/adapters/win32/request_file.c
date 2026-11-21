@@ -1,4 +1,4 @@
-#include "request_files.h"
+#include "request_file.h"
 #include "file_bytes.h"
 #include <string.h>
 #include <wchar.h>
@@ -9,7 +9,7 @@ constexpr size_t request_path_capacity = 1024;
 /* A request not handled within five minutes is no longer what its writer is waiting for. */
 constexpr ULONGLONG stale_after = 5ULL * 60ULL * 10000000ULL; /* in 100 ns */
 
-struct candidate
+struct request_file
 {
     wchar_t name[MAX_PATH];
     ULONGLONG written;
@@ -22,7 +22,7 @@ static ULONGLONG wide(DWORD high, DWORD low)
 }
 
 /* Keeps the oldest candidate_limit files, oldest first. */
-static size_t keep_oldest(struct candidate *_Nonnull kept, size_t count,
+static size_t keep_oldest(struct request_file *_Nonnull kept, size_t count,
                           const WIN32_FIND_DATAW *_Nonnull found)
 {
     ULONGLONG written =
@@ -40,7 +40,7 @@ static size_t keep_oldest(struct candidate *_Nonnull kept, size_t count,
     return last + 1;
 }
 
-static size_t gather(const wchar_t *_Nonnull folder, struct candidate *_Nonnull kept)
+static size_t gather(const wchar_t *_Nonnull folder, struct request_file *_Nonnull kept)
 {
     wchar_t pattern[request_path_capacity];
     if (swprintf_s(pattern, request_path_capacity, L"%ls\\open-*.json", folder) < 0)
@@ -67,7 +67,7 @@ static ULONGLONG now(void)
 }
 
 /* Too old or too large to be read at all. */
-static bool unwanted(const struct candidate *_Nonnull file, ULONGLONG current, size_t capacity)
+static bool unwanted(const struct request_file *_Nonnull file, ULONGLONG current, size_t capacity)
 {
     bool stale = current > file->written && current - file->written > stale_after;
     return stale || file->size > capacity;
@@ -105,10 +105,10 @@ static enum request_outcome consume(const wchar_t *_Nonnull path, char *_Nonnull
     return outcome;
 }
 
-enum request_outcome request_files_take(const wchar_t *_Nonnull folder, char *_Nonnull buffer,
-                                        size_t capacity, size_t *_Nonnull length)
+enum request_outcome request_file_take(const wchar_t *_Nonnull folder, char *_Nonnull buffer,
+                                       size_t capacity, size_t *_Nonnull length)
 {
-    struct candidate kept[candidate_limit];
+    struct request_file kept[candidate_limit];
     size_t count = gather(folder, kept);
     ULONGLONG current = now();
     enum request_outcome outcome = REQUEST_NONE;
@@ -117,9 +117,8 @@ enum request_outcome request_files_take(const wchar_t *_Nonnull folder, char *_N
         wchar_t path[request_path_capacity];
         if (swprintf_s(path, request_path_capacity, L"%ls\\%ls", folder, kept[at].name) < 0)
             continue;
-        outcome = unwanted(&kept[at], current, capacity)
-                      ? discard(path)
-                      : consume(path, buffer, capacity, length);
+        outcome = unwanted(&kept[at], current, capacity) ? discard(path)
+                                                         : consume(path, buffer, capacity, length);
     }
     return outcome;
 }

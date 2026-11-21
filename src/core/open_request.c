@@ -16,6 +16,8 @@ struct open_request
     struct open_request_lines lines;
     bool lines_seen;
     bool text_seen;
+    bool versioned; /* 依頼のファイルの version を見た */
+    bool acted;     /* 依頼のファイルの action を見た */
 };
 
 /* bytes が word（小文字の ASCII）で始まるか。ASCII の大小は問わない。 */
@@ -321,13 +323,6 @@ enum open_request_outcome open_request_create(const char *_Nonnull bytes, size_t
     return OPEN_REQUEST_ACCEPTED;
 }
 
-/* 依頼のファイルが、どの必須の欄をもう見たか。 */
-struct file_marks
-{
-    bool versioned;
-    bool acted;
-};
-
 static enum open_request_outcome unexpected(enum json_token token)
 {
     return token == JSON_TOKEN_OUT_OF_MEMORY ? OPEN_REQUEST_OUT_OF_MEMORY : OPEN_REQUEST_MALFORMED;
@@ -356,7 +351,7 @@ static enum open_request_outcome skip_value(struct json_reader *_Nonnull reader,
 
 static enum open_request_outcome take_version(const struct json_reader *_Nonnull reader,
                                               enum json_token value,
-                                              struct file_marks *_Nonnull marks)
+                                              struct open_request *_Nonnull marks)
 {
     if (marks->versioned || value != JSON_TOKEN_UNSIGNED || json_reader_unsigned(reader) != 1)
         return unexpected(value);
@@ -366,7 +361,7 @@ static enum open_request_outcome take_version(const struct json_reader *_Nonnull
 
 static enum open_request_outcome take_action(const struct json_reader *_Nonnull reader,
                                              enum json_token value,
-                                             struct file_marks *_Nonnull marks)
+                                             struct open_request *_Nonnull marks)
 {
     if (marks->acted || value != JSON_TOKEN_STRING || json_reader_text_length(reader) != 4 ||
         memcmp(json_reader_text(reader), "open", 4) != 0)
@@ -393,8 +388,7 @@ static enum open_request_outcome take_field(struct open_request *_Nonnull reques
 
 /* キーの直後から、その値までを読む。 */
 static enum open_request_outcome take_member(struct open_request *_Nonnull request,
-                                             struct json_reader *_Nonnull reader,
-                                             struct file_marks *_Nonnull marks)
+                                             struct json_reader *_Nonnull reader)
 {
     /* キーの文字列は次の字句で無効になるので、どの欄かを先に決める。 */
     const char *key = json_reader_text(reader);
@@ -404,16 +398,15 @@ static enum open_request_outcome take_member(struct open_request *_Nonnull reque
     size_t which = known_key(key, length);
     enum json_token value = json_reader_next(reader);
     if (version)
-        return take_version(reader, value, marks);
+        return take_version(reader, value, request);
     if (action)
-        return take_action(reader, value, marks);
+        return take_action(reader, value, request);
     return take_field(request, reader, which, value);
 }
 
 static enum open_request_outcome read_file(struct open_request *_Nonnull request,
                                            struct json_reader *_Nonnull reader)
 {
-    struct file_marks marks = {false, false};
     enum json_token token = json_reader_next(reader);
     if (token != JSON_TOKEN_OBJECT_BEGIN)
         return unexpected(token);
@@ -421,12 +414,12 @@ static enum open_request_outcome read_file(struct open_request *_Nonnull request
     for (token = json_reader_next(reader);
          outcome == OPEN_REQUEST_ACCEPTED && token == JSON_TOKEN_KEY;
          token = outcome == OPEN_REQUEST_ACCEPTED ? json_reader_next(reader) : token)
-        outcome = take_member(request, reader, &marks);
+        outcome = take_member(request, reader);
     if (outcome != OPEN_REQUEST_ACCEPTED)
         return outcome;
     if (token != JSON_TOKEN_OBJECT_END || json_reader_next(reader) != JSON_TOKEN_END)
         return unexpected(token);
-    bool complete = marks.versioned && marks.acted && request->category != nullptr &&
+    bool complete = request->versioned && request->acted && request->category != nullptr &&
                     request->note != nullptr;
     return complete ? OPEN_REQUEST_ACCEPTED : OPEN_REQUEST_MALFORMED;
 }
