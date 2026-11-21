@@ -9,4 +9,8 @@
  * 終端の後ろへ text を足す。収まらなければ、収まる所までを UTF-8 の文字の境で切って足す。
  * 終端は必ず付く。足した後の長さ（終端を除く）を返す。 */
 size_t bounded_text_append(char *_Nonnull out, size_t capacity, const char *_Nonnull text);
+/* out（capacity バイト。1 以上）を text にする。収まらなければ、収まる所までを UTF-8 の文字の境で
+ * 切って入れる。終端は必ず付く。入れた長さ（終端を除く）を返す: text の長さと同じなら全部入った。
+ */
+size_t bounded_text_copy(char *_Nonnull out, size_t capacity, const char *_Nonnull text);
 #endif

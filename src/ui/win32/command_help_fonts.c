@@ -8,7 +8,7 @@ static HFONT _Nullable create_font(const wchar_t *_Nonnull face, int size, int w
                      .lfWeight = weight,
                      .lfCharSet = DEFAULT_CHARSET,
                      .lfQuality = CLEARTYPE_QUALITY};
-    (void)wcscpy_s(font.lfFaceName, LF_FACESIZE, face);
+    (void)wcsncpy_s(font.lfFaceName, LF_FACESIZE, face, _TRUNCATE);
     return CreateFontIndirectW(&font);
 }
 

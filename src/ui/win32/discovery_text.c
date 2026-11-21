@@ -1,4 +1,5 @@
 #include "discovery_text.h"
+#include "bounded_text.h"
 #include "folio_state.h"
 #include "note_excerpt.h"
 #include "note_tag.h"
@@ -76,7 +77,8 @@ void discovery_text_match(const struct folio_state *_Nonnull state, size_t index
         (void)ui_text_format(&request, out, capacity);
         return;
     }
-    (void)strcpy_s(out, capacity, ui_text_line(rank_label(row.kind), folio_state_language(state)));
+    (void)bounded_text_copy(out, capacity,
+                            ui_text_line(rank_label(row.kind), folio_state_language(state)));
 }
 
 void discovery_text_name(const struct folio_state *_Nonnull state, size_t index, char *_Nonnull out,
@@ -130,7 +132,7 @@ void discovery_text_status(const struct folio_state *_Nonnull state, char *_Nonn
     enum folio_language language = folio_state_language(state);
     if (summary.phase == DISCOVERY_FAILED)
     {
-        (void)strcpy_s(out, capacity, folio_state_failure_line(summary.notice, language));
+        (void)bounded_text_copy(out, capacity, folio_state_failure_line(summary.notice, language));
         return;
     }
     char missing[256] = "";
@@ -268,7 +270,7 @@ void discovery_text_preview(const struct folio_state *_Nonnull state, char *_Non
     enum folio_language language = folio_state_language(state);
     if (summary.preview == DISCOVERY_PREVIEW_FAILED)
     {
-        (void)strcpy_s(out, capacity, folio_state_failure_line(summary.notice, language));
+        (void)bounded_text_copy(out, capacity, folio_state_failure_line(summary.notice, language));
         return;
     }
     const struct note_excerpt *_Nullable excerpt = folio_state_discovery_excerpt(state);
