@@ -851,6 +851,7 @@ static void verify_render_allocation(void)
 void run_web_link_tests(void)
 {
     run_open_request_tests(); /* #1071: the other link read from outside */
+    run_bounded_text_tests(); /* #1131: joined status texts never overrun */
     verify_uri_cases();
     verify_uri_boundary();
     verify_fields();

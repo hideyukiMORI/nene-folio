@@ -5,6 +5,7 @@
 #include "accessible_request.h"
 #include "accessible_surface_button.h"
 #include "accessible_view.h"
+#include "bounded_text.h"
 #include "file_picker.h"
 #include "folio_open_link.h"
 #include "open_place_kind.h"
@@ -17105,18 +17106,19 @@ static void management_surface_status(const struct folio_window *_Nonnull self, 
     if (self->tag_management_view == TAG_MANAGEMENT_NAME)
         management_source_text(self, out, replace_status_capacity);
     if (out[0] != '\0')
-        (void)strcat_s(out, replace_status_capacity, "\n");
-    (void)strcat_s(out, replace_status_capacity,
-                   ui_text_line(tag_footer_hint(self), folio_state_language(self->state)));
+        (void)bounded_text_append(out, replace_status_capacity, "\n");
+    (void)bounded_text_append(
+        out, replace_status_capacity,
+        ui_text_line(tag_footer_hint(self), folio_state_language(self->state)));
     management_status(self, line, sizeof line);
     if (out[0] != '\0')
-        (void)strcat_s(out, replace_status_capacity, "\n");
-    (void)strcat_s(out, replace_status_capacity, line);
+        (void)bounded_text_append(out, replace_status_capacity, "\n");
+    (void)bounded_text_append(out, replace_status_capacity, line);
     management_notice(self, line, sizeof line);
     if (line[0] != '\0')
     {
-        (void)strcat_s(out, replace_status_capacity, "\n");
-        (void)strcat_s(out, replace_status_capacity, line);
+        (void)bounded_text_append(out, replace_status_capacity, "\n");
+        (void)bounded_text_append(out, replace_status_capacity, line);
     }
 }
 
@@ -22475,13 +22477,13 @@ static void discovery_status_text(const struct folio_window *_Nonnull self, char
 {
     char line[draw_unit_limit];
     discovery_text_conditions(self->state, out, replace_status_capacity);
-    (void)strcat_s(out, replace_status_capacity, "\n");
+    (void)bounded_text_append(out, replace_status_capacity, "\n");
     discovery_text_status(self->state, line, sizeof line);
-    (void)strcat_s(out, replace_status_capacity, line);
+    (void)bounded_text_append(out, replace_status_capacity, line);
     if (self->command_failure != FOLIO_STATE_READY)
     {
-        (void)strcat_s(out, replace_status_capacity, "\n");
-        (void)strcat_s(
+        (void)bounded_text_append(out, replace_status_capacity, "\n");
+        (void)bounded_text_append(
             out, replace_status_capacity,
             folio_state_failure_line(self->command_failure, folio_state_language(self->state)));
     }
@@ -22496,8 +22498,8 @@ static bool discovery_accessible_name(const struct folio_window *_Nonnull self,
     char status[256];
     discovery_text_title(self->state, text, sizeof text);
     discovery_text_preview(self->state, status, sizeof status);
-    (void)strcat_s(text, sizeof text, "\n");
-    (void)strcat_s(text, sizeof text, status);
+    (void)bounded_text_append(text, sizeof text, "\n");
+    (void)bounded_text_append(text, sizeof text, status);
     (void)wide_units(text, out);
     return true;
 }
