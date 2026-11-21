@@ -66,7 +66,7 @@ static void seed_notes(struct persistence_port disk)
         struct note_text *_Nullable body = nullptr;
         require(note_text_create(source, lines[index] * 3, &body) == NOTE_TEXT_ACCEPTED,
                 "fixture text");
-        const struct note_store_request request = {"schedule", names[index], body, nullptr};
+        const struct note_store_request request = {"schedule", names[index], body, nullptr, false};
         require(disk.store_note(disk.adapter, &request) == NOTE_STORE_STORED, "fixture note");
         note_text_destroy(body);
     }

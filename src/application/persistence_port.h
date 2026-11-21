@@ -52,9 +52,11 @@ struct persistence_port
     enum persistence_outcome (*_Nonnull read_note_times)(
         struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,
         const char *_Nonnull note, struct note_file_times *_Nullable *_Nonnull out);
-    /* One existing-note save: optional expected-body check, raw history, atomic publication.
-     * The final comparison is not a filesystem CAS (ADR0093). History may rotate on write failure.
-     * Expected-source refusals and UNCHANGED do not rotate history or publish a body. */
+    /* One existing-note save: expected-body check (every save of the application passes one;
+     * `recreate` lets the ordinary save write a removed file again), raw history, atomic
+     * publication. The final comparison is not a filesystem CAS (ADR0093). History may rotate on
+     * write failure. Expected-source refusals and UNCHANGED do not rotate history or publish a
+     * body. */
     enum note_store_outcome (*_Nonnull store_note)(
         struct persistence_adapter *_Nonnull adapter,
         const struct note_store_request *_Nonnull request);
