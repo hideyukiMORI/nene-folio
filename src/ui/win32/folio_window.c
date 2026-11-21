@@ -6846,8 +6846,10 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
     if (outcome == FOLIO_STATE_READY)
     {
         outcome = render_pane(self);
-        /* 編集のあいだは知らせるだけだった外の変更を、閲覧へ戻ったので確かめ直す。 */
-        self->outside_due = true;
+        /* 編集のあいだは知らせるだけだった外の変更を、閲覧へ戻ったここで読み直す。後へ回すと、
+         * 呼び手（リンクで開く・検索の一致）が古い本文で選んだ箇所を消してしまう。 */
+        if (outcome == FOLIO_STATE_READY)
+            show_outside_change(self);
         /* NOTEでは可視pane、それ以外は従来の索引へ戻す（ADR0047）。 */
         SetFocus(surface_return_target(self, self->handle));
     }
@@ -8996,7 +8998,8 @@ static void execute_save_quit_command(struct folio_window *_Nonnull self,
  * そこでは本文を入れ替えない。 */
 static enum folio_state_outcome edit_current_file(struct folio_window *_Nonnull self)
 {
-    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
+    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW &&
+        self->command_surface == COMMAND_SURFACE_CLOSED)
         show_outside_change(self);
     return enter_edit(self);
 }
@@ -15341,7 +15344,9 @@ static void show_outside_change(struct folio_window *_Nonnull self)
         return;
     if (folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
     {
-        open_link_notice(self, UI_TEXT_OUTSIDE_CHANGED);
+        /* Said once: a line that is still up is not raised (and read out) again. */
+        if (self->notice != PANE_NOTICE_OPEN_LINK || self->open_line != UI_TEXT_OUTSIDE_CHANGED)
+            open_link_notice(self, UI_TEXT_OUTSIDE_CHANGED);
         return;
     }
     size_t line = note_pane_first_visible_line(self->pane);
@@ -15364,7 +15369,8 @@ static void show_outside_change(struct folio_window *_Nonnull self)
 static bool outside_refresh_ready(const struct folio_window *_Nonnull self)
 {
     return self->outside_due && self->command_surface == COMMAND_SURFACE_CLOSED &&
-           !self->filter_saving && !open_link_blocked(self);
+           !self->filter_saving && !open_link_blocked(self) &&
+           folio_window_accessible_ready(self);
 }
 
 /* Reads the lists and the open note again. Nothing is written, and a list that cannot be read
@@ -15380,6 +15386,7 @@ static void refresh_outside(struct folio_window *_Nonnull self)
     {
         redraw_drawer(self);
         InvalidateRect(self->handle, nullptr, FALSE);
+        accessibility_host_schedule(self->accessibility);
     }
     if (lists != FOLIO_STATE_OUT_OF_MEMORY)
         show_outside_change(self);

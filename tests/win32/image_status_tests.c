@@ -11104,6 +11104,15 @@ static bool outside_shows(struct folio_window *_Nonnull window, const wchar_t *_
     return wcsstr(shown, text) != nullptr;
 }
 
+/* Whether the status line says exactly this. */
+static bool outside_told(struct folio_window *_Nonnull window, const wchar_t *_Nonnull line)
+{
+    struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
+    struct accessible_view view;
+    return folio_window_accessible_read(window, &item, &view) == S_OK &&
+           wcscmp(view.name, line) == 0;
+}
+
 /* The reading view reads the changed file again and stays where it was being read. */
 static void outside_reading(struct native_fixture *_Nonnull fixture,
                             struct folio_window *_Nonnull window)
@@ -11116,13 +11125,16 @@ static void outside_reading(struct native_fixture *_Nonnull fixture,
     require(outside_shows(window, L"最初の段落。") && !outside_shows(window, L"段落 150"),
             "nothing changed outside: the note is as it was");
     outside_write(fixture, "one", text);
-    require(!outside_shows(window, L"段落 150"), "nothing is read while the window is away");
-    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_ACTIVATEAPP, TRUE,
-                 0);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SendMessageW(root, WM_ACTIVATEAPP, TRUE, 0);
     outside_idle(window);
     require(!outside_shows(window, L"段落 150"),
             "an activation that follows no leaving, as at the start, reads nothing");
-    outside_return(window);
+    SendMessageW(root, WM_ACTIVATEAPP, FALSE, 0);
+    outside_idle(window);
+    require(!outside_shows(window, L"段落 150"), "nothing is read while the window is away");
+    SendMessageW(root, WM_ACTIVATEAPP, TRUE, 0);
+    outside_idle(window);
     require(outside_shows(window, L"段落 150"), "the changed file is read on the way back");
     expect_notice(window, L"外部の変更を読み込みました。");
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
@@ -11147,8 +11159,15 @@ static void outside_lists(struct native_fixture *_Nonnull fixture,
     outside_return(window);
     size_t notes = folio_state_note_count(fixture->state);
     outside_write(fixture, "made-outside", "外で作ったノート。\n");
-    require(folio_state_note_count(fixture->state) == notes, "the list is as it was");
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_ACTIVATEAPP, FALSE,
+                 0);
+    outside_idle(window);
+    require(folio_state_note_count(fixture->state) == notes,
+            "the list is as it was while the window is away");
     outside_return(window);
+    require(!folio_window_idle_work_ready(window) ||
+                folio_state_note_count(fixture->state) == notes + 1,
+            "the reading ran in that one turn");
     require(folio_state_note_count(fixture->state) == notes + 1,
             "a note made outside is in the list on the way back");
     struct accessible_request settings = {.item = {.kind = ACCESSIBLE_SETTINGS},
@@ -11181,10 +11200,23 @@ static void outside_editing(struct native_fixture *_Nonnull fixture,
             "the edit starts from the file as it is now");
     outside_write(fixture, "one", "# 編集なし\n\n何も打たずに閲覧へ戻った。\n");
     action(window, ACCESSIBLE_VIEW);
-    outside_idle(window);
     require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
                 outside_shows(window, L"何も打たずに閲覧へ戻った。"),
-            "back in the reading view without edits, the changed file is read");
+            "back in the reading view without edits, the changed file is read at once");
+    action(window, ACCESSIBLE_EDIT);
+    outside_write(fixture, "one", "# リンク\n\n外で書いてからリンクで開く。\n\n次の段落。\n");
+    open_link_send(window, "nenefolio://open?category=schedule&note=one&lines=3");
+    expect_link_exact(folio_window_accessible_window(window, ACCESSIBLE_BODY),
+                      L"外で書いてからリンクで開く。");
+    outside_idle(window);
+    expect_link_exact(folio_window_accessible_window(window, ACCESSIBLE_BODY),
+                      L"外で書いてからリンクで開く。");
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    action(window, ACCESSIBLE_VIEW);
+    outside_idle(window);
+    require(outside_shows(window, L"追記") && !outside_told(window, L"外部の変更を読み込みました。"),
+            "the app's own save is not a change from outside");
     action(window, ACCESSIBLE_EDIT);
     append_switch_text(window);
     outside_write(fixture, "one", "# 編集中\n\n編集中に外で書いた。\n");
