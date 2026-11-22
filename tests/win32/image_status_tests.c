@@ -28,6 +28,7 @@
 #include "note_identity.h"
 #include "note_ledger.h"
 #include "note_pane_code_button.h"
+#include "note_pane_ole.h"
 #include "note_pane_table.h"
 #include "note_store_request.h"
 #include "note_tag.h"
@@ -3597,6 +3598,240 @@ static void drop_notified(struct folio_window *_Nonnull window,
     expect_drop_notice(window, fixture->state,
                        (struct ui_text_request){.id = UI_TEXT_IMAGE_DROP_NONE_NOT_IMAGE, .k = 1});
 }
+/* #1195: a real drag from Explorer does not come as WM_DROPFILES in the editing view. The edit
+ * control registers its own OLE drop target there and asks the pane's IRichEditOleCallback. The
+ * tests hand that drop target, and a callback made the way the pane makes its own, a data object
+ * (the shell's empty one, filled with one format). No pointer is moved and no file or clipboard is
+ * touched; a drag by hand from Explorer is still checked by hide. */
+static struct accessible_view text_menu_row(struct folio_window *_Nonnull window, size_t slot);
+constexpr DWORD drop_effects = DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK;
+static IDataObject *_Nonnull drop_data(CLIPFORMAT format, HGLOBAL _Nonnull memory)
+{
+    IDataObject *data = nullptr;
+    require(SUCCEEDED(SHCreateDataObject(nullptr, 0, nullptr, nullptr, &IID_IDataObject,
+                                         (void **)&data)) &&
+                data != nullptr,
+            "an empty data object");
+    FORMATETC shape = {
+        .cfFormat = format, .dwAspect = DVASPECT_CONTENT, .lindex = -1, .tymed = TYMED_HGLOBAL};
+    STGMEDIUM medium = {.tymed = TYMED_HGLOBAL, .hGlobal = memory};
+    require(SUCCEEDED(data->lpVtbl->SetData(data, &shape, &medium, TRUE)),
+            "the data object takes the format");
+    return data;
+}
+static IDataObject *_Nonnull drop_files_data(const wchar_t *_Nonnull const *_Nonnull paths,
+                                             size_t count)
+{
+    return drop_data(CF_HDROP, (HGLOBAL)drop_handle(paths, count, (POINT){0, 0}));
+}
+static IDataObject *_Nonnull drop_words_data(const wchar_t *_Nonnull words)
+{
+    size_t bytes = (wcslen(words) + 1) * sizeof(wchar_t);
+    HGLOBAL memory = GlobalAlloc(GHND, bytes);
+    require(memory != nullptr, "dragged text memory");
+    void *text = GlobalLock(memory);
+    require(text != nullptr, "dragged text lock");
+    memcpy(text, words, bytes);
+    GlobalUnlock(memory);
+    return drop_data(CF_UNICODETEXT, memory);
+}
+static LONG drop_objects(HWND _Nonnull body)
+{
+    IRichEditOle *ole = nullptr;
+    require(SendMessageW(body, EM_GETOLEINTERFACE, 0, (LPARAM)&ole) != 0 && ole != nullptr,
+            "the edit control's object list");
+    LONG count = ole->lpVtbl->GetObjectCount(ole);
+    ole->lpVtbl->Release(ole);
+    return count;
+}
+/* Enter, move over and drop on the edit control's own drop target, at the character `position`.
+ * Returns the pointer effect the target answered while the data was over it. */
+static DWORD drop_gesture(struct folio_window *_Nonnull window, IDataObject *_Nonnull data,
+                          LONG position)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    IDropTarget *target = (IDropTarget *)GetPropW(body, L"OleDropTargetInterface");
+    require(target != nullptr, "the editing view registers the edit control's own drop target");
+    POINT point = drop_point(window, position);
+    ClientToScreen(body, &point);
+    POINTL where = {point.x, point.y};
+    DWORD entered = drop_effects;
+    DWORD over = drop_effects;
+    DWORD dropped = drop_effects;
+    require(target->lpVtbl->DragEnter(target, data, MK_LBUTTON, where, &entered) == S_OK &&
+                target->lpVtbl->DragOver(target, MK_LBUTTON, where, &over) == S_OK &&
+                over == entered,
+            "the data moves over the editing view");
+    require(SUCCEEDED(target->lpVtbl->Drop(target, data, 0, where, &dropped)),
+            "the data is dropped on the editing view");
+    return entered;
+}
+static void drop_target_files(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture)
+{
+    static const wchar_t *const one[] = {L"C:\\drop\\ole.png"};
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    wchar_t before[drop_text_capacity];
+    wchar_t now[drop_text_capacity];
+    size_t calls = image_drop_calls;
+    (void)drop_body(window, before);
+    IDataObject *files = drop_files_data(one, 1);
+    require(drop_gesture(window, files, 5) == DROPEFFECT_COPY,
+            "files over the editing view show the copy pointer");
+    (void)drop_body(window, now);
+    require(!IsWindowEnabled(root) && image_drop_calls == calls && wcscmp(before, now) == 0,
+            "an OLE drop of files starts the same intake and writes nothing itself");
+    require(drop_turns(window) == 1 && image_drop_calls == calls + 1,
+            "the OLE drop takes the file in on the idle turn");
+    expect_drop_text(window, before, 5, L"![ole](images/ole.png)");
+    require(drop_objects(body) == 0, "the dropped file is not embedded in the body");
+    expect_drop_notice(window, fixture->state,
+                       (struct ui_text_request){.id = UI_TEXT_IMAGE_DROP_TAKEN, .n = 1});
+    history_undo(window);
+    files->lpVtbl->Release(files);
+}
+static void drop_target_words(struct folio_window *_Nonnull window)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    wchar_t before[drop_text_capacity];
+    size_t calls = image_drop_calls;
+    (void)drop_body(window, before);
+    IDataObject *words = drop_words_data(L"DROPPED");
+    require(drop_gesture(window, words, 3) == DROPEFFECT_MOVE,
+            "text over the editing view keeps the edit control's own pointer");
+    pump(window);
+    expect_drop_text(window, before, 3, L"DROPPED");
+    require(IsWindowEnabled(root) && image_drop_calls == calls && drop_objects(body) == 0,
+            "dragged text is written as text and starts no intake");
+    history_undo(window);
+    words->lpVtbl->Release(words);
+}
+/* What the callback answers while files are over the body and when they are dropped. */
+static void drop_callback_files(struct folio_window *_Nonnull window,
+                                IRichEditOleCallback *_Nonnull callback)
+{
+    static const wchar_t *const one[] = {L"C:\\drop\\asked.png"};
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    wchar_t before[drop_text_capacity];
+    size_t calls = image_drop_calls;
+    (void)drop_body(window, before);
+    IDataObject *files = drop_files_data(one, 1);
+    IDataObject *words = drop_words_data(L"LATE");
+    CLIPFORMAT format = 0;
+    SendMessageW(body, EM_SETSEL, 4, 4);
+    require(callback->lpVtbl->QueryAcceptData(callback, files, &format, RECO_DROP, FALSE,
+                                              nullptr) == S_FALSE &&
+                IsWindowEnabled(root) && !folio_window_idle_work_ready(window),
+            "asking whether files may be dropped takes nothing in");
+    DWORD effect = drop_effects;
+    DWORD moving = DROPEFFECT_MOVE;
+    require(callback->lpVtbl->GetDragDropEffect(callback, FALSE, MK_LBUTTON, &effect) == S_OK &&
+                effect == DROPEFFECT_COPY &&
+                callback->lpVtbl->GetDragDropEffect(callback, FALSE, MK_LBUTTON, &moving) == S_OK &&
+                moving == DROPEFFECT_NONE,
+            "files are copied, or refused when the source allows no copy");
+    require(callback->lpVtbl->QueryAcceptData(callback, files, &format, RECO_DROP, TRUE, nullptr) ==
+                    S_FALSE &&
+                !IsWindowEnabled(root) && image_drop_calls == calls,
+            "dropped files go to the intake and the edit control is told they were handled");
+    require(FAILED(callback->lpVtbl->QueryAcceptData(callback, words, &format, RECO_DROP, FALSE,
+                                                     nullptr)) &&
+                FAILED(callback->lpVtbl->QueryAcceptData(callback, files, &format, RECO_DROP, TRUE,
+                                                         nullptr)),
+            "nothing more is dropped while the files are taken in");
+    require(drop_turns(window) == 1 && image_drop_calls == calls + 1,
+            "the refused second drop adds no file");
+    expect_drop_text(window, before, 4, L"![asked](images/asked.png)");
+    history_undo(window);
+    words->lpVtbl->Release(words);
+    files->lpVtbl->Release(files);
+}
+/* Text is taken as text only; a paste is left as the pane's own paste made it. */
+static void drop_callback_words(struct folio_window *_Nonnull window,
+                                IRichEditOleCallback *_Nonnull callback)
+{
+    static const wchar_t *const one[] = {L"C:\\drop\\pasted.png"};
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    size_t calls = image_drop_calls;
+    IDataObject *files = drop_files_data(one, 1);
+    IDataObject *words = drop_words_data(L"WORDS");
+    CLIPFORMAT format = 0;
+    DWORD effect = drop_effects;
+    require(callback->lpVtbl->QueryAcceptData(callback, words, &format, RECO_DROP, FALSE,
+                                              nullptr) == S_OK &&
+                format == CF_UNICODETEXT,
+            "dragged text is accepted in the plain text format only");
+    require(FAILED(callback->lpVtbl->GetDragDropEffect(callback, FALSE, MK_LBUTTON, &effect)) &&
+                effect == drop_effects &&
+                callback->lpVtbl->GetDragDropEffect(callback, TRUE, 0, &effect) == S_OK &&
+                effect == drop_effects,
+            "the pointer for text and for a drag out of the body is left to the edit control");
+    format = CF_UNICODETEXT;
+    require(callback->lpVtbl->QueryAcceptData(callback, files, &format, RECO_PASTE, TRUE,
+                                              nullptr) == S_OK &&
+                format == CF_UNICODETEXT && IsWindowEnabled(root) && image_drop_calls == calls &&
+                !folio_window_idle_work_ready(window),
+            "a paste is not a drop: the callback leaves it as it was asked");
+    words->lpVtbl->Release(words);
+    files->lpVtbl->Release(files);
+}
+/* No storage for embedded objects, no menu of its own, and the callback counts its holders. */
+static void drop_callback_objects(IRichEditOleCallback *_Nonnull callback)
+{
+    CLSID kind = {0};
+    IStorage *storage = (IStorage *)callback;
+    HMENU menu = (HMENU)callback;
+    IRichEditOleCallback *same = nullptr;
+    IDropTarget *other = (IDropTarget *)callback;
+    require(FAILED(callback->lpVtbl->GetNewStorage(callback, &storage)) && storage == nullptr,
+            "the body gives an embedded object no storage");
+    require(callback->lpVtbl->QueryInsertObject(callback, &kind, nullptr, 0) == S_OK,
+            "the reading view's own pictures may still be inserted");
+    require(FAILED(callback->lpVtbl->GetContextMenu(callback, SEL_TEXT, nullptr, nullptr, &menu)) &&
+                menu == nullptr,
+            "the callback offers no menu of its own");
+    require(callback->lpVtbl->QueryInterface(callback, &IID_IUnknown, (void **)&same) == S_OK &&
+                same == callback && callback->lpVtbl->Release(callback) == 1 &&
+                callback->lpVtbl->QueryInterface(callback, &IID_IDropTarget, (void **)&other) ==
+                    E_NOINTERFACE &&
+                other == nullptr,
+            "the callback answers for itself only");
+    require(callback->lpVtbl->AddRef(callback) == 2 && callback->lpVtbl->Release(callback) == 1,
+            "the callback counts its holders");
+}
+/* With a callback set, the edit control would answer the right button itself and make no
+ * WM_CONTEXTMENU: the app's own menu must still open on a real right click. */
+static void drop_keeps_menu(struct folio_window *_Nonnull window)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    POINT point = drop_point(window, 2);
+    SendMessageW(body, WM_RBUTTONDOWN, MK_RBUTTON, MAKELPARAM(point.x, point.y));
+    SendMessageW(body, WM_RBUTTONUP, 0, MAKELPARAM(point.x, point.y));
+    pump(window);
+    struct accessible_view cut = text_menu_row(window, 1);
+    require(cut.set_size == 5, "a right click still opens the editing view's own menu");
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_KEYDOWN, VK_ESCAPE,
+                 0);
+    pump(window);
+}
+static void drop_through_ole(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    drop_target_files(window, fixture);
+    drop_target_words(window);
+    IRichEditOleCallback *callback = nullptr;
+    require(note_pane_ole_create(body, &callback) && callback != nullptr,
+            "a callback made the way the pane makes its own");
+    drop_callback_files(window, callback);
+    drop_callback_words(window, callback);
+    drop_callback_objects(callback);
+    require(callback->lpVtbl->Release(callback) == 0, "the last holder frees the callback");
+    drop_keeps_menu(window);
+}
 static void run_image_drop_case(struct native_fixture *_Nonnull fixture)
 {
     static const wchar_t *const one[] = {L"C:\\drop\\a.png"};
@@ -3611,6 +3846,8 @@ static void run_image_drop_case(struct native_fixture *_Nonnull fixture)
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     require((GetWindowLongPtrW(body, GWL_EXSTYLE) & WS_EX_ACCEPTFILES) != 0,
             "the body accepts dropped files in the reading view too");
+    require(GetPropW(body, L"OleDropTargetInterface") == nullptr,
+            "the reading view has no drop target of its own: files come as WM_DROPFILES");
     wchar_t before[drop_text_capacity];
     wchar_t after[drop_text_capacity];
     (void)drop_body(window, before);
@@ -3625,6 +3862,7 @@ static void run_image_drop_case(struct native_fixture *_Nonnull fixture)
     action(window, ACCESSIBLE_EDIT);
     drop_written(window, fixture);
     drop_notified(window, fixture);
+    drop_through_ole(window, fixture);
     drop_lost(window, fixture);
     drop_displaced(window, fixture);
     folio_window_destroy(window);
