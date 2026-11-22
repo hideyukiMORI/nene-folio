@@ -12089,6 +12089,32 @@ static void request_declined(struct native_fixture *_Nonnull fixture,
             "the body is kept as 1_two and stays open; the line says the note was not found");
 }
 
+/* The notes this case makes are taken out again, file and ledger row: the data folder is shared
+ * with the other cases, which count its rows. */
+static void request_forget(struct native_fixture *_Nonnull fixture, const wchar_t *_Nonnull leaf,
+                           const char *_Nonnull note)
+{
+    outside_delete(fixture, leaf);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_ledger *ledger = nullptr;
+    if (disk.read_note_ledger(disk.adapter, "schedule", &ledger) != PERSISTENCE_LOADED ||
+        ledger == nullptr)
+        return;
+    for (size_t index = 0; index < note_ledger_count(ledger); ++index)
+    {
+        if (strcmp(note_ledger_name(ledger, index), note) != 0)
+            continue;
+        struct note_ledger *without = nullptr;
+        require(note_ledger_removed(ledger, index, &without) == NOTE_LEDGER_ACCEPTED &&
+                    without != nullptr &&
+                    disk.write_note_ledger(disk.adapter, "schedule", without) == PERSISTENCE_STORED,
+                "the kept note's ledger row is removed");
+        note_ledger_destroy(without);
+        break;
+    }
+    note_ledger_destroy(ledger);
+}
+
 static void request_prompt(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
@@ -12098,8 +12124,8 @@ static void request_prompt(struct native_fixture *_Nonnull fixture)
                 FOLIO_WINDOW_CREATED,
             "request prompt window");
     outside_requests_cleared(fixture);
-    outside_delete(fixture, L"1_one.md"); /* what an earlier run that stopped early left behind */
-    outside_delete(fixture, L"1_two.md");
+    request_forget(fixture, L"1_one.md", "1_one"); /* what a run that stopped early left behind */
+    request_forget(fixture, L"1_two.md", "1_two");
     folio_window_data_changed(window);
     require(outside_gathered(window), "the test category is read again");
     pump(window);
@@ -12114,8 +12140,8 @@ static void request_prompt(struct native_fixture *_Nonnull fixture)
     fflush(stdout);
     request_declined(fixture, window);
     folio_window_destroy(window);
-    outside_delete(fixture, L"1_one.md");
-    outside_delete(fixture, L"1_two.md");
+    request_forget(fixture, L"1_one.md", "1_one");
+    request_forget(fixture, L"1_two.md", "1_two");
 }
 
 static void outside_refresh(struct native_fixture *_Nonnull fixture)
