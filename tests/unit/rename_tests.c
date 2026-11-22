@@ -158,11 +158,25 @@ static void verify_favorite_equality(void)
     rename_plan_destroy(starred);
 }
 
+/* Reads one plan and gives the outcome; a refused plan leaves nothing behind. */
+static enum rename_plan_outcome read_plan(const char *_Nonnull source, enum rename_kind kind)
+{
+    struct json_reader *reader = nullptr;
+    struct rename_plan *rename = nullptr;
+    require(json_reader_create(source, strlen(source), &reader) == JSON_READER_CREATED,
+            "plan reader");
+    enum rename_plan_outcome outcome = rename_plan_read(reader, kind, &rename);
+    require((outcome == RENAME_PLAN_ACCEPTED) == (rename != nullptr),
+            "only an accepted plan is handed out");
+    rename_plan_destroy(rename);
+    json_reader_destroy(reader);
+    return outcome;
+}
+
 static void verify_bad_plans(void)
 {
     static const char *const rejected[] = {
-        "null",
-        "{}",
+        "null", "{}",
         "{\"category\":\"../"
         "A\",\"from\":\"old\",\"to\":\"new\",\"ledger\":{\"version\":1,\"notes\":[\"new\"]}}",
         "{\"category\":\"A\",\"from\":\"old\",\"to\":\"old\",\"ledger\":{\"version\":1,\"notes\":["
@@ -180,19 +194,79 @@ static void verify_bad_plans(void)
         "{\"category\":\"A\",\"from\":\"old\",\"to\":\"new\",\"ledger\":{\"version\":2,\"notes\":["
         "\"new\"]}}",
         "{\"category\":\"A\",\"from\":\"old\",\"to\":\"new\",\"ledger\":{\"version\":1,\"notes\":["
-        "\"new\"]},\"extra\":0}"};
+        "\"new\"]},\"extra\":0}",
+        /* One thing wrong at a time, against the plan `read_plan` accepts below. */
+        "{\"category\":0,\"from\":\"old\",\"to\":\"new\",\"ledger\":{\"version\":1,\"notes\":["
+        "\"new\"]}}",
+        "{\"category\":\"A\",\"from\":0,\"to\":\"new\",\"ledger\":{\"version\":1,\"notes\":["
+        "\"new\"]}}",
+        "{\"category\":\"A\",\"from\":\"old\",\"to\":0,\"ledger\":{\"version\":1,\"notes\":["
+        "\"new\"]}}",
+        "{\"category\":\"A\",\"to\":\"new\",\"from\":\"old\",\"ledger\":{\"version\":1,\"notes\":["
+        "\"new\"]}}",
+        "{\"category\":\"A\",\"from\":\"old\",\"ledger\":{\"version\":1,\"notes\":[\"new\"]}}",
+        "{\"category\":\"A\",\"from\":\"old\",\"to\":\"new\"}",
+        "{\"category\":\"A\",\"from\":\"old\",\"to\":\"new\",\"ledger\":0}",
+        "{\"category\":\"A\",\"from\":\"old\",\"to\":\"new\",\"notes\":{\"version\":1,\"notes\":["
+        "\"new\"]}}",
+        "{\"category\":\"A\",\"from\":\"old\",\"to\":\"new\",\"ledger\":{\"version\":99,\"notes\":["
+        "\"new\"]}}"};
     for (size_t index = 0; index < sizeof rejected / sizeof rejected[0]; ++index)
-    {
-        struct json_reader *reader = nullptr;
-        struct rename_plan *rename = nullptr;
-        require(json_reader_create(rejected[index], strlen(rejected[index]), &reader) ==
-                    JSON_READER_CREATED,
-                "bad-plan reader");
-        require(rename_plan_read(reader, RENAME_KIND_NOTE, &rename) == RENAME_PLAN_INVALID &&
-                    rename == nullptr,
+        require(read_plan(rejected[index], RENAME_KIND_NOTE) == RENAME_PLAN_INVALID,
                 "bad plan never becomes a typed intent");
-        json_reader_destroy(reader);
+    require(
+        read_plan("{\"category\":\"A\",\"from\":\"old\",\"to\":\"new\",\"ledger\":{\"version\":1,"
+                  "\"notes\":[\"new\"]}}",
+                  RENAME_KIND_NOTE) == RENAME_PLAN_ACCEPTED,
+        "the plan the bad ones are measured against is itself read");
+}
+
+/* A note's name leaves room for its extension: 252 bytes are a name, 253 are not. */
+static void verify_long_plan_names(void)
+{
+    static const char head[] = "{\"category\":\"A\",\"from\":\"";
+    static const char tail[] = "\",\"to\":\"new\",\"ledger\":{\"version\":1,\"notes\":[\"new\"]}}";
+    char source[512];
+    for (size_t length = 252; length <= 253; ++length)
+    {
+        size_t used = sizeof head - 1;
+        memcpy(source, head, used);
+        memset(source + used, 'a', length);
+        used += length;
+        memcpy(source + used, tail, sizeof tail);
+        require(read_plan(source, RENAME_KIND_NOTE) ==
+                    (length == 252 ? RENAME_PLAN_ACCEPTED : RENAME_PLAN_INVALID),
+                "a plan's note name is held to the length a note name can have");
     }
+}
+
+#define CATEGORY_ROWS(second)                                                                      \
+    "{\"version\":1,\"categories\":[{\"name\":\"A\",\"color\":\"#123456\",\"expanded\":true},"     \
+    "{\"name\":\"" second "\",\"color\":\"#ABCDEF\",\"expanded\":false}]}"
+
+static void verify_bad_category_plans(void)
+{
+    static const char *const rejected[] = {
+        /* the ledger holds the text the reader still has (the key), so only the value's kind is
+           wrong */
+        "{\"from\":\"old\",\"to\":0,\"ledger\":" CATEGORY_ROWS("to") "}",
+        "{\"from\":0,\"to\":\"new\",\"ledger\":" CATEGORY_ROWS("new") "}",
+        "{\"to\":\"new\",\"from\":\"old\",\"ledger\":" CATEGORY_ROWS("new") "}",
+        "{\"from\":\"old\",\"to\":\"a/b\",\"ledger\":" CATEGORY_ROWS("a/b") "}",
+        "{\"from\":\"old\",\"to\":\"\",\"ledger\":" CATEGORY_ROWS("new") "}",
+        "{\"from\":\"old\",\"to\":\"new\",\"ledger\":" CATEGORY_ROWS("other") "}",
+        "{\"from\":\"old\",\"to\":\"new\",\"ledger\":" CATEGORY_ROWS("old") "}",
+        "{\"from\":\"old\",\"to\":\"new\",\"ledger\":0}",
+        "{\"from\":\"old\",\"to\":\"new\"}",
+        "{\"from\":\"old\",\"to\":\"new\",\"ledger\":" CATEGORY_ROWS("new") ",\"extra\":0}",
+        "{\"category\":\"A\",\"from\":\"old\",\"to\":\"new\",\"ledger\":" CATEGORY_ROWS("new") "}",
+        "{\"from\":\"old\",\"to\":\"new\",\"ledger\":{\"version\":1,\"notes\":[\"new\"]}}"};
+    for (size_t index = 0; index < sizeof rejected / sizeof rejected[0]; ++index)
+        require(read_plan(rejected[index], RENAME_KIND_CATEGORY) == RENAME_PLAN_INVALID,
+                "bad category plan never becomes a typed intent");
+    require(read_plan("{\"from\":\"old\",\"to\":\"new\",\"ledger\":" CATEGORY_ROWS("new") "}",
+                      RENAME_KIND_CATEGORY) == RENAME_PLAN_ACCEPTED,
+            "the category plan the bad ones are measured against is itself read");
 }
 
 static const char *const category_source =
@@ -507,6 +581,8 @@ void run_rename_tests(void)
     verify_journal();
     verify_favorite_equality();
     verify_bad_plans();
+    verify_long_plan_names();
+    verify_bad_category_plans();
     verify_bad_journals();
     verify_category_plan();
     verify_category_refusals();
