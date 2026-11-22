@@ -344,6 +344,55 @@ static void lookup_caret(void)
     lookup_done(lookup);
 }
 
+/* A selection that copies nothing: the answer is false, whatever the buffer holds. */
+static void expect_no_copy(struct lookup_case lookup, const struct note_text *_Nonnull text,
+                           size_t first, size_t last)
+{
+    struct text_buffer *buffer = nullptr;
+    require(text_buffer_create(&buffer) == TEXT_BUFFER_ACCEPTED, "copy buffer");
+    require(!markdown_source_lookup_copy(lookup.map, text,
+                                         (struct markdown_source_selection){first, last}, buffer),
+            "a selection no block holds copies nothing");
+    text_buffer_destroy(buffer);
+}
+
+/* The edges of the lookups: escaped pipes, old Mac line ends, selections that hold nothing, and a
+ * map asked about a text shorter than the one it was made from. */
+static void lookup_edges(void)
+{
+    struct lookup_case lookup = lookup_for("| a\\|b | c |\n|-|-|\n| 1\\|2 | 3 |\n");
+    expect_caret(lookup, first_of(lookup, 0) + 1, "a\\|b |");
+    expect_caret(lookup, first_of(lookup, 0) + 2, "c |"); /* the escaped pipe ends no cell */
+    expect_caret(lookup, first_of(lookup, 1) + 2, "3 |");
+    size_t past = first_of(lookup, 1) + 100;
+    require(markdown_source_lookup_caret(lookup.map, lookup.text, past) == markdown_source_none,
+            "an ordinal past the last paragraph has no caret");
+    expect_no_copy(lookup, lookup.text, past, past);
+    expect_no_copy(lookup, lookup.text, first_of(lookup, 1), first_of(lookup, 0));
+    /* The note was cut short after the map was made: nothing is read past its end. */
+    struct note_text *cut = nullptr;
+    require(note_text_create("| a", 3, &cut) == NOTE_TEXT_ACCEPTED, "shorter text");
+    require(markdown_source_lookup_caret(lookup.map, cut, first_of(lookup, 0) + 1) ==
+                markdown_source_none,
+            "a block that ends past the text has no caret");
+    expect_no_copy(lookup, cut, first_of(lookup, 0), first_of(lookup, 1));
+    note_text_destroy(cut);
+    lookup_done(lookup);
+    lookup = lookup_for("a\rb\r\rc\r");
+    expect_copy(lookup, 0, 1, "a\nb\n\nc"); /* lone CR line ends are written as LF too */
+    lookup_done(lookup);
+    lookup = lookup_for("x[^a] y[^b]\n\n[^a]: one\n[^b]: two\n");
+    size_t count = markdown_source_map_count(lookup.map);
+    size_t last = markdown_source_map_at(lookup.map, count - 1).first;
+    expect_copy(lookup, 0, last, "x[^a] y[^b]\n\n[^a]: one\n\n[^b]: two");
+    cut = nullptr;
+    require(note_text_create("x[^a] y[^b]\n", 12, &cut) == NOTE_TEXT_ACCEPTED, "body only");
+    expect_no_copy(lookup, cut, 0, last);    /* the footnotes' lines are past the shorter text */
+    expect_no_copy(lookup, cut, last, last); /* ...also when a footnote alone is selected */
+    note_text_destroy(cut);
+    lookup_done(lookup);
+}
+
 static void lookup_copy(void)
 {
     struct lookup_case lookup = lookup_for("a[^n]\n\n[^n]: x\n\nb\n");
@@ -429,6 +478,7 @@ void run_source_map_tests(void)
     review_cases();
     lookup_caret();
     lookup_copy();
+    lookup_edges();
     lookup_paragraphs();
     allocation();
     printf("source map tests passed\n");
