@@ -11828,7 +11828,7 @@ static void request_answer(HWND dialog, struct request_step step)
         Sleep(30); /* the two files must differ in their time of writing */
         outside_request(request_dialog.fixture, L"open-newer.json",
                         "{\"version\":1,\"action\":\"open\",\"category\":\"schedule\","
-                        "\"note\":\"two\"}");
+                        "\"note\":\"no such note\"}");
     }
     HWND button = GetDlgItem(dialog, step.identity);
     require(button != nullptr, "the surface has the button to answer with");
@@ -12028,8 +12028,10 @@ static void request_declined(struct native_fixture *_Nonnull fixture,
                 !request_file_holds(fixture, "two", "追記 🙂 追記") &&
                 !outside_request_waits(fixture, L"open-1.json"),
             "declining keeps the note, its unsaved text and the editing view; the request is gone");
-    /* Still unsaved. A request arrives; while the surface asks, an older and a newer one arrive.
-     * The first is declined; of the two that piled up only the newer is asked about and opened. */
+    /* Still unsaved. A request arrives; while the surface asks, an older one (for the note one)
+     * and a newer one (for a note that does not exist) arrive. The first is declined. Of the two
+     * that piled up only the newer is asked about: its note is not found, so nothing is opened and
+     * nothing is saved. Had the older one been handled too, the note one would be open now. */
     static const struct request_step piled[] = {{.identity = IDCANCEL, .pile = true},
                                                 {.identity = IDOK}};
     request_expect(window, fixture, piled, 2);
@@ -12038,8 +12040,11 @@ static void request_declined(struct native_fixture *_Nonnull fixture,
     require(strcmp(folio_state_document_name(fixture->state), "two") == 0 &&
                 !outside_request_waits(fixture, L"open-older.json") &&
                 !outside_request_waits(fixture, L"open-newer.json") &&
-                request_file_holds(fixture, "two", "追記 🙂 追記"),
+                !request_file_holds(fixture, "two", "追記 🙂 追記") &&
+                wcsstr(request_dialog.message, L"no such note") != nullptr,
             "of the requests that piled up, only the newest is handled; the older one is dropped");
+    require(outside_told(window, L"リンクのノートが見つかりません。何も開いていません。"),
+            "the newest request names a note that is not there, and the line says so");
 }
 
 static void request_prompt(struct native_fixture *_Nonnull fixture)
