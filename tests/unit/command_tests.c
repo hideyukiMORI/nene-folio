@@ -17,8 +17,62 @@ static void expect_command(const char *_Nonnull text, enum folio_command expecte
             description);
 }
 
+static bool listed_in(enum folio_command command, const enum folio_command *_Nonnull set,
+                      size_t count)
+{
+    for (size_t at = 0; at < count; ++at)
+        if (set[at] == command)
+            return true;
+    return false;
+}
+
+/* Which commands ask before they destroy something, and which open a surface for more input
+ * (the ellipsis in a menu): exactly these, over the whole catalog. */
+static void verify_command_kinds(void)
+{
+    static const enum folio_command destructive[] = {
+        FOLIO_COMMAND_DISCARD_EDITS, FOLIO_COMMAND_TRASH_NOTE, FOLIO_COMMAND_DELETE_CATEGORY,
+        FOLIO_COMMAND_FORCE_QUIT};
+    static const enum folio_command asking[] = {
+        FOLIO_COMMAND_IMPORT,      FOLIO_COMMAND_EXPORT_NOTE,  FOLIO_COMMAND_EXPORT_CATEGORY,
+        FOLIO_COMMAND_EXPORT_ALL,  FOLIO_COMMAND_SAVE_AS,      FOLIO_COMMAND_RENAME,
+        FOLIO_COMMAND_REPLACE,     FOLIO_COMMAND_HISTORY,      FOLIO_COMMAND_EDIT_TAGS,
+        FOLIO_COMMAND_FILTER_TAGS, FOLIO_COMMAND_MANAGE_TAGS,  FOLIO_COMMAND_DISCOVER_NOTES,
+        FOLIO_COMMAND_MOVE_NOTE,   FOLIO_COMMAND_NEW_CATEGORY, FOLIO_COMMAND_RENAME_CATEGORY};
+    for (size_t index = 0; index < folio_command_count(); ++index)
+    {
+        enum folio_command command = folio_command_at(index);
+        require(
+            folio_command_destructive(command) ==
+                    listed_in(command, destructive, sizeof destructive / sizeof destructive[0]) &&
+                folio_command_needs_input(command) ==
+                    listed_in(command, asking, sizeof asking / sizeof asking[0]),
+            "a command destroys or asks for more exactly when the catalog says so");
+    }
+}
+
+/* Any ASCII white space around a command is dropped; `%s` is the substitute command only when no
+ * letter or digit follows it. */
+static void verify_command_edges(void)
+{
+    expect_command("  w\r\n", FOLIO_COMMAND_SAVE, "spaces, a carriage return and a line feed");
+    expect_command("\fw\v", FOLIO_COMMAND_SAVE, "a form feed and a vertical tab");
+    expect_command("\tw\t", FOLIO_COMMAND_SAVE, "tabs");
+    expect_command("%s/a/b/", FOLIO_COMMAND_SUBSTITUTE, "a delimiter after %s");
+    static const char *const refused[] = {"%sx/a/b/", "%s9/a/b/", "%sZ", "%", "s/a/b/", "trash x"};
+    for (size_t index = 0; index < sizeof refused / sizeof refused[0]; ++index)
+    {
+        enum folio_command command = FOLIO_COMMAND_HELP;
+        size_t argument = 0;
+        require(!folio_command_parse(refused[index], strlen(refused[index]), &command, &argument),
+                refused[index]);
+    }
+}
+
 static void verify_aliases(void)
 {
+    verify_command_kinds();
+    verify_command_edges();
     expect_command("w", FOLIO_COMMAND_SAVE, "w");
     expect_command(":write", FOLIO_COMMAND_SAVE, ":write");
     expect_command(" q ", FOLIO_COMMAND_QUIT, "trim q");
