@@ -161,6 +161,47 @@ static void recognition(void)
                 NOTE_METADATA_UNSUPPORTED);
 }
 
+/* More shapes of a header, each as YAML reads it: block scalar indicators, comments after a
+ * value, tabs as separation, the three line endings, directives and tags, and what may
+ * follow a closed value. */
+static void metadata_shapes(void)
+{
+    static const char *const supported[] = {
+        "---\ntitle: |2-\n  x\ntags: []\n---",
+        "---\ntitle: | # comment\n  x\ntags: []\n---",
+        "---\ntags: [a]\t# tab comment\n---",
+        "---\ntags:\t[a]\n---",
+        "---\ntitle: x #c\ntags: []\n---",
+        "---\ntitle: x#c\ntags: []\n---",
+        "---\r\ntitle: x\r\ntags: [a]\r\n---\r\nbody",
+        "---\rtags: [a]\r---\rbody",
+        "---\ntags: [a b]\n---",
+        "---\nkey:\n---",
+        "---\ntags:\n---",
+        "---\ntags: # none\n---",
+        "---\ntags:\n  - a # c\n  - b\n---",
+        "---\ntags: [a , b]\n---",
+        "---\ntags: [ ]\n---",
+        "---\nkey : v\n---",
+        "---\nurl: http://x\n---",
+        "---\ntitle: \"a\" # c\ntags: []\n---",
+    };
+    static const char *const unsupported[] = {
+        "---\n%YAML 1.2\n---", "---\n!tag x\n---",  "---\n&a b\n---",
+        "---\n-x: y\n---",     "---\n1key: v\n---", "---\ntags: [[a]]\n---",
+    };
+    static const char *const malformed[] = {
+        "---\ntitle: |22\n  x\n---", "---\ntitle: |-+\n  x\n---", "---\ntitle: |x\n  x\n---",
+        "---\ntags: [a]]\n---",      "---\ntags: [a] x\n---",     "---\ntitle: \"a\" b\n---",
+    };
+    for (size_t index = 0; index < sizeof supported / sizeof supported[0]; ++index)
+        read_status(supported[index], NOTE_METADATA_SUPPORTED);
+    for (size_t index = 0; index < sizeof unsupported / sizeof unsupported[0]; ++index)
+        read_status(unsupported[index], NOTE_METADATA_UNSUPPORTED);
+    for (size_t index = 0; index < sizeof malformed / sizeof malformed[0]; ++index)
+        read_status(malformed[index], NOTE_METADATA_MALFORMED);
+}
+
 static void scalar_types(void)
 {
     static const char *const numeric[] = {"null", "Null", "NULL",   "~",     "true", "False",
@@ -722,6 +763,7 @@ void run_tag_tests(void)
     names();
     sets();
     recognition();
+    metadata_shapes();
     scalar_types();
     metadata_edges();
     set_boundaries();
