@@ -125,6 +125,41 @@ static void verify_emphasis(void)
     expect_body("a\rb", "\\pard\\sa80\\sl240\\slmult1\\cf1 a b\\par\n");
 }
 
+/* Edges of the inline grammar, each as CommonMark defines it . */
+static void verify_inline_edges(void)
+{
+    /* A delimiter run next to punctuation opens only after a space or more punctuation. */
+    expect_body("a.*(b)*", "\\pard\\sa80\\sl240\\slmult1\\cf1 a.{\\i (b)}\\par\n");
+    expect_body("a*(b)*", "\\pard\\sa80\\sl240\\slmult1\\cf1 a*(b)*\\par\n");
+    expect_body("*(a)*", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\i (a)}\\par\n");
+    /* The inner run of the other width stays text. */
+    expect_body("**a*b**", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\b a*b}\\par\n");
+    expect_body("*a**b*", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\i a**b}\\par\n");
+    /* An even number of backslashes leaves the delimiter alone; an odd number escapes it. */
+    expect_body("\\\\*a*", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\\\{\\i a}\\par\n");
+    expect_body("\\\\\\*a*", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\\\*a*\\par\n");
+    /* A destination in angle brackets may hold a space, never another `<`. */
+    expect_body("[a](<b c>)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0}\\par\n");
+    expect_body("[a](<b<c>)", "\\pard\\sa80\\sl240\\slmult1\\cf1 [a](<b<c>)\\par\n");
+    /* A title is quoted or parenthesized, closed, and the last thing before the `)`. */
+    expect_body("[a](b \"t\")", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0}\\par\n");
+    expect_body("[a](b 't')", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0}\\par\n");
+    expect_body("[a](b (t))", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0}\\par\n");
+    expect_body("[a](b \"t\\\"u\")", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0}\\par\n");
+    expect_body("[a](b \"t\" x)", "\\pard\\sa80\\sl240\\slmult1\\cf1 [a](b \"t\" x)\\par\n");
+    expect_body("[a](b \"t)", "\\pard\\sa80\\sl240\\slmult1\\cf1 [a](b \"t)\\par\n");
+    expect_body("[a](b  )", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0}\\par\n");
+    expect_body("[a]( b)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0}\\par\n");
+    /* An escaped `)` does not close the destination. */
+    expect_body("[a](b\\)", "\\pard\\sa80\\sl240\\slmult1\\cf1 [a](b)\\par\n");
+    /* A code span loses one space at each end only when it has one at both and is not all spaces.
+     */
+    expect_body("`` ` ``", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\f1\\fs20\\cf4 `}\\par\n");
+    expect_body("` a `", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\f1\\fs20\\cf4 a}\\par\n");
+    expect_body("` a`", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\f1\\fs20\\cf4  a}\\par\n");
+    expect_body("`  `", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\f1\\fs20\\cf4   }\\par\n");
+}
+
 /* コードブロックの見出し行に置くコピーの操作（ADR0098）。slot はノート内の通し番号。 */
 #define CODE_OPEN "{\\f1\\fs20\\cf5\\highlight6"
 #define CODE_HEAD "\\pard\\li180\\ri180\\sb120\\sa80\\sl240\\slmult1 "
@@ -2343,6 +2378,7 @@ void run_markdown_tests(void)
     verify_unicode();
     verify_headings();
     verify_emphasis();
+    verify_inline_edges();
     verify_code();
     verify_lists_quotes_links();
     verify_note_text();
