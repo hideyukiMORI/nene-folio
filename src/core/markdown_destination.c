@@ -13,6 +13,14 @@ static bool space(char character)
 {
     return character == ' ' || character == '\t' || character == '\n' || character == '\r';
 }
+/* cursor の逆斜線が、次の 1 文字を「終わりの印として読まない」ものにするか。山括弧で囲まない
+ * 宛先では、空白は逆斜線で打ち消せない（CommonMark: 打ち消せるのは ASCII の記号だけで、宛先は
+ * 空白を含めない。#1158）。 */
+static bool escapes_next(struct markdown_view view, size_t cursor, size_t end, bool angle)
+{
+    return markdown_view_at(view, cursor) == '\\' && cursor + 1 < end &&
+           (angle || !space(markdown_view_at(view, cursor + 1)));
+}
 static size_t destination_end(struct markdown_view view, size_t start, size_t end)
 {
     bool angle = markdown_view_at(view, start) == '<';
@@ -20,7 +28,7 @@ static size_t destination_end(struct markdown_view view, size_t start, size_t en
     for (; cursor < end; ++cursor)
     {
         char character = markdown_view_at(view, cursor);
-        if (character == '\\' && cursor + 1 < end)
+        if (escapes_next(view, cursor, end, angle))
         {
             ++cursor;
             continue;
