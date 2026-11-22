@@ -229,10 +229,10 @@ static void line_endings(void)
     markdown_rtf_destroy(rtf);
 }
 
-static void allocation(void)
+static void allocation_of(const char *_Nonnull source)
 {
     struct note_text *text = nullptr;
-    require(note_text_create(every_block, strlen(every_block), &text) == NOTE_TEXT_ACCEPTED,
+    require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED,
             "allocation source");
     size_t calls = 0;
     for (size_t nth = 0; nth <= calls; ++nth)
@@ -251,6 +251,13 @@ static void allocation(void)
         markdown_rtf_destroy(rtf);
     }
     note_text_destroy(text);
+}
+
+/* Every block's kind, then an indented code block (#1192), which no fence opens. */
+static void allocation(void)
+{
+    allocation_of(every_block);
+    allocation_of("text\n\n    a\n\n    b\n");
 }
 
 /* #1012: the edit caret for a paragraph ordinal, and the Markdown a selection copies. */
@@ -470,8 +477,56 @@ static void lookup_paragraphs(void)
     lookup_done(lookup);
 }
 
+/* #1192: the lines of an indented code block are entries of one group, like a fence's lines
+ * without its opening and closing lines. The edit caret is where a line's code starts (after
+ * the four columns), and a copy takes the block's lines whole. */
+static void indented_code(void)
+{
+    static const char source[] = "text\n\n    a\n\n      b\nafter\n";
+    const struct expected_block blocks[] = {{MARKDOWN_SOURCE_PARAGRAPH, "text", "text", 1},
+                                            {MARKDOWN_SOURCE_CODE_LINE, "    a", "a\n", 1},
+                                            {MARKDOWN_SOURCE_CODE_LINE, "", "\n      b", 1},
+                                            {MARKDOWN_SOURCE_CODE_LINE, "      b", "  b\n", 1},
+                                            {MARKDOWN_SOURCE_PARAGRAPH, "after", "after", 1}};
+    expect_blocks(source, blocks, 5);
+    struct lookup_case lookup = lookup_for(source);
+    size_t group = markdown_source_map_at(lookup.map, 1).group;
+    require(group != 0 && markdown_source_map_at(lookup.map, 2).group == group &&
+                markdown_source_map_at(lookup.map, 3).group == group &&
+                markdown_source_map_at(lookup.map, 0).group == 0 &&
+                markdown_source_map_at(lookup.map, 4).group == 0,
+            "the indented code's lines are one group");
+    expect_caret(lookup, first_of(lookup, 1), "a\n");
+    expect_caret(lookup, first_of(lookup, 3), "  b\n");
+    expect_copy(lookup, first_of(lookup, 2), first_of(lookup, 2), "    a\n\n      b");
+    expect_copy(lookup, first_of(lookup, 0), first_of(lookup, 1), "text\n\n    a\n\n      b");
+    expect_paragraphs(lookup, "    a", "a", (struct markdown_source_selection){1, 1});
+    expect_paragraphs(lookup, "      b", "b", (struct markdown_source_selection){3, 3});
+    lookup_done(lookup);
+    /* In a list item whose marker waits: the marker's own line and the code line both come
+     * from the item's line. Two blocks of indented code are two groups. */
+    static const char item[] = "-     code\n\n  text\n\n      more\n";
+    const struct expected_block item_blocks[] = {
+        {MARKDOWN_SOURCE_CODE_LINE, "-     code", "code", 1},
+        {MARKDOWN_SOURCE_CODE_LINE, "-     code", "code", 1},
+        {MARKDOWN_SOURCE_PARAGRAPH, "  text", "text", 1},
+        {MARKDOWN_SOURCE_CODE_LINE, "      more", "more", 1}};
+    expect_blocks(item, item_blocks, 4);
+    lookup = lookup_for(item);
+    require(markdown_source_map_at(lookup.map, 0).group ==
+                    markdown_source_map_at(lookup.map, 1).group &&
+                markdown_source_map_at(lookup.map, 3).group !=
+                    markdown_source_map_at(lookup.map, 1).group &&
+                markdown_source_map_at(lookup.map, 3).group != 0,
+            "each indented code block is a group of its own");
+    expect_caret(lookup, first_of(lookup, 0), "code");
+    expect_copy(lookup, first_of(lookup, 3), first_of(lookup, 3), "      more");
+    lookup_done(lookup);
+}
+
 void run_source_map_tests(void)
 {
+    indented_code();
     counting();
     every_kind();
     line_endings();
