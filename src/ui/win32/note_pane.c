@@ -10,6 +10,7 @@
 #include "note_pane_headings.h"
 #include "note_pane_images.h"
 #include "note_pane_links.h"
+#include "note_pane_ole.h"
 #include "note_pane_table.h"
 #include "pane_mode.h"
 #include "pane_zoom_command.h"
@@ -570,13 +571,20 @@ static bool pane_wheel(struct note_pane *_Nonnull pane, UINT message, WPARAM key
     return true;
 }
 
+/* 外から来る文字（貼り付けと、OLE の投下）を、いま本文へ入れてよいか。判定はここだけ（ARC-001）:
+ * 準備中・変換の途中・着色の錠・欄か主窓が入力を止めているあいだ・読み取り専用は断る。 */
+static bool text_open(const struct note_pane *_Nonnull pane)
+{
+    return pane->handle != nullptr && pane->readiness == NOTE_PANE_READINESS_READY &&
+           !pane->composing && !pane->recolor_undo_pending && !pane->recolor_input_locked &&
+           IsWindowEnabled(pane->handle) && IsWindowEnabled(GetAncestor(pane->handle, GA_ROOT)) &&
+           (GetWindowLongPtrW(pane->handle, GWL_STYLE) & ES_READONLY) == 0;
+}
+
 /* Keep native replacement/Undo, but never import the clipboard's character or paragraph format. */
 static void paste_text(struct note_pane *_Nonnull pane)
 {
-    if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing ||
-        pane->recolor_undo_pending || pane->recolor_input_locked ||
-        !IsWindowEnabled(pane->handle) || !IsWindowEnabled(GetAncestor(pane->handle, GA_ROOT)) ||
-        (GetWindowLongPtrW(pane->handle, GWL_STYLE) & ES_READONLY) != 0)
+    if (!text_open(pane))
         return;
     cancel_scroll(pane);
     SendMessageW(pane->handle, EM_PASTESPECIAL, CF_UNICODETEXT, 0);
@@ -661,8 +669,10 @@ static void open_text_menu(struct note_pane *_Nonnull pane, LPARAM position)
     SendMessageW(parent, folio_message_open_menu, 0, (LPARAM)&request);
 }
 
-/* #1062 / ADR0120: 落とされたファイルは、閲覧でも編集でもここで受けて主窓へ渡す（RichEdit には
- * 渡さない）。位置は、落とした点の下の文字。取り込むかどうかは主窓と application が決める。 */
+/* #1062 / ADR0120: WM_DROPFILES で落とされたファイルは、ここで受けて主窓へ渡す（RichEdit には
+ * 渡さない）。位置は、落とした点の下の文字。取り込むかどうかは主窓と application が決める。
+ * #1195: 本物のドラッグがこの形で来るのは閲覧表示。編集表示では RichEdit の OLE の投下先が受け、
+ * note_pane_ole が同じ主窓の道へ渡す。 */
 static void files_dropped(struct note_pane *_Nonnull pane, HDROP _Nonnull drop)
 {
     POINT point = {0};
@@ -963,6 +973,18 @@ static void decorate_after(struct note_pane *_Nonnull pane, UINT message, WPARAM
         note_pane_code_button_input(pane->code_button, message, wparam, lparam);
 }
 
+/* #1195: OLE のコールバック（prepare_drop）を持つ RichEdit は、右ボタンを離したときにコールバックへ
+ * メニューを尋ね、WM_CONTEXTMENU を作らせなくなる（2026-11-23 の実験）。離した知らせだけは
+ * RichEdit へ渡さず、窓の既定の処理へ回して、コールバックが無いときと同じに WM_CONTEXTMENU を
+ * 作らせる（メニューは pane_input が出す）。 */
+static LRESULT pane_forward(struct note_pane *_Nonnull pane, UINT message, WPARAM wparam,
+                            LPARAM lparam)
+{
+    if (message == WM_RBUTTONUP)
+        return DefWindowProcW(pane->handle, message, wparam, lparam);
+    return CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
+}
+
 static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
     struct note_pane *_Nullable pane = (struct note_pane *)GetWindowLongPtrW(window, GWLP_USERDATA);
@@ -995,7 +1017,7 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     {
         pane->composing = false;
     }
-    LRESULT result = CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
+    LRESULT result = pane_forward(pane, message, wparam, lparam);
     note_pane_links_finish_input(pane->links, message);
     decorate_after(pane, message, wparam, lparam);
     ui_pointer_after(window, message);
@@ -1129,6 +1151,20 @@ static bool extend_background(const struct note_pane *_Nonnull pane)
     return (styles & SES_EXTENDBACKCOLOR) != 0;
 }
 
+/* #1195 / ADR0120: 編集できる RichEdit は OLE の投下先を自分で登録する。コールバックを渡して、
+ * 落とされたファイルを物として埋め込ませず、主窓の取り込みの道（files_dropped と同じ行き先）へ
+ * 回させる。RichEdit が参照を持つので、ここの参照は放す（欄の窓が壊れるときに RichEdit が放す）。
+ */
+static bool prepare_drop(struct note_pane *_Nonnull pane)
+{
+    IRichEditOleCallback *_Nullable callback = nullptr;
+    if (!note_pane_ole_create(pane->handle, &callback) || callback == nullptr)
+        return false;
+    LRESULT taken = SendMessageW(pane->handle, EM_SETOLECALLBACK, 0, (LPARAM)callback);
+    callback->lpVtbl->Release(callback);
+    return taken != 0;
+}
+
 enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF background, COLORREF text,
                                         struct note_pane *_Nullable *_Nonnull out)
 {
@@ -1152,7 +1188,7 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         CreateWindowExW(WS_EX_ACCEPTFILES, class_name, L"", style, 0, 0, 0, 0, parent,
                         (HMENU)(INT_PTR)note_pane_control_id, GetModuleHandleW(nullptr), nullptr);
     if (pane->handle == nullptr || !subclass_pane(pane) || !prepare_navigation(pane) ||
-        !extend_background(pane) || !prepare_scroll(pane))
+        !extend_background(pane) || !prepare_scroll(pane) || !prepare_drop(pane))
     {
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
@@ -1189,6 +1225,13 @@ HWND _Nullable note_pane_handle(const struct note_pane *_Nonnull pane)
 bool note_pane_composing(const struct note_pane *_Nonnull pane)
 {
     return pane->composing;
+}
+
+bool note_pane_text_open(HWND _Nonnull window)
+{
+    const struct note_pane *_Nullable pane =
+        (const struct note_pane *)GetWindowLongPtrW(window, GWLP_USERDATA);
+    return pane != nullptr && pane->handle == window && text_open(pane);
 }
 
 bool note_pane_translate(const struct note_pane *_Nonnull pane, const MSG *_Nonnull message,
