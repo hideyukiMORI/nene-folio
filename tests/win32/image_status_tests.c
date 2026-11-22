@@ -11807,6 +11807,8 @@ struct request_step
     /* The user was typing when the surface appeared: a letter, a space and Enter reach it at once.
      * They must not answer it. A second later Enter does (the real key, through the dialog). */
     bool typing;
+    /* The surface is saved under this name beside the test, for looking at. Null: no picture. */
+    const char *_Nullable picture;
 };
 static struct
 {
@@ -11851,7 +11853,7 @@ static void request_answer(HWND dialog, struct request_step step)
 }
 
 /* The surface as it is painted, for looking at (request-prompt.bmp beside the test). */
-static void request_pixels(HWND dialog)
+static void request_pixels(HWND dialog, const char *_Nonnull path)
 {
     RECT client;
     GetClientRect(dialog, &client);
@@ -11861,7 +11863,7 @@ static void request_pixels(HWND dialog)
     HGDIOBJ old = SelectObject(dc, bitmap);
     require(PrintWindow(dialog, dc, PW_CLIENTONLY), "render the request surface");
     SelectObject(dc, old);
-    save_bitmap(dc, bitmap, client, "request-prompt.bmp");
+    save_bitmap(dc, bitmap, client, path);
     DeleteObject(bitmap);
     DeleteDC(dc);
     ReleaseDC(dialog, source);
@@ -11903,9 +11905,9 @@ static BOOL CALLBACK request_found(HWND dialog, LPARAM parameter)
     GetWindowRect(keep, &keep_bounds);
     require(keep_bounds.top > save_bounds.bottom && keep_bounds.left == save_bounds.left,
             "the choices are stacked, one under the other");
-    if (request_dialog.answered == 0 && request_dialog.typed == 0)
-        request_pixels(dialog);
     struct request_step step = request_dialog.steps[request_dialog.answered];
+    if (step.picture != nullptr && request_dialog.typed == 0)
+        request_pixels(dialog, step.picture);
     if (step.typing && !request_typed(dialog))
         return FALSE; /* still inside the second in which keys are not taken */
     ++request_dialog.answered;
@@ -12004,7 +12006,8 @@ static void request_saved(struct native_fixture *_Nonnull fixture,
             "an edited note without unsaved changes is left without a question");
     request_edit(window, fixture);
     append_switch_text(window);
-    static const struct request_step save[] = {{.identity = IDOK, .typing = true}};
+    static const struct request_step save[] = {
+        {.identity = IDOK, .typing = true, .picture = "request-prompt.bmp"}};
     request_expect(window, fixture, save, 1);
     request_arrives(fixture, window, request_one);
     request_settled(window, 1);
@@ -12115,6 +12118,46 @@ static void request_forget(struct native_fixture *_Nonnull fixture, const wchar_
     note_ledger_destroy(ledger);
 }
 
+/* The surface in the other languages and themes, declined each time: pictures to look at, and the
+ * check that it can be built and answered in each. The note stays as it is. */
+static void request_pictured(struct native_fixture *_Nonnull fixture,
+                             struct folio_window *_Nonnull window)
+{
+    static const struct
+    {
+        enum folio_language language;
+        enum folio_theme_choice theme;
+        struct request_step step;
+    } looks[] = {
+        {FOLIO_LANGUAGE_JA,
+         FOLIO_THEME_CHOICE_LIGHT,
+         {.identity = IDCANCEL, .picture = "request-prompt-ja-light.bmp"}},
+        {FOLIO_LANGUAGE_EN,
+         FOLIO_THEME_CHOICE_LIGHT,
+         {.identity = IDCANCEL, .picture = "request-prompt-en-light.bmp"}},
+        {FOLIO_LANGUAGE_ZH_HANS,
+         FOLIO_THEME_CHOICE_DARK,
+         {.identity = IDCANCEL, .picture = "request-prompt-zh-dark.bmp"}},
+    };
+    request_edit(window, fixture);
+    append_switch_text(window);
+    for (size_t at = 0; at < sizeof looks / sizeof looks[0]; ++at)
+    {
+        require(folio_state_set_language(fixture->state, looks[at].language) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, looks[at].theme) == FOLIO_STATE_READY,
+                "language and theme for the picture");
+        pump(window);
+        request_expect(window, fixture, &looks[at].step, 1);
+        request_arrives(fixture, window, request_one);
+        request_settled(window, 1);
+        require(request_dialog.message[0] != L'\0' && request_dialog.keep_hint[0] != L'\0' &&
+                    outside_shows(window, L"追記"),
+                "the surface is built and declined in this language and theme");
+    }
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "back to the language the other steps expect");
+}
+
 static void request_prompt(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
@@ -12139,6 +12182,9 @@ static void request_prompt(struct native_fixture *_Nonnull fixture)
     puts("request prompt: decline, and requests that pile up");
     fflush(stdout);
     request_declined(fixture, window);
+    puts("request prompt: the other languages and themes");
+    fflush(stdout);
+    request_pictured(fixture, window);
     folio_window_destroy(window);
     request_forget(fixture, L"1_one.md", "1_one");
     request_forget(fixture, L"1_two.md", "1_two");
