@@ -138,6 +138,7 @@ static bool code_copy_case;
 static bool footnote_jump_case;
 static bool definition_list_case;
 static bool open_link_case;       /* #1071: a link opens a note and selects a place */
+static bool request_prompt_case;  /* #1152: a request file while editing with unsaved text */
 static bool outside_refresh_case; /* #1070: the data folder changed while the window was away */
 static bool outline_case;
 static bool outline_96; /* #975: the same case in 96 DPI windows, as on CI */
@@ -11794,6 +11795,355 @@ static void outside_discarded(struct native_fixture *_Nonnull fixture,
     expect_notice(window, L"ファイルを読み直せなかったため、最後に読んだ本文に戻しました。");
 }
 
+/* #1152 / ADR0119: a request file arrives while a named note is edited with unsaved changes. The
+ * window asks on a modal surface with three stacked choices. An observer on a thread timer finds
+ * the surface, checks it, and answers it; the request files are the ones another program writes. */
+constexpr size_t request_step_limit = 4;
+struct request_step
+{
+    int identity; /* the button to answer with: IDOK, 3 (keep) or IDCANCEL */
+    bool by_key;  /* give that button the keyboard and press Enter, instead of clicking it */
+    bool pile;    /* before answering, two more requests arrive: an older and a newer one */
+    /* The user was typing when the surface appeared: a letter, a space and Enter reach it at once.
+     * They must not answer it. A second later Enter does (the real key, through the dialog). */
+    bool typing;
+};
+static struct
+{
+    HWND root;
+    UINT_PTR timer;
+    const struct native_fixture *_Nullable fixture;
+    struct request_step steps[request_step_limit];
+    size_t count;
+    size_t answered;
+    unsigned ticks;
+    unsigned typed; /* observer ticks since the keys of a typing step were posted; 0: not yet */
+    wchar_t message[512];
+    wchar_t keep_hint[512];
+} request_dialog;
+
+static void request_answer(HWND dialog, struct request_step step)
+{
+    if (step.pile)
+    {
+        outside_request(request_dialog.fixture, L"open-older.json",
+                        "{\"version\":1,\"action\":\"open\",\"category\":\"schedule\","
+                        "\"note\":\"one\"}");
+        Sleep(30); /* the two files must differ in their time of writing */
+        outside_request(request_dialog.fixture, L"open-newer.json",
+                        "{\"version\":1,\"action\":\"open\",\"category\":\"schedule\","
+                        "\"note\":\"no such note\"}");
+    }
+    HWND button = GetDlgItem(dialog, step.identity);
+    require(button != nullptr, "the surface has the button to answer with");
+    if (!step.by_key)
+    {
+        SendMessageW(button, BM_CLICK, 0, 0);
+        return;
+    }
+    if (step.identity == IDCANCEL)
+    {
+        SendMessageW(dialog, WM_COMMAND, IDCANCEL, 0); /* what Esc sends to a dialog */
+        return;
+    }
+    SetFocus(button);
+    SendMessageW(dialog, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), 0); /* what Enter sends */
+}
+
+/* The surface as it is painted, for looking at (request-prompt.bmp beside the test). */
+static void request_pixels(HWND dialog)
+{
+    RECT client;
+    GetClientRect(dialog, &client);
+    HDC source = GetDC(dialog);
+    HDC dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(dialog, dc, PW_CLIENTONLY), "render the request surface");
+    SelectObject(dc, old);
+    save_bitmap(dc, bitmap, client, "request-prompt.bmp");
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(dialog, source);
+}
+
+/* The keys a typing user would still be sending. True once a second has passed since. */
+static bool request_typed(HWND dialog)
+{
+    if (request_dialog.typed == 0)
+    {
+        HWND focus = GetFocus();
+        require(focus == GetDlgItem(dialog, IDOK), "the keys go to the surface's first button");
+        PostMessageW(focus, WM_CHAR, L's', 0);
+        PostMessageW(focus, WM_KEYDOWN, VK_SPACE, 0);
+        PostMessageW(focus, WM_KEYUP, VK_SPACE, 0);
+        PostMessageW(focus, WM_KEYDOWN, VK_RETURN, 0);
+        PostMessageW(focus, WM_KEYDOWN, VK_ESCAPE, 0);
+    }
+    return ++request_dialog.typed > 22; /* 22 ticks of 50 ms: past the 700 ms the surface waits */
+}
+
+static BOOL CALLBACK request_found(HWND dialog, LPARAM parameter)
+{
+    wchar_t kind[32];
+    if (GetAncestor(dialog, GA_ROOTOWNER) != (HWND)parameter || !IsWindowVisible(dialog) ||
+        GetClassNameW(dialog, kind, 32) == 0 || wcscmp(kind, L"#32770") != 0)
+        return TRUE;
+    require(request_dialog.answered < request_dialog.count, "no surface beyond the expected ones");
+    HWND message = GetWindow(dialog, GW_CHILD);
+    HWND keep = GetDlgItem(dialog, 3);
+    require(message != nullptr && GetDlgItem(dialog, IDOK) != nullptr && keep != nullptr &&
+                GetDlgItem(dialog, IDCANCEL) != nullptr && GetFocus() == GetDlgItem(dialog, IDOK),
+            "three choices, with the keyboard on saving");
+    GetWindowTextW(message, request_dialog.message, 512);
+    GetWindowTextW(GetWindow(keep, GW_HWNDNEXT), request_dialog.keep_hint, 512);
+    RECT save_bounds;
+    RECT keep_bounds;
+    GetWindowRect(GetDlgItem(dialog, IDOK), &save_bounds);
+    GetWindowRect(keep, &keep_bounds);
+    require(keep_bounds.top > save_bounds.bottom && keep_bounds.left == save_bounds.left,
+            "the choices are stacked, one under the other");
+    if (request_dialog.answered == 0 && request_dialog.typed == 0)
+        request_pixels(dialog);
+    struct request_step step = request_dialog.steps[request_dialog.answered];
+    if (step.typing && !request_typed(dialog))
+        return FALSE; /* still inside the second in which keys are not taken */
+    ++request_dialog.answered;
+    if (step.typing)
+        PostMessageW(GetFocus(), WM_KEYDOWN, VK_RETURN, 0);
+    else
+        request_answer(dialog, step);
+    return FALSE;
+}
+
+static void CALLBACK request_observe(HWND window, UINT message, UINT_PTR timer, DWORD tick_millis)
+{
+    (void)window;
+    (void)message;
+    (void)tick_millis;
+    if (request_dialog.timer == 0 || timer != request_dialog.timer)
+        return;
+    require(++request_dialog.ticks <= 200,
+            "the request surface observer stays within its deadline");
+    EnumThreadWindows(GetCurrentThreadId(), request_found, (LPARAM)request_dialog.root);
+}
+
+static void request_expect(struct folio_window *_Nonnull window,
+                           const struct native_fixture *_Nonnull fixture,
+                           const struct request_step *_Nonnull steps, size_t count)
+{
+    request_dialog.root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    request_dialog.fixture = fixture;
+    request_dialog.count = count;
+    request_dialog.answered = 0;
+    request_dialog.ticks = 0;
+    request_dialog.typed = 0;
+    request_dialog.message[0] = L'\0';
+    request_dialog.keep_hint[0] = L'\0';
+    for (size_t at = 0; at < count; ++at)
+        request_dialog.steps[at] = steps[at];
+    request_dialog.timer = SetTimer(nullptr, 0, 50, request_observe);
+    require(request_dialog.timer != 0, "arm the request surface observer");
+}
+
+static void request_settled(struct folio_window *_Nonnull window, size_t answered)
+{
+    for (unsigned turn = 0; turn < 8; ++turn)
+        outside_idle(window);
+    require(KillTimer(nullptr, request_dialog.timer), "stop the request surface observer");
+    request_dialog.timer = 0;
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(request_dialog.answered == answered && IsWindowEnabled(root) &&
+                !folio_window_idle_work_ready(window),
+            "the expected surfaces were answered and the window is at rest");
+}
+
+/* Writes a request for a note of the test category and lets the window notice it. */
+static void request_arrives(struct native_fixture *_Nonnull fixture,
+                            struct folio_window *_Nonnull window, const char *_Nonnull json)
+{
+    outside_request(fixture, L"open-1.json", json);
+    folio_window_data_changed(window);
+    require(outside_gathered(window), "the request is noticed");
+}
+
+static bool request_file_holds(struct native_fixture *_Nonnull fixture, const char *_Nonnull note,
+                               const char *_Nonnull text)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *file = nullptr;
+    bool held = disk.read_note(disk.adapter, "schedule", note, &file) == PERSISTENCE_LOADED &&
+                file != nullptr && strstr(note_text_bytes(file), text) != nullptr;
+    note_text_destroy(file);
+    return held;
+}
+
+static void request_edit(struct folio_window *_Nonnull window,
+                         const struct native_fixture *_Nonnull fixture)
+{
+    if (folio_state_pane_mode(fixture->state) != PANE_MODE_EDIT)
+        action(window, ACCESSIBLE_EDIT);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT, "the note is being edited");
+}
+
+static const char request_one[] =
+    "{\"version\":1,\"action\":\"open\",\"category\":\"schedule\",\"note\":\"one\"}";
+static const char request_two[] =
+    "{\"version\":1,\"action\":\"open\",\"category\":\"schedule\",\"note\":\"two\"}";
+
+/* Saving and opening, and no question at all when nothing is unsaved. */
+static void request_saved(struct native_fixture *_Nonnull fixture,
+                          struct folio_window *_Nonnull window)
+{
+    request_edit(window, fixture);
+    static const struct request_step none[1] = {{.identity = IDOK}};
+    request_expect(window, fixture, none, 0);
+    request_arrives(fixture, window, request_two);
+    request_settled(window, 0);
+    require(strcmp(folio_state_document_name(fixture->state), "two") == 0,
+            "an edited note without unsaved changes is left without a question");
+    request_edit(window, fixture);
+    append_switch_text(window);
+    static const struct request_step save[] = {{.identity = IDOK, .typing = true}};
+    request_expect(window, fixture, save, 1);
+    request_arrives(fixture, window, request_one);
+    request_settled(window, 1);
+    require(strcmp(folio_state_document_name(fixture->state), "one") == 0 &&
+                request_file_holds(fixture, "two", "追記") &&
+                !outside_request_waits(fixture, L"open-1.json"),
+            "saving and opening writes the edited note, then opens the requested one");
+    require(request_dialog.typed > 22,
+            "the keys typed as the surface appeared did not answer it; Enter did, a second later");
+    require(wcsstr(request_dialog.message, L"one") != nullptr &&
+                wcsstr(request_dialog.message, L"two") != nullptr &&
+                wcsstr(request_dialog.keep_hint, L"1_two") != nullptr,
+            "the surface names the requested note, the edited note and the name it would keep");
+}
+
+/* Keeping the edited body under a numbered name: the note's own file is not written. */
+static void request_kept(struct native_fixture *_Nonnull fixture,
+                         struct folio_window *_Nonnull window)
+{
+    request_edit(window, fixture);
+    require(!request_file_holds(fixture, "one", "追記"), "the note has no addition yet");
+    append_switch_text(window);
+    size_t notes = folio_state_note_count(fixture->state);
+    static const struct request_step keep[] = {{.identity = 3, .by_key = true}};
+    request_expect(window, fixture, keep, 1);
+    request_arrives(fixture, window, request_two);
+    request_settled(window, 1);
+    require(strcmp(folio_state_document_name(fixture->state), "two") == 0 &&
+                folio_state_note_count(fixture->state) == notes + 1 &&
+                request_file_holds(fixture, "1_one", "追記") &&
+                !request_file_holds(fixture, "one", "追記"),
+            "the edited body is kept as 1_one, the file of one is untouched, and two is open");
+    require(outside_told(window, L"編集中の本文を「1_one」として残しました。"),
+            "the status line says under which name the body was kept");
+}
+
+/* Declining, and the requests that pile up while the surface is asking. */
+static void request_declined(struct native_fixture *_Nonnull fixture,
+                             struct folio_window *_Nonnull window)
+{
+    request_edit(window, fixture);
+    append_switch_text(window);
+    static const struct request_step decline[] = {{.identity = IDCANCEL, .by_key = true}};
+    request_expect(window, fixture, decline, 1);
+    request_arrives(fixture, window, request_one);
+    request_settled(window, 1);
+    require(strcmp(folio_state_document_name(fixture->state), "two") == 0 &&
+                folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
+                outside_shows(window, L"追記") &&
+                !request_file_holds(fixture, "two", "追記 🙂 追記") &&
+                !outside_request_waits(fixture, L"open-1.json"),
+            "declining keeps the note, its unsaved text and the editing view; the request is gone");
+    /* Still unsaved. A request arrives; while the surface asks, an older one (for the note one)
+     * and a newer one (for a note that does not exist) arrive. The first is declined. Of the two
+     * that piled up only the newer is asked about: its note is not found, so nothing is opened and
+     * nothing is saved. Had the older one been handled too, the note one would be open now. */
+    static const struct request_step piled[] = {{.identity = IDCANCEL, .pile = true},
+                                                {.identity = IDOK}};
+    request_expect(window, fixture, piled, 2);
+    request_arrives(fixture, window, request_one);
+    request_settled(window, 2);
+    require(strcmp(folio_state_document_name(fixture->state), "two") == 0 &&
+                !outside_request_waits(fixture, L"open-older.json") &&
+                !outside_request_waits(fixture, L"open-newer.json") &&
+                !request_file_holds(fixture, "two", "追記 🙂 追記") &&
+                wcsstr(request_dialog.message, L"no such note") != nullptr,
+            "of the requests that piled up, only the newest is handled; the older one is dropped");
+    require(outside_told(window, L"リンクのノートが見つかりません。何も開いていません。"),
+            "the newest request names a note that is not there, and the line says so");
+    /* Keeping aside for a request whose note is not there: the body is kept, nothing is opened,
+     * and the line still says that the note was not found (the kept name does not replace it). */
+    static const struct request_step keep[] = {{.identity = 3}};
+    request_expect(window, fixture, keep, 1);
+    request_arrives(fixture, window,
+                    "{\"version\":1,\"action\":\"open\",\"category\":\"schedule\","
+                    "\"note\":\"no such note\"}");
+    request_settled(window, 1);
+    require(strcmp(folio_state_document_name(fixture->state), "1_two") == 0 &&
+                request_file_holds(fixture, "1_two", "追記 🙂 追記") &&
+                !request_file_holds(fixture, "two", "追記 🙂 追記") &&
+                outside_told(window, L"リンクのノートが見つかりません。何も開いていません。"),
+            "the body is kept as 1_two and stays open; the line says the note was not found");
+}
+
+/* The notes this case makes are taken out again, file and ledger row: the data folder is shared
+ * with the other cases, which count its rows. */
+static void request_forget(struct native_fixture *_Nonnull fixture, const wchar_t *_Nonnull leaf,
+                           const char *_Nonnull note)
+{
+    outside_delete(fixture, leaf);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_ledger *ledger = nullptr;
+    if (disk.read_note_ledger(disk.adapter, "schedule", &ledger) != PERSISTENCE_LOADED ||
+        ledger == nullptr)
+        return;
+    for (size_t index = 0; index < note_ledger_count(ledger); ++index)
+    {
+        if (strcmp(note_ledger_name(ledger, index), note) != 0)
+            continue;
+        struct note_ledger *without = nullptr;
+        require(note_ledger_removed(ledger, index, &without) == NOTE_LEDGER_ACCEPTED &&
+                    without != nullptr &&
+                    disk.write_note_ledger(disk.adapter, "schedule", without) == PERSISTENCE_STORED,
+                "the kept note's ledger row is removed");
+        note_ledger_destroy(without);
+        break;
+    }
+    note_ledger_destroy(ledger);
+}
+
+static void request_prompt(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "request prompt language");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "request prompt window");
+    outside_requests_cleared(fixture);
+    request_forget(fixture, L"1_one.md", "1_one"); /* what a run that stopped early left behind */
+    request_forget(fixture, L"1_two.md", "1_two");
+    folio_window_data_changed(window);
+    require(outside_gathered(window), "the test category is read again");
+    pump(window);
+    open_link_send(window, "nenefolio://open?category=schedule&note=one");
+    puts("request prompt: save and open");
+    fflush(stdout);
+    request_saved(fixture, window);
+    puts("request prompt: keep under another name");
+    fflush(stdout);
+    request_kept(fixture, window);
+    puts("request prompt: decline, and requests that pile up");
+    fflush(stdout);
+    request_declined(fixture, window);
+    folio_window_destroy(window);
+    request_forget(fixture, L"1_one.md", "1_one");
+    request_forget(fixture, L"1_two.md", "1_two");
+}
+
 static void outside_refresh(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
@@ -12387,6 +12737,8 @@ static void run_window_or_footnote(struct native_fixture *_Nonnull fixture)
         definition_list(fixture);
     else if (outline_case)
         outline_column(fixture);
+    else if (request_prompt_case)
+        request_prompt(fixture);
     else if (outside_refresh_case)
         outside_refresh(fixture);
     else if (open_link_case)
@@ -15509,7 +15861,9 @@ static void select_clipboard_fixture(const char *_Nonnull selector)
     footnote_jump_case = strcmp(selector, "--footnote-jump") == 0;
     definition_list_case = strcmp(selector, "--definition-list") == 0;
     outside_refresh_case = strcmp(selector, "--outside-refresh") == 0;
-    open_link_case = strcmp(selector, "--open-link") == 0 || outside_refresh_case;
+    request_prompt_case = strcmp(selector, "--request-prompt") == 0;
+    open_link_case =
+        strcmp(selector, "--open-link") == 0 || outside_refresh_case || request_prompt_case;
     outline_96 = strcmp(selector, "--outline-96") == 0;
     outline_case = strcmp(selector, "--outline") == 0 || outline_96;
     bare_url_visual_case = strcmp(selector, "--bare-url-visual") == 0 || search_key_visual_case ||

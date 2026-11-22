@@ -6004,6 +6004,126 @@ enum folio_state_outcome folio_state_take_open_request(struct folio_state *_Nonn
 }
 
 enum folio_state_outcome
+folio_state_take_last_open_request(struct folio_state *_Nonnull state,
+                                   struct open_request *_Nullable *_Nonnull out,
+                                   bool *_Nonnull pending)
+{
+    /* 依頼のフォルダが 1 度に候補にするのは 32 個まで。その倍まで見れば、たまった分は 1
+     * 回で尽きる。 それでも残れば pending で知らせる。 */
+    constexpr size_t round_limit = 64;
+    *pending = true;
+    for (size_t round = 0; *pending && round < round_limit; ++round)
+    {
+        struct open_request *_Nullable next = nullptr;
+        enum folio_state_outcome outcome = folio_state_take_open_request(state, &next, pending);
+        if (outcome != FOLIO_STATE_READY)
+            return outcome;
+        if (next != nullptr)
+        {
+            open_request_destroy(*out);
+            *out = next;
+        }
+    }
+    return FOLIO_STATE_READY;
+}
+
+/* 名前のあるノートを開いていて、選んでいる位置が台帳の中にある。 */
+static bool named_note_selected(const struct folio_state *_Nonnull state)
+{
+    return state->document == FOLIO_DOCUMENT_NAMED &&
+           state->selected_category < state->notes_count &&
+           state->selected_note < note_ledger_count(state->notes[state->selected_category]);
+}
+
+/* number を付けた名前が空いていれば out へ足す（READY）。使われていれば NAME_TAKEN。 */
+/* 作った名前が、ノートの名前として使えるか（長すぎないか）。 */
+static enum folio_state_outcome aside_usable(const struct text_buffer *_Nonnull candidate)
+{
+    struct note_name *_Nullable probe = nullptr;
+    enum note_name_outcome accepted =
+        note_name_create(text_buffer_bytes(candidate), text_buffer_length(candidate), &probe);
+    note_name_destroy(probe);
+    if (accepted == NOTE_NAME_ACCEPTED)
+        return FOLIO_STATE_READY;
+    return accepted == NOTE_NAME_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                               : FOLIO_STATE_INVALID_NAME;
+}
+
+/* number を付けた名前が空いていれば out へ足す（READY）。使われていれば NAME_TAKEN。名前として
+ * 使えなければ INVALID_NAME（番号を変えても長さは縮まらないので、呼ぶ側はそこでやめる）。 */
+static enum folio_state_outcome aside_candidate(const struct note_ledger *_Nonnull ledger,
+                                                const char *_Nonnull stem, size_t number,
+                                                struct text_buffer *_Nonnull out)
+{
+    struct text_buffer *_Nullable candidate = nullptr;
+    if (text_buffer_create(&candidate) != TEXT_BUFFER_ACCEPTED || candidate == nullptr)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    note_name_numbered(candidate, stem, number);
+    enum folio_state_outcome outcome = FOLIO_STATE_OUT_OF_MEMORY;
+    if (text_buffer_finish(candidate) == TEXT_BUFFER_ACCEPTED)
+        outcome = aside_usable(candidate);
+    if (outcome == FOLIO_STATE_READY && holds_folded_name(ledger, text_buffer_bytes(candidate)))
+        outcome = FOLIO_STATE_NAME_TAKEN;
+    if (outcome == FOLIO_STATE_READY)
+        text_buffer_append_text(out, text_buffer_bytes(candidate));
+    text_buffer_destroy(candidate);
+    if (outcome == FOLIO_STATE_READY && text_buffer_finish(out) != TEXT_BUFFER_ACCEPTED)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    return outcome;
+}
+
+enum folio_state_outcome folio_state_aside_name(const struct folio_state *_Nonnull state,
+                                                struct text_buffer *_Nonnull out)
+{
+    constexpr size_t number_limit = 1000;
+    if (!named_note_selected(state))
+        return FOLIO_STATE_NOTHING_SELECTED;
+    const struct note_ledger *ledger = state->notes[state->selected_category];
+    const char *stem = note_ledger_name(ledger, state->selected_note);
+    for (size_t number = 1; number <= number_limit; ++number)
+    {
+        enum folio_state_outcome outcome = aside_candidate(ledger, stem, number, out);
+        if (outcome != FOLIO_STATE_NAME_TAKEN)
+            return outcome;
+    }
+    return FOLIO_STATE_NAME_TAKEN;
+}
+
+static enum folio_state_outcome aside_note_name(const struct folio_state *_Nonnull state,
+                                                struct note_name *_Nullable *_Nonnull out)
+{
+    struct text_buffer *_Nullable text = nullptr;
+    if (text_buffer_create(&text) != TEXT_BUFFER_ACCEPTED || text == nullptr)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    enum folio_state_outcome outcome = folio_state_aside_name(state, text);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        enum note_name_outcome accepted =
+            note_name_create(text_buffer_bytes(text), text_buffer_length(text), out);
+        if (accepted != NOTE_NAME_ACCEPTED)
+            outcome = accepted == NOTE_NAME_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                          : FOLIO_STATE_INVALID_NAME;
+    }
+    text_buffer_destroy(text);
+    return outcome;
+}
+
+enum folio_state_outcome folio_state_keep_aside(struct folio_state *_Nonnull state,
+                                                const char16_t *_Nonnull units, size_t count)
+{
+    if (state->mode != PANE_MODE_EDIT || !named_note_selected(state))
+        return FOLIO_STATE_NOT_EDITING;
+    struct note_name *_Nullable name = nullptr;
+    enum folio_state_outcome outcome = aside_note_name(state, &name);
+    if (outcome != FOLIO_STATE_READY || name == nullptr)
+        return outcome == FOLIO_STATE_READY ? FOLIO_STATE_OUT_OF_MEMORY : outcome;
+    struct note_destination destination = {.category = state->selected_category, .name = name};
+    outcome = folio_state_store_new(state, &destination, units, count);
+    note_name_destroy(name);
+    return outcome;
+}
+
+enum folio_state_outcome
 folio_state_locate_open_request(struct folio_state *_Nonnull state,
                                 const struct open_request *_Nonnull request,
                                 struct note_ref *_Nonnull out)
