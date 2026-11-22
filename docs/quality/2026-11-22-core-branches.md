@@ -54,6 +54,19 @@
 
 記録: D:/NeNeFolio/temp/20261122/mutations-lookup.log・mutations-lookup-2.log。
 
+## 続き: コードの色分け（#1166、同じ日）
+
+`src/core/code_syntax.c`に、数と here-string の端の場合の試験（`tests/unit/code_syntax_tests.c`の6行）を足した。87.8% → 93.2%。全体 91.33%（13574/14862）。製品コードは変えていない。**足した試験は全部通った。**
+
+| 確かめたこと | 変異 | 結果 |
+| --- | --- | --- |
+| here-string（PowerShell）は、開きの後ろが空白とタブだけの行で始まる | X1 タブを空白と見なさない | 落ちた |
+| 開きの後ろに字があれば、here-string にならない（`@" x`） | X2 後ろを確かめない | **走っていない**: 変異で使われない関数ができ、構築が落ちた |
+| 指数の符号は、次が数字のときだけ数に入る（`1e-5`は数、`1e+ x`の`+`は数に入らない） | X3 次を確かめない | 落ちた |
+| 点は、次が数字のときだけ数の始まり（`.5`は数、`a.b`の`.b`は数でない） | X4 次を確かめない | 落ちた |
+
+記録: D:/NeNeFolio/temp/20261122/mutations-syntax.log。
+
 ## 次の候補
 
 同じ道具で見ると、通っていない分岐が多く、意味のある試験で埋められそうなのは: `src/core/markdown_source_lookup.c`（84.9%）、`src/core/mermaid_gantt_axis.c`（84.9%）、`src/application/image_export.c`（82.1%）、`src/core/rename_plan.c`（87.5%）。いちばん数が多いのは`src/application/folio_state.c`（約87%、通っていない分岐が約340）。
