@@ -20,6 +20,8 @@
 
 - 読み: 読み取り専用のときは、`WS_EX_ACCEPTFILES`があれば、OLEの既定の受けが`WM_DROPFILES`を送る。編集できるときは、RichEditのドロップ先が受ける（文書では、`ENM_DROPFILES`があれば親へ`EN_DROPFILES`を出す）。
 - できなかったこと: 登録されたドロップ先を直接呼んで、投下をまねること。窓のプロパティの値を入口として呼ぶと落ちた。`EM_GETOLEINTERFACE`で得た入口は`IDropTarget`を答えない（`E_NOINTERFACE`）。
+- Microsoftの文書（[EN_DROPFILES](https://learn.microsoft.com/en-us/windows/win32/controls/en-dropfiles)、2026-11-22に読んだ）: 「RichEditは、`WM_DROPFILES`を受けたときに、この知らせを`WM_NOTIFY`で送る」「`WM_DROPFILES`を受けるには、親が`DragAcceptFiles`でこの欄をドロップ先として登録する。欄は自分では登録しない」「知らせを受けるには`ENM_DROPFILES`を付ける」。
+  - 席の読み（確かめていない）: 編集表示への本物のドラッグでも、最後は欄へ`WM_DROPFILES`が届き、RichEditがそれを受けて`EN_DROPFILES`を出す。いまは欄のサブクラスが`WM_DROPFILES`を先に受けるので、**閲覧表示も編集表示も、(1)の道で来る**見込みが高い。(2)の道（`EN_DROPFILES`）は、RichEditが`WM_DROPFILES`を経ずに知らせた場合の備えとして残してある。
 - 11月20日の実験（合成した`WM_DROPFILES`をRichEditへ渡すと、編集表示で`EN_DROPFILES`が親へ届いた）は、いまは欄のサブクラスが`WM_DROPFILES`を先に受けるので、製品では通らない道になった。`EN_DROPFILES`が来るのは、RichEditのドロップ先からだけ。
 
 ## 入れたもの
@@ -68,6 +70,62 @@
 
 レビューが問題なしとした所: HDROPの持ち主（`WM_DROPFILES`の道は受けた側が片付け、`EN_DROPFILES`の道は片付けない。両方の道が1回の投下で重なることは無い）、無効のあいだに届く依頼・リンク・外の変更（どれも、取り込みの確かめの後の入力待ちの回か、主窓が有効かの判定で止まる）、位置の単位、パスの数え方。
 
-## 検証
+## 試験
 
-（下の「実行した検証」に、流した結果を書く）
+- 単体（`tests/unit/image_tests.c`）: `adoption_refusal_notices`・`adoption_result_notices`・`adoption_unwritten_notices`・`adoption_empty_notices`。断る理由ごとの文、進みの数え方、理由が1種類・2種類以上、1件も取り込めない、写したが入らなかった（ノートが替わった／入れられなかった）。文言の表（3言語の列、置換子、256バイト未満）は既存の`ui_text_tests`が見る。
+- 実窓（CTestの`image_drop_native`＝`image_status_tests --image-drop`。隔離した窓とdata。画像のポートは偽物で、`.png`で終わるパスだけを「写した」と答える。ファイルには触らない）:
+
+| 段 | 確かめること |
+| --- | --- |
+| 閲覧表示へ落とす | 欄が`WS_EX_ACCEPTFILES`を持つ。何も写さず、本文も変わらず、窓は有効のまま。1行は「編集表示で落としてください…」 |
+| 編集表示へ3件（画像2・画像でない1） | 投下のメッセージの中では1件も写さず、主窓が無効になる。**途中に打った字・後退・Zが本文を変えない。** 入力待ちの回3回で終わる（1回に1件）。落とした位置（5文字目）に2行のMarkdownが入り、ほかは変わらない。キャレットは入れた文字の後ろ。本文に鍵が戻る。未保存になる。1行は「2件を取り込みました。1件はPNGでもJPEGでもないため…」。閉じてあるので次の取り込みは「途中」にならない。Undo 1回で元へ戻る |
+| 1件 | 1回で終わる。1行は「1件の画像を取り込みました。」 |
+| `EN_DROPFILES`の知らせ | 主窓が0を返す（RichEditに入れさせない）。知らせの位置（7文字目）に入る |
+| 画像でない1件 | 終わるが、本文は変わらない。1行は「取り込んでいません。PNGかJPEGの画像を…」 |
+| 絶対パスでない名前が混ざる | 使えるパスだけを取り込み、1行は「1件を取り込みました。1件は読めないため…」。使えるパスが1つも無ければ始まらず、1行は「取り込んでいません。ファイルを読めません。」 |
+| 途中で本文を読み直す | 1件写した後に読み直すと、残りを扱わずに終わり、本文は変わらず、窓は有効に戻る。1行は「1件をimagesフォルダへ写しましたが、ノートが切り替わったため…」 |
+| 無題の下書きへ落とす | 何も写さず、本文も変わらない。1行は「名前を付けて保存してから…」 |
+
+## 変異（16本。記録 D:/NeNeFolio/temp/20261122/mutations-1149.log、道具 D:/NeNeFolio/temp/20261122-1149-mutate.py）
+
+レビューの対応の後のコードに当てた。**16本とも、試験が落ちた。**
+
+| 変異 | 落ちた確認 |
+| --- | --- |
+| W1 落とした位置の1文字後ろへ入れる | the Markdown is written at the dropped place and nothing else changes |
+| W2 入ったのに「入らなかった」と答える | 1行の文（processing status text） |
+| W3 取り込みのあいだ、入力を止めない | the drop starts with input held and takes no file in the message itself |
+| W4 終わっても窓が無効のまま | a running drop keeps the idle turn |
+| W5 終わっても一連を閉じない | the finished drop is closed: the next one is not refused as busy |
+| W6 知らせの位置を使わない | the Markdown is written at the dropped place … |
+| W7 知らせで、RichEditにも入れさせる | the edit control is told not to take the files itself |
+| W8 入れてはいけない文を入れる | nothing is written into a body that was read again |
+| W9 パスにできなかった数を数えない | 1行の文 |
+| W10 取り込みの途中に、鍵を本文へ通す | typing during the drop changes nothing |
+| P1 欄が、落とした位置の代わりに0を渡す | the Markdown is written at the dropped place … |
+| P2 欄がファイルを受けない | the body accepts dropped files in the reading view too |
+| F1 落とされたパスを1つ少なく数える | one file per idle turn |
+| N1 理由が1種類でも、まとめた文にする | some taken, the rest not images（単体）、1行の文（実窓） |
+| N2 入らなかったのに「取り込んだ」と言う | copied but not written into the text（単体）、1行の文（実窓） |
+| N3 進みが0から始まる | progress starts at 1 of the handled files, not of the dropped ones（単体） |
+
+## 実行した検証（作業木 E:/NeNeFolio/worktrees/955-pie、`--parallel 4`、ほかの席の構築と同じ端末）
+
+- `ctest -j 2`: 74件成功（記録 D:/NeNeFolio/temp/20261122/ctest-all-1149.log）。
+- `python eng/conformance.py --build-dir build`: 違反0。`python eng/symbols.py --build-dir build --require core application`: 違反0。
+- `python eng/coverage.py`: 成功。全体 90.88%（13443/14792、下限90%）。`image_adoption_notice.c`は 94%（47/50）。
+- 全`.c`/`.h`の整形の確かめ: 違反0。
+
+## 途中の失敗
+
+- 最初の検証の一括は、独立レビューが欠陥（1番）を返した時点で止めた（古いコードに対する検証なので）。止めたとき、変異が1本、作業木に当たったまま残っていた。差分がその1行だけであることを確かめて戻した。ほかの席の構築（同じ名前のプロセス）には触れていない。
+- 実窓の試験の最初の形は、無題の確認を先に置いたため、次のノートが編集表示で開き、閲覧表示の確認が落ちた。順番を入れ替えた（製品の動きは正しかった）。
+- 文書の例に画像の記法をそのまま書いて、適合の検査（リンクの確かめ）に2回当たった。記法を文で説明する書き方にした。
+
+## やっていないこと・残るリスク
+
+- **エクスプローラからの本物のドラッグ**（上の「分かっていないこと」）。
+- **起動直後・入力なしのCPUの測定**（メモリの決まり: 入口の待ちを変える変更は、統合の前に実物のexeで測る）。今回は、入力待ちの回が「取り込みが走っているあいだだけ」増える変更で、走っていないときの判定は変えていない。実物のexeをデスクトップに出す測定はhideの了承が要るので、不在のあいだはしていない。**通常exeへ反映する前に測る。**
+- 実窓の試験に入れていないもの: 64件を超える投下、進みの1行、最後の行より下への投下、サロゲートの字を含む本文、取り込みの途中で窓が無くなる場合、取り込みを断る状態（検索の面・変換の途中など）のそれぞれ。
+- 1件のあいだ窓が止まる長さ（大きい画像、クラウドの置き場の未取得のファイル）は測っていない。偽のポートはファイルに触らない。
+- 断ったとき（検索の面が開いている・変換の途中など）は、何も言わない。

@@ -85,7 +85,8 @@ hideの要望（2026-11-19）: 画像をドラッグ＆ドロップすると、�
     (1) 欄のサブクラスが`WM_DROPFILES`を受ける（RichEditには渡さない）。位置は、落とした点から`EM_CHARFROMPOS`。
     (2) 編集表示でRichEditのドロップ先が出す`EN_DROPFILES`を、主窓が受ける。位置は、知らせの`cp`。0を返して、RichEditには入れさせない。
     - 根拠（2026-11-22の実験。道具 D:/NeNeFolio/temp/20261122/probe/drop_probe.c、見えない窓、マウスは動かさない）: 読み取り専用（閲覧表示）のRichEditはOLEのドロップ先を登録していない。編集できる状態にすると登録し、読み取り専用に戻すと外す。プロセスの初期化の仕方（`OleInitialize`・`CoInitializeEx`・何もしない）を変えても同じだった（製品は`CoInitializeEx`だけを呼ぶ）。だから閲覧表示は(1)（OLEの既定の受けが`WM_DROPFILES`を送る）、編集表示は(2)で来る見込み。
-    - 分かっていないこと: 編集表示への本物のドラッグで、RichEditが実際に`EN_DROPFILES`を出すか（文書ではそう。11月20日の合成したメッセージの実験では出た）。RichEditのドロップ先を直接呼んで確かめることはできなかった（窓のプロパティの値は呼べる入口ではなく、`EM_GETOLEINTERFACE`の入口は`IDropTarget`を答えない）。(1)と(2)のどちらで来ても受けられる形にしてある。**来なければ、COMのドロップ先（`RegisterDragDrop`）を実装する**（別のIssue）。
+    - Microsoftの文書（[EN_DROPFILES](https://learn.microsoft.com/en-us/windows/win32/controls/en-dropfiles)）は「RichEditは`WM_DROPFILES`を受けたときにこの知らせを送る」と書く。そのとおりなら、編集表示への本物のドラッグでも欄へ`WM_DROPFILES`が届き、サブクラスが先に受けるので、(1)の道で来る。(2)は備え。
+    - 分かっていないこと: 編集表示への本物のドラッグで、欄へ`WM_DROPFILES`が届くか、RichEditが`EN_DROPFILES`を出すか、どちらも来ないか（11月20日の合成したメッセージの実験では、`WM_DROPFILES`を受けたRichEditが`EN_DROPFILES`を出した）。RichEditのドロップ先を直接呼んで確かめることはできなかった（窓のプロパティの値は呼べる入口ではなく、`EM_GETOLEINTERFACE`の入口は`IDropTarget`を答えない）。(1)と(2)のどちらで来ても受けられる形にしてある。**来なければ、COMのドロップ先（`RegisterDragDrop`）を実装する**（別のIssue）。
   - 主窓: 落とされたパスを`storage_path`にする（`dropped_files`。64個そろうまで読む。パスにできないものは「読めない」に数える）→ 取り込みを始める → 断られたら1行 → 始まったら主窓への入力を止め（`EnableWindow`）、入力待ちの回ごとに1件進める → 終わったら、入れてよければ落とした位置へ`note_pane_replace`で入れ（Undoは1回。キャレットは入れた文字の後ろ）、1行を出し、閉じて、入力と鍵の行き先（本文）を戻す。
   - 何もしない状態: 主窓が無効・OSの面が出ている・終了の途中・本文の流し込みの途中・削除の途中・操作の面（検索など）が開いている。
   - 1行の文言は19個・3言語（`ui_text`の`UI_TEXT_IMAGE_DROP_*`）。どの文を出すかは、applicationの純粋な関数`image_adoption_notice`が決める。取り込まなかった理由が1種類ならその理由、2種類以上ならまとめた文。「書けない・記憶が足りない・扱わずに終えた」は1つの理由として数える。
