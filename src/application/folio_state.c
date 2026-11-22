@@ -12,6 +12,7 @@
 #include "discovery_target.h"
 #include "drawer_layout.h"
 #include "folio_settings.h"
+#include "image_adoption.h"
 #include "image_export.h"
 #include "index_filter.h"
 #include "index_filter_build.h"
@@ -77,6 +78,8 @@ struct folio_state
     struct transfer_port transfer;
     struct image_port images;
     uint64_t image_origin_revision;
+    /* 落とされた画像の取り込みの一連（ADR0120）。始めてから閉じるまでだけある。 */
+    struct image_adoption *_Nullable image_adoption;
     /* 正規表現ポート（ADR 0028 の決定 1 / 2）。ICU を知るのは adapter だけである */
     struct regex_port regex;
     /* 走査の入れ物。下見が引き取ったら空（null・0）に戻り、次の走査で確保し直す（補正 25）。 */
@@ -5604,6 +5607,7 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     note_tags_destroy(state->index_tags);
     folio_state_close_tag_catalog(state);
     folio_state_close_tag_management(state);
+    image_adoption_destroy(state->image_adoption);
     index_filter_destroy(state->filter);
     folio_state_close_tag_edit(state);
     note_corpus_destroy(state->corpus);
@@ -5645,6 +5649,74 @@ uint64_t folio_state_image_origin_revision(const struct folio_state *_Nonnull st
 {
     return state->image_origin_revision;
 }
+enum image_adoption_start
+folio_state_begin_image_adoption(struct folio_state *_Nonnull state,
+                                 struct storage_path *_Nonnull const *_Nonnull paths, size_t count)
+{
+    if (state->image_adoption != nullptr)
+        return IMAGE_ADOPTION_BUSY;
+    if (state->document == FOLIO_DOCUMENT_NONE || category_rename_pending(state))
+        return IMAGE_ADOPTION_NO_NOTE;
+    if (state->document == FOLIO_DOCUMENT_UNTITLED)
+        return IMAGE_ADOPTION_UNTITLED;
+    if (state->mode != PANE_MODE_EDIT)
+        return IMAGE_ADOPTION_VIEWING;
+    struct note_identity *_Nullable destination = nullptr;
+    if (folio_state_capture_note(state, located(state->selected_category, state->selected_note),
+                                 &destination) != FOLIO_STATE_READY ||
+        destination == nullptr)
+        return IMAGE_ADOPTION_OUT_OF_MEMORY;
+    enum image_adoption_start start =
+        image_adoption_create(destination, paths, count, &state->image_adoption);
+    if (start != IMAGE_ADOPTION_STARTED)
+        note_identity_destroy(destination);
+    return start;
+}
+
+bool folio_state_image_adoption_lands(const struct folio_state *_Nonnull state)
+{
+    if (state->image_adoption == nullptr || state->mode != PANE_MODE_EDIT ||
+        state->document != FOLIO_DOCUMENT_NAMED || category_rename_pending(state))
+        return false;
+    const struct note_identity *destination = image_adoption_destination(state->image_adoption);
+    return strcmp(note_identity_category(destination),
+                  category_ledger_name(state->categories, state->selected_category)) == 0 &&
+           strcmp(note_identity_note(destination),
+                  note_ledger_name(state->notes[state->selected_category], state->selected_note)) ==
+               0;
+}
+
+enum image_adoption_step folio_state_continue_image_adoption(struct folio_state *_Nonnull state)
+{
+    if (state->image_adoption == nullptr ||
+        image_adoption_summary_of(state->image_adoption).finished)
+        return IMAGE_ADOPTION_IDLE;
+    if (!folio_state_image_adoption_lands(state))
+    {
+        image_adoption_stop(state->image_adoption);
+        return IMAGE_ADOPTION_FINISHED;
+    }
+    return image_adoption_advance(state->image_adoption, &state->images);
+}
+
+struct image_adoption_summary
+folio_state_image_adoption_summary(const struct folio_state *_Nonnull state)
+{
+    return state->image_adoption == nullptr ? (struct image_adoption_summary){.finished = true}
+                                            : image_adoption_summary_of(state->image_adoption);
+}
+
+const char *_Nonnull folio_state_image_adoption_text(const struct folio_state *_Nonnull state)
+{
+    return state->image_adoption == nullptr ? "" : image_adoption_text(state->image_adoption);
+}
+
+void folio_state_close_image_adoption(struct folio_state *_Nonnull state)
+{
+    image_adoption_destroy(state->image_adoption);
+    state->image_adoption = nullptr;
+}
+
 enum image_outcome folio_state_request_image(struct folio_state *_Nonnull state, size_t index,
                                              uint64_t *_Nonnull ticket)
 {
