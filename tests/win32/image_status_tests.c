@@ -12074,6 +12074,19 @@ static void request_declined(struct native_fixture *_Nonnull fixture,
             "of the requests that piled up, only the newest is handled; the older one is dropped");
     require(outside_told(window, L"リンクのノートが見つかりません。何も開いていません。"),
             "the newest request names a note that is not there, and the line says so");
+    /* Keeping aside for a request whose note is not there: the body is kept, nothing is opened,
+     * and the line still says that the note was not found (the kept name does not replace it). */
+    static const struct request_step keep[] = {{.identity = 3}};
+    request_expect(window, fixture, keep, 1);
+    request_arrives(fixture, window,
+                    "{\"version\":1,\"action\":\"open\",\"category\":\"schedule\","
+                    "\"note\":\"no such note\"}");
+    request_settled(window, 1);
+    require(strcmp(folio_state_document_name(fixture->state), "1_two") == 0 &&
+                request_file_holds(fixture, "1_two", "追記 🙂 追記") &&
+                !request_file_holds(fixture, "two", "追記 🙂 追記") &&
+                outside_told(window, L"リンクのノートが見つかりません。何も開いていません。"),
+            "the body is kept as 1_two and stays open; the line says the note was not found");
 }
 
 static void request_prompt(struct native_fixture *_Nonnull fixture)
