@@ -147,7 +147,7 @@ nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
     src/ui/win32/accessibility_native.c
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/command_help_fonts.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c src/ui/win32/window_restore.c
-    src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c
+    src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c src/ui/win32/request_prompt.c
     src/ui/win32/folio_launch_link.c
     src/ui/win32/ui_face.c src/ui/win32/icon_paint.c src/ui/win32/dialog_theme.c
     src/ui/win32/ui_part.c src/ui/win32/ui_pointer.c src/ui/win32/modal_owner.c src/ui/win32/name_prompt_metrics.c
@@ -388,8 +388,9 @@ add_test(NAME definition_list_native COMMAND image_status_tests --definition-lis
 add_test(NAME outline_native COMMAND image_status_tests --outline)
 add_test(NAME open_link_native COMMAND image_status_tests --open-link)
 add_test(NAME outside_refresh_native COMMAND image_status_tests --outside-refresh)
+add_test(NAME request_prompt_native COMMAND image_status_tests --request-prompt)
 add_test(NAME outline_96_native COMMAND image_status_tests --outline-96)
-set_tests_properties(window_place_native footnote_jump_native definition_list_native outline_native outline_96_native open_link_native outside_refresh_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
+set_tests_properties(window_place_native footnote_jump_native definition_list_native outline_native outline_96_native open_link_native outside_refresh_native request_prompt_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(text_menu_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME editor_format_native COMMAND image_status_tests --format-keys)
 add_test(NAME layout_edit_native COMMAND image_status_tests --layout)

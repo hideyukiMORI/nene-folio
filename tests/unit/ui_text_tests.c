@@ -134,6 +134,17 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_IMAGE_DROP_NOT_INSERTED] =
         "{n}件をimagesフォルダへ写しましたが、本文へ書き込めませんでした。",
     [UI_TEXT_IMAGE_DROP_STOPPED] = "ノートが切り替わったため、画像を取り込んでいません。",
+    [UI_TEXT_REQUEST_PROMPT_TITLE] = "ノートを開く依頼",
+    [UI_TEXT_REQUEST_PROMPT_MESSAGE] =
+        "「{name}」を開く依頼が来ました。「{from}」に、保存していない変更があります。",
+    [UI_TEXT_REQUEST_PROMPT_SAVE] = "保存して開く(&S)",
+    [UI_TEXT_REQUEST_PROMPT_SAVE_HINT] = "「{from}」を保存してから開きます。",
+    [UI_TEXT_REQUEST_PROMPT_KEEP] = "別の名前で残して開く(&K)",
+    [UI_TEXT_REQUEST_PROMPT_KEEP_HINT] =
+        "編集中の本文を「{to}」として保存します。「{from}」のファイルは変えません。",
+    [UI_TEXT_REQUEST_PROMPT_DECLINE] = "開かない(&N)",
+    [UI_TEXT_REQUEST_PROMPT_DECLINE_HINT] = "このまま編集を続けます。",
+    [UI_TEXT_REQUEST_KEPT] = "編集中の本文を「{to}」として残しました。",
     [UI_TEXT_TAG_MANAGE_SOURCE] = "対象のタグ: {name}",
     [UI_TEXT_TAG_MANAGE_CHANGE] = "変更内容",
     [UI_TEXT_CODE_COPY] = "コピー",

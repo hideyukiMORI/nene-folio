@@ -1,5 +1,6 @@
 #include "note_name.h"
 #include "name_list.h"
+#include "text_buffer.h"
 #include <stdlib.h>
 
 struct note_name
@@ -54,4 +55,19 @@ void note_name_destroy(struct note_name *_Nullable name)
     }
     name_list_destroy(name->value);
     free(name);
+}
+
+void note_name_numbered(struct text_buffer *_Nonnull out, const char *_Nonnull stem, size_t number)
+{
+    char digits[24];
+    size_t used = 0;
+    do
+    {
+        digits[used++] = (char)('0' + number % 10);
+        number /= 10;
+    } while (number != 0);
+    while (used > 0)
+        text_buffer_append(out, &digits[--used], 1);
+    text_buffer_append_text(out, "_");
+    text_buffer_append_text(out, stem);
 }

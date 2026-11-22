@@ -1,5 +1,6 @@
 #include "folio_command.h"
 #include "note_name.h"
+#include "text_buffer.h"
 #include "unit_tests.h"
 #include <string.h>
 
@@ -55,8 +56,24 @@ static void verify_arguments(void)
     }
 }
 
+static void verify_numbered(void)
+{
+    struct text_buffer *out = nullptr;
+    require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED && out != nullptr, "numbered buffer");
+    note_name_numbered(out, "minutes", 1);
+    text_buffer_append_text(out, "|");
+    note_name_numbered(out, "a b", 12);
+    text_buffer_append_text(out, "|");
+    note_name_numbered(out, "", 1000);
+    require(text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED &&
+                strcmp(text_buffer_bytes(out), "1_minutes|12_a b|1000_") == 0,
+            "the number goes before the name, joined by an underscore");
+    text_buffer_destroy(out);
+}
+
 void run_note_name_tests(void)
 {
+    verify_numbered();
     verify_names();
     verify_arguments();
 }
