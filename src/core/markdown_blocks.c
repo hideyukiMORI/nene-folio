@@ -673,7 +673,7 @@ static size_t trimmed_length(struct markdown_line line)
 
 static struct markdown_line heading_content(struct markdown_line line, size_t level)
 {
-    line.content += level + 1;
+    line.content += level; /* # だけの行では、ここが行の終わり。後ろの空白とタブは次で飛ばす */
     while (line.content < line.length && blank_byte(line.bytes[line.content]))
         ++line.content;
     line.length = trimmed_length(line);

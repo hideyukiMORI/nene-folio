@@ -219,8 +219,10 @@ size_t markdown_line_heading(struct markdown_line line)
     size_t end = line.content;
     while (end < line.length && line.bytes[end] == '#')
         ++end;
+    /* 1〜6個の # の後ろは、空白かタブ、または行の終わり（# だけの行は空の見出し。CommonMark 4.2）。
+     */
     size_t level = end - line.content;
-    if (level == 0 || level > 6 || end == line.length || !space(line.bytes[end]))
+    if (level == 0 || level > 6 || (end < line.length && !space(line.bytes[end])))
         return 0;
     return level;
 }
