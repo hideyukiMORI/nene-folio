@@ -658,20 +658,34 @@ static void task_marker(struct markdown_blocks *_Nonnull parser,
     line->content += 4;
 }
 
+static bool blank_byte(char byte)
+{
+    return byte == ' ' || byte == '\t';
+}
+
+/* 末尾の空白とタブを除いた長さ。 */
+static size_t trimmed_length(struct markdown_line line)
+{
+    while (line.length > line.content && blank_byte(line.bytes[line.length - 1]))
+        --line.length;
+    return line.length;
+}
+
 static struct markdown_line heading_content(struct markdown_line line, size_t level)
 {
     line.content += level + 1;
-    while (line.content < line.length &&
-           (line.bytes[line.content] == ' ' || line.bytes[line.content] == '\t'))
+    while (line.content < line.length && blank_byte(line.bytes[line.content]))
         ++line.content;
-    while (line.length > line.content &&
-           (line.bytes[line.length - 1] == ' ' || line.bytes[line.length - 1] == '\t'))
-        --line.length;
+    line.length = trimmed_length(line);
+    /* 閉じの # の並び: 前が空白かタブのとき、または中身がそれだけのときに外す（CommonMark 4.2）。
+     * 外した後に残る末尾の空白とタブも落とす。前が字なら、# は見出しの文字のまま。 */
     size_t hashes = line.length;
     while (hashes > line.content && line.bytes[hashes - 1] == '#')
         --hashes;
-    if (hashes < line.length && hashes > line.content && line.bytes[hashes - 1] == ' ')
-        line.length = hashes - 1;
+    if (hashes == line.length || (hashes > line.content && !blank_byte(line.bytes[hashes - 1])))
+        return line;
+    line.length = hashes;
+    line.length = trimmed_length(line);
     return line;
 }
 

@@ -94,8 +94,47 @@ static void verify_unicode(void)
         "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\f1\\fs20\\cf4 \\{\xEF\xBF\xBD\\}\\\\}\\par\n");
 }
 
+/* The closing run of `#`: it goes when a space or a tab comes before it, or when it is all
+ * there is; otherwise it is text (CommonMark 4.2). */
+static void verify_heading_closers(void)
+{
+    expect_body("# title ##", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title\\b0\\cf1\\fs22\\par\n");
+    expect_body("# title #", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title\\b0\\cf1\\fs22\\par\n");
+    expect_body("# title   ###   ",
+                "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title\\b0\\cf1\\fs22\\par\n");
+    expect_body("# title\t##", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title\\b0\\cf1\\fs22\\par\n");
+    expect_body("# title \t##\t",
+                "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title\\b0\\cf1\\fs22\\par\n");
+    expect_body("# title#", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title#\\b0\\cf1\\fs22\\par\n");
+    expect_body("# title ## x",
+                "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title ## x\\b0\\cf1\\fs22\\par\n");
+    expect_body("# title \\#",
+                "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title #\\b0\\cf1\\fs22\\par\n");
+    expect_body("# #title", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 #title\\b0\\cf1\\fs22\\par\n");
+    expect_body("## ##", "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 \\b0\\cf1\\fs22\\par\n");
+    expect_body("# #", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
+    expect_body("## ##  ", "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 \\b0\\cf1\\fs22\\par\n");
+    /* From the independent review: an escaped hash before the run, only the last run goes,
+     * several blanks after the opener, a run longer or shorter than the opener, CRLF. */
+    expect_body("## foo #\\##",
+                "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 foo ###\\b0\\cf1\\fs22\\par\n");
+    expect_body("### foo \\###",
+                "\\pard\\s3\\sb200\\sa80\\b\\cf2\\fs28 foo ###\\b0\\cf1\\fs22\\par\n");
+    expect_body("# a ## ##", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 a ##\\b0\\cf1\\fs22\\par\n");
+    expect_body("#   ###", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
+    expect_body("#\t#", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
+    expect_body("# \t", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
+    expect_body("# title#  ", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title#\\b0\\cf1\\fs22\\par\n");
+    expect_body("# title ##################################",
+                "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title\\b0\\cf1\\fs22\\par\n");
+    expect_body("##### foo ##", "\\pard\\s5\\sb160\\sa60\\b0\\cf2\\fs22 foo\\b0\\cf1\\fs22\\par\n");
+    expect_body("# title ##\r\n",
+                "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title\\b0\\cf1\\fs22\\par\n");
+}
+
 static void verify_headings(void)
 {
+    verify_heading_closers();
     expect_body("# Title", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 Title\\b0\\cf1\\fs22\\par\n");
     expect_body("## Sub", "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 Sub\\b0\\cf1\\fs22\\par\n");
     expect_body("### Third", "\\pard\\s3\\sb200\\sa80\\b\\cf2\\fs28 Third\\b0\\cf1\\fs22\\par\n");
