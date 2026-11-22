@@ -6008,7 +6008,9 @@ folio_state_take_last_open_request(struct folio_state *_Nonnull state,
                                    struct open_request *_Nullable *_Nonnull out,
                                    bool *_Nonnull pending)
 {
-    constexpr size_t round_limit = 8; /* 1 回の呼び出しを短く保つ。残りは pending で知らせる */
+    /* 依頼のフォルダが 1 度に候補にするのは 32 個まで。その倍まで見れば、たまった分は 1
+     * 回で尽きる。 それでも残れば pending で知らせる。 */
+    constexpr size_t round_limit = 64;
     *pending = true;
     for (size_t round = 0; *pending && round < round_limit; ++round)
     {
@@ -6034,6 +6036,21 @@ static bool named_note_selected(const struct folio_state *_Nonnull state)
 }
 
 /* number を付けた名前が空いていれば out へ足す（READY）。使われていれば NAME_TAKEN。 */
+/* 作った名前が、ノートの名前として使えるか（長すぎないか）。 */
+static enum folio_state_outcome aside_usable(const struct text_buffer *_Nonnull candidate)
+{
+    struct note_name *_Nullable probe = nullptr;
+    enum note_name_outcome accepted =
+        note_name_create(text_buffer_bytes(candidate), text_buffer_length(candidate), &probe);
+    note_name_destroy(probe);
+    if (accepted == NOTE_NAME_ACCEPTED)
+        return FOLIO_STATE_READY;
+    return accepted == NOTE_NAME_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                               : FOLIO_STATE_INVALID_NAME;
+}
+
+/* number を付けた名前が空いていれば out へ足す（READY）。使われていれば NAME_TAKEN。名前として
+ * 使えなければ INVALID_NAME（番号を変えても長さは縮まらないので、呼ぶ側はそこでやめる）。 */
 static enum folio_state_outcome aside_candidate(const struct note_ledger *_Nonnull ledger,
                                                 const char *_Nonnull stem, size_t number,
                                                 struct text_buffer *_Nonnull out)
@@ -6042,12 +6059,12 @@ static enum folio_state_outcome aside_candidate(const struct note_ledger *_Nonnu
     if (text_buffer_create(&candidate) != TEXT_BUFFER_ACCEPTED || candidate == nullptr)
         return FOLIO_STATE_OUT_OF_MEMORY;
     note_name_numbered(candidate, stem, number);
-    enum folio_state_outcome outcome = FOLIO_STATE_READY;
-    if (text_buffer_finish(candidate) != TEXT_BUFFER_ACCEPTED)
-        outcome = FOLIO_STATE_OUT_OF_MEMORY;
-    else if (holds_folded_name(ledger, text_buffer_bytes(candidate)))
+    enum folio_state_outcome outcome = FOLIO_STATE_OUT_OF_MEMORY;
+    if (text_buffer_finish(candidate) == TEXT_BUFFER_ACCEPTED)
+        outcome = aside_usable(candidate);
+    if (outcome == FOLIO_STATE_READY && holds_folded_name(ledger, text_buffer_bytes(candidate)))
         outcome = FOLIO_STATE_NAME_TAKEN;
-    else
+    if (outcome == FOLIO_STATE_READY)
         text_buffer_append_text(out, text_buffer_bytes(candidate));
     text_buffer_destroy(candidate);
     if (outcome == FOLIO_STATE_READY && text_buffer_finish(out) != TEXT_BUFFER_ACCEPTED)

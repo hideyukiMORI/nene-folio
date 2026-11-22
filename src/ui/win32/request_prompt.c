@@ -15,6 +15,11 @@ constexpr INT_PTR prompt_not_built = -2;
 constexpr int keep_identity = 3; /* 名前入力面の「保存しない」と同じ、IDOK・IDCANCEL でない番号 */
 constexpr size_t choice_count = 3;
 constexpr size_t line_units = ui_text_unit_limit * 4;
+/* 面が出た直後は、鍵を釦へ通さない。本文を打っている最中に面が出ると、打っていた字（空白・Enter・
+ * S / K / N）が、そのまま答えになってしまうため。鍵が止まってからこの時間が過ぎたら、受ける。
+ * マウスと Alt+字は、はじめから効く。 */
+constexpr UINT_PTR grace_timer = 1;
+constexpr UINT grace_millis = 700;
 
 struct request_prompt
 {
@@ -25,6 +30,8 @@ struct request_prompt
     HWND _Nullable dialog;
     HWND _Nullable message;
     HWND _Nullable buttons[choice_count];
+    WNDPROC _Nullable originals[choice_count]; /* 釦の元の手続き（鍵の見張りの先） */
+    bool armed;                                /* 鍵を受けはじめた */
     HWND _Nullable hints[choice_count];
     HWND _Nullable close;
     UINT dpi;
@@ -98,8 +105,46 @@ static HWND _Nullable label(const struct request_prompt *_Nonnull prompt, enum u
     char16_t units[line_units];
     if (!line(prompt, id, units))
         return nullptr;
-    return CreateWindowExW(0, L"STATIC", units, WS_CHILD | WS_VISIBLE | SS_NOPREFIX, 0, 0, 0, 0,
+    return CreateWindowExW(0, L"STATIC", units,
+                           WS_CHILD | WS_VISIBLE | SS_NOPREFIX | SS_EDITCONTROL, 0, 0, 0, 0,
                            prompt->dialog, nullptr, GetModuleHandleW(nullptr), nullptr);
+}
+
+/* 釦の元の手続き。この面の釦でなければ無い。 */
+static WNDPROC _Nullable original_of(const struct request_prompt *_Nullable prompt, HWND button)
+{
+    for (size_t at = 0; prompt != nullptr && at < choice_count; ++at)
+        if (prompt->buttons[at] == button)
+            return prompt->originals[at];
+    return nullptr;
+}
+
+static bool key_message(UINT message)
+{
+    return message == WM_KEYDOWN || message == WM_KEYUP || message == WM_CHAR;
+}
+
+/* 面が出た直後の鍵を、釦の手前で捨てる。捨てるたびに、待ちを最初から数え直す。 */
+static LRESULT CALLBACK guarded_button(HWND button, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    struct request_prompt *_Nullable prompt =
+        (struct request_prompt *)GetWindowLongPtrW(GetParent(button), DWLP_USER);
+    WNDPROC original = original_of(prompt, button);
+    if (prompt == nullptr || original == nullptr)
+        return DefWindowProcW(button, message, wparam, lparam);
+    if (prompt->armed || (message != WM_GETDLGCODE && !key_message(message)))
+        return CallWindowProcW(original, button, message, wparam, lparam);
+    if (message == WM_GETDLGCODE)
+        return DLGC_WANTALLKEYS;
+    SetTimer(prompt->dialog, grace_timer, grace_millis, nullptr);
+    return 0;
+}
+
+static bool guard_button(struct request_prompt *_Nonnull prompt, size_t at)
+{
+    prompt->originals[at] =
+        (WNDPROC)SetWindowLongPtrW(prompt->buttons[at], GWLP_WNDPROC, (LONG_PTR)guarded_button);
+    return prompt->originals[at] != nullptr;
 }
 
 static bool make_choice(struct request_prompt *_Nonnull prompt, size_t at)
@@ -114,7 +159,8 @@ static bool make_choice(struct request_prompt *_Nonnull prompt, size_t at)
     prompt->hints[at] = label(prompt, explanations[at]);
     return prompt->buttons[at] != nullptr && prompt->hints[at] != nullptr &&
            dialog_theme_track_control(prompt->buttons[at], DIALOG_POINTER_BUTTON) ==
-               DIALOG_THEME_CONTROL_READY;
+               DIALOG_THEME_CONTROL_READY &&
+           guard_button(prompt, at);
 }
 
 static bool make_controls(struct request_prompt *_Nonnull prompt)
@@ -144,7 +190,8 @@ static int text_height(const struct request_prompt *_Nonnull prompt, HWND _Nulla
         return 0;
     HGDIOBJ previous = SelectObject(device, prompt->font);
     RECT bounds = {0, 0, width, 0};
-    DrawTextW(device, units, -1, &bounds, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+    DrawTextW(device, units, -1, &bounds,
+              DT_CALCRECT | DT_WORDBREAK | DT_EDITCONTROL | DT_NOPREFIX);
     SelectObject(device, previous);
     ReleaseDC(prompt->dialog, device);
     return bounds.bottom;
@@ -200,6 +247,8 @@ static bool initialize(struct request_prompt *_Nonnull prompt, HWND dialog)
     if (!make_font(prompt) || !make_controls(prompt) || !lay_out(prompt, modal_owner_root(dialog)))
         return false;
     SetFocus(prompt->buttons[0]);
+    if (SetTimer(dialog, grace_timer, grace_millis, nullptr) == 0)
+        prompt->armed = true; /* 待ちを数えられなければ、止めたままにしない */
     NotifyWinEvent(EVENT_SYSTEM_ALERT, dialog, OBJID_WINDOW, CHILDID_SELF);
     return true;
 }
@@ -318,6 +367,12 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
     {
         SetWindowLongPtrW(dialog, DWLP_MSGRESULT, 1);
         EndDialog(dialog, IDCANCEL);
+        return TRUE;
+    }
+    if (message == WM_TIMER && wparam == grace_timer)
+    {
+        KillTimer(dialog, grace_timer);
+        prompt->armed = true;
         return TRUE;
     }
     INT_PTR painted = paint_message(prompt, message, wparam, lparam);

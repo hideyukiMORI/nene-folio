@@ -11,6 +11,7 @@
 #include "folio_open_link.h"
 #include "image_adoption.h"
 #include "image_adoption_notice.h"
+#include "name_list.h"
 #include "open_place_kind.h"
 #include "open_request.h"
 #include "request_prompt.h"
@@ -15582,34 +15583,20 @@ static bool keep_edit_aside(struct folio_window *_Nonnull self)
 {
     const char16_t *units = u"";
     size_t count = 0;
-    enum folio_state_outcome outcome = take_text(self, &units, &count);
+    /* 別名保存と同じ前置き: 途中で止まった改名があれば、先にその面が出る。 */
+    enum folio_state_outcome outcome = prepare_name_operation(self);
+    if (outcome == FOLIO_STATE_READY)
+        outcome = take_text(self, &units, &count);
     if (outcome == FOLIO_STATE_READY)
         outcome = folio_state_keep_aside(self->state, units, count);
     redraw_drawer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
-    if (outcome != FOLIO_STATE_READY)
+    if (outcome != FOLIO_STATE_READY && outcome != FOLIO_STATE_CANCELLED)
         report_outcome(self, outcome);
     return outcome == FOLIO_STATE_READY;
 }
 
-/* 面を出して選んでもらう。kept へ、残すときの名前を入れる。 */
-static enum request_prompt_choice ask_request(struct folio_window *_Nonnull self,
-                                              const struct open_request *_Nonnull request,
-                                              struct text_buffer *_Nonnull kept)
-{
-    enum folio_state_outcome named = folio_state_aside_name(self->state, kept);
-    if (named != FOLIO_STATE_READY)
-    {
-        report_outcome(self, named); /* 残す名前を作れない: 面を出さず、依頼は開かない */
-        return REQUEST_PROMPT_UNAVAILABLE;
-    }
-    struct request_prompt_request prompt = {.state = self->state,
-                                            .requested = note_name_stem(open_request_note(request)),
-                                            .current = folio_state_pane_title(self->state).note,
-                                            .kept = text_buffer_bytes(kept)};
-    return show_request_prompt(self, &prompt);
-}
-
+/* 残したノートの名前を 1 行で言う。 */
 static void show_kept_line(struct folio_window *_Nonnull self, const char *_Nonnull kept)
 {
     struct ui_text_request line = {
@@ -15618,35 +15605,64 @@ static void show_kept_line(struct folio_window *_Nonnull self, const char *_Nonn
         show_result_line(self);
 }
 
+/* 編集中の本文を残してから、依頼のノートを開く。残した名前は、開いた後に言う: 開く側が言うこと
+ * （ノートが無い・箇所が無い）があるときは、そちらを残す。 */
+static void keep_and_open(struct folio_window *_Nonnull self,
+                          const struct open_request *_Nonnull request)
+{
+    char kept[name_list_max_length + 1];
+    if (!keep_edit_aside(self))
+        return;
+    /* 残した直後: いま開いているのが、残したノート（面に出した名前と違っていても、実際の名前）。 */
+    (void)bounded_text_copy(kept, sizeof kept, folio_state_pane_title(self->state).note);
+    open_link_request(self, request);
+    if (self->notice != PANE_NOTICE_OPEN_LINK)
+        show_kept_line(self, kept);
+}
+
+/* 残す名前を kept へ入れる。作れなければ（番号が尽きた・長すぎる・記憶不足）、知らせて偽。 */
+static bool request_kept_name(struct folio_window *_Nonnull self,
+                              struct text_buffer *_Nullable *_Nonnull kept)
+{
+    enum folio_state_outcome named = FOLIO_STATE_OUT_OF_MEMORY;
+    if (text_buffer_create(kept) == TEXT_BUFFER_ACCEPTED && *kept != nullptr)
+        named = folio_state_aside_name(self->state, *kept);
+    if (named != FOLIO_STATE_READY)
+        report_outcome(self, named); /* 面を出さず、依頼は開かない */
+    return named == FOLIO_STATE_READY;
+}
+
 /* 編集中で保存していない変更があるときは、どうするかを面で選んでもらってから開く（#1152。hide の
  * 判断 2026-11-22）。リンク（FR-057）は利用者の操作なので、この道を通らない。 */
 static void answer_request(struct folio_window *_Nonnull self,
                            const struct open_request *_Nonnull request)
 {
     struct text_buffer *_Nullable kept = nullptr;
-    if (text_buffer_create(&kept) != TEXT_BUFFER_ACCEPTED || kept == nullptr)
+    if (!request_kept_name(self, &kept) || kept == nullptr)
     {
-        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
+        text_buffer_destroy(kept);
         return;
     }
     /* 面の間にたまった依頼は、次の静かな回で、いちばん新しい 1 つだけを扱う。 */
     self->request_answered = true;
     self->outside_due = true;
-    switch (ask_request(self, request, kept))
+    struct request_prompt_request prompt = {.state = self->state,
+                                            .requested = note_name_stem(open_request_note(request)),
+                                            .current = folio_state_pane_title(self->state).note,
+                                            .kept = text_buffer_bytes(kept)};
+    switch (show_request_prompt(self, &prompt))
     {
     case REQUEST_PROMPT_SAVE:
         open_link_request(self, request); /* いつもの道が、保存してから開く */
         break;
     case REQUEST_PROMPT_KEEP:
-        if (keep_edit_aside(self))
-        {
-            open_link_request(self, request);
-            show_kept_line(self, text_buffer_bytes(kept));
-        }
+        keep_and_open(self, request);
         break;
     case REQUEST_PROMPT_DECLINE:
-    case REQUEST_PROMPT_UNAVAILABLE:
         break; /* 依頼のファイルは、取ったときに消えている */
+    case REQUEST_PROMPT_UNAVAILABLE:
+        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY); /* 面を作れなかった。黙って捨てない */
+        break;
     }
     text_buffer_destroy(kept);
 }
@@ -15660,13 +15676,9 @@ static void open_requested(struct folio_window *_Nonnull self)
     enum folio_state_outcome taken =
         newest ? folio_state_take_last_open_request(self->state, &request, &pending)
                : folio_state_take_open_request(self->state, &request, &pending);
-    if (taken != FOLIO_STATE_READY)
-    {
-        /* out of memory: whatever is still there is looked at with the next notice */
-        open_request_destroy(request);
-        return;
-    }
-    self->outside_due = pending;
+    /* Out of memory part-way: a request already taken (its file is gone) is still handled, and
+     * whatever is left is looked at in another quiet turn. */
+    self->outside_due = pending || (taken != FOLIO_STATE_READY && request != nullptr);
     if (request == nullptr)
         return;
     come_forward(self);

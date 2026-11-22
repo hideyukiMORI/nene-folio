@@ -525,7 +525,8 @@ folio_state_take_last_open_request(struct folio_state *_Nonnull state,
                                    bool *_Nonnull pending);
 /* #1152 / ADR0119: 編集中の本文を別の名前で残すときの名前（`1_いまの名前`。もうあれば
  * `2_`…と、空いている いちばん小さい番号。大文字小文字を区別せずに比べる）を out
- * へ足す。名前のあるノートを開いていなければ NOTHING_SELECTED、番号が尽きたら NAME_TAKEN。 */
+ * へ足す。名前のあるノートを開いていなければ NOTHING_SELECTED、番号が尽きたら
+ * NAME_TAKEN、番号を付けると名前が長すぎるなら INVALID_NAME。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_aside_name(const struct folio_state *_Nonnull state, struct text_buffer *_Nonnull out);
 /* #1152 / ADR0119: 編集中の本文を、同じカテゴリの新しいノート（folio_state_aside_name

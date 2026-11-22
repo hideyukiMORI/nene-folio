@@ -50,7 +50,7 @@ struct stored_index
 struct stored_folder
 {
     char category[64];
-    char names[16][48];
+    char names[16][256]; /* a note name may be 252 bytes */
     size_t count;
     const char *_Nonnull const *_Nullable seed; /* the fixed list it was first filled from */
     size_t seed_count;
@@ -125,24 +125,24 @@ struct persistence_adapter
     bool request_endless;                 /* 依頼でないファイルが、取り出しても尽きない */
     size_t saved_count;
     char saved_categories[16][64];
-    char saved_notes[16][64];
+    char saved_notes[16][256];
     char saved_bodies[16][256];
     const char *_Nullable written_note; /* 最後に書かれたノート名 */
     const char *_Nullable written_category;
-    char written_names[64]; /* 最後に書かれたカテゴリ台帳の名前（'/' 区切り） */
+    char written_names[512]; /* 最後に書かれたカテゴリ台帳の名前（'/' 区切り） */
     enum persistence_outcome ledger_write_outcome;
     size_t written_favorite_count;
     size_t move_favorite_count;
     size_t ledger_writes;                  /* write_note_ledger が呼ばれた回数 */
     const char *_Nullable ledger_category; /* 最後に索引を書かれたカテゴリ名 */
-    char ledger_order[64];                 /* 最後に書かれた索引の名前（'/' 区切り） */
+    char ledger_order[512];                /* 最後に書かれた索引の名前（'/' 区切り） */
     enum persistence_outcome move_outcome;
     size_t moves;                    /* move_note が呼ばれた回数 */
     const char *_Nullable move_from; /* 最後の移動元のカテゴリ名 */
     /* 最後に移されたノート名。名前は移動元の台帳が持っており、意図の中で捨てられるので複製する。 */
     char moved_note[64];
     const char *_Nullable move_to; /* 最後の移動先のカテゴリ名 */
-    char calls[256];               /* 呼び出しの順（'/' 区切り。move・<カテゴリ>・書いた名前） */
+    char calls[1024];              /* 呼び出しの順（'/' 区切り。move・<カテゴリ>・書いた名前） */
     enum rename_outcome rename_outcome;  /* apply_rename が返す結果 */
     enum rename_outcome recover_outcome; /* 起動時の recover_rename が返す結果 */
     size_t renames;                      /* apply_rename が呼ばれた回数 */
@@ -647,7 +647,7 @@ static void remember_published_note(struct persistence_adapter *_Nonnull adapter
     while (at < adapter->saved_count && (strcmp(adapter->saved_categories[at], category) != 0 ||
                                          strcmp(adapter->saved_notes[at], note) != 0))
         ++at;
-    require(at < 16 && strlen(category) < 64 && strlen(note) < 64 && note_text_length(body) < 256,
+    require(at < 16 && strlen(category) < 64 && strlen(note) < 256 && note_text_length(body) < 256,
             "published fake row fits");
     memcpy(adapter->saved_categories[at], category, strlen(category) + 1);
     memcpy(adapter->saved_notes[at], note, strlen(note) + 1);
@@ -2037,7 +2037,7 @@ static void verify_take_last_open_request(void)
     adapter.request_endless = true;
     adapter.requests_taken = 0;
     require(folio_state_take_last_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
-                request == nullptr && pending && adapter.requests_taken == 8 * 32,
+                request == nullptr && pending && adapter.requests_taken == 64 * 32,
             "one call is bounded and says that more may wait");
     folio_state_destroy(state);
 }
@@ -2077,6 +2077,21 @@ static void verify_keep_aside(void)
     folio_state_destroy(state);
 }
 
+/* Opens the note of this name in the first category. */
+static void select_named(struct folio_state *_Nonnull state, const char *_Nonnull name)
+{
+    for (size_t note = 0;; ++note)
+    {
+        if (same_text(folio_state_note_name(state, (struct note_ref){0, note}), name))
+        {
+            require(folio_state_select_note(state, 0, note, FOLIO_UNTITLED_PROTECT) ==
+                        FOLIO_STATE_READY,
+                    "select the named note");
+            return;
+        }
+    }
+}
+
 static void verify_keep_aside_numbers(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
@@ -2085,22 +2100,64 @@ static void verify_keep_aside_numbers(void)
     require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY &&
                 folio_state_keep_aside(state, u"a", 1) == FOLIO_STATE_READY,
-            "keep the first draft aside");
-    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
-            "back to a note of the same category");
+            "keep the first draft of one aside");
     struct text_buffer *name = nullptr;
     require(text_buffer_create(&name) == TEXT_BUFFER_ACCEPTED && name != nullptr, "name buffer");
-    const char *current = folio_state_pane_title(state).note;
-    char expected[64];
-    (void)snprintf(expected, sizeof expected, "%s_%s", same_text(current, "one") ? "2" : "1",
-                   current);
     require(folio_state_aside_name(state, name) == FOLIO_STATE_READY &&
-                same_text(text_buffer_bytes(name), expected),
-            "a number already used for this name is skipped; another note starts at 1 again");
+                same_text(text_buffer_bytes(name), "1_1_one"),
+            "the kept note is a note like any other: its own first number is 1");
+    text_buffer_destroy(name);
+    name = nullptr;
+    select_named(state, "one");
+    require(text_buffer_create(&name) == TEXT_BUFFER_ACCEPTED && name != nullptr, "name buffer");
+    require(folio_state_aside_name(state, name) == FOLIO_STATE_READY &&
+                same_text(text_buffer_bytes(name), "2_one"),
+            "a number already used for this name is skipped");
+    struct note_name *shouted = accepted_note_name("2_ONE");
+    struct note_destination destination = {.category = 0, .name = shouted};
+    require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_READY,
+            "a note whose name differs from 2_one only in case");
+    note_name_destroy(shouted);
+    select_named(state, "one");
+    text_buffer_destroy(name);
+    name = nullptr;
+    require(text_buffer_create(&name) == TEXT_BUFFER_ACCEPTED && name != nullptr, "name buffer");
+    require(folio_state_aside_name(state, name) == FOLIO_STATE_READY &&
+                same_text(text_buffer_bytes(name), "3_one"),
+            "names are compared without regard to case");
     adapter.create_outcome = PERSISTENCE_UNWRITABLE;
     require(folio_state_keep_aside(state, u"b", 1) == FOLIO_STATE_NOTE_STORE_FAILED &&
-                same_text(folio_state_pane_title(state).note, current),
+                same_text(folio_state_pane_title(state).note, "one"),
             "a draft that cannot be written leaves the note that is open as it was");
+    text_buffer_destroy(name);
+    folio_state_destroy(state);
+}
+
+/* A name that leaves no room for the number: nothing is offered and nothing is written. */
+static void verify_keep_aside_long_name(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "saved";
+    struct folio_state *state = ready_state(&adapter);
+    char longest[252];
+    memset(longest, 'x', sizeof longest - 1);
+    longest[sizeof longest - 1] = '\0';
+    struct note_name *long_name = accepted_note_name(longest);
+    struct note_destination destination = {.category = 0, .name = long_name};
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_READY,
+            "a note whose name is as long as a name may be");
+    note_name_destroy(long_name);
+    struct text_buffer *name = nullptr;
+    require(text_buffer_create(&name) == TEXT_BUFFER_ACCEPTED && name != nullptr, "name buffer");
+    size_t creates = adapter.creates;
+    require(
+        folio_state_aside_name(state, name) == FOLIO_STATE_INVALID_NAME &&
+            text_buffer_length(name) == 0 &&
+            folio_state_keep_aside(state, u"y", 1) == FOLIO_STATE_INVALID_NAME &&
+            adapter.creates == creates,
+        "with the number in front the name would be too long: none is offered, none is written");
     text_buffer_destroy(name);
     folio_state_destroy(state);
 }
@@ -2213,6 +2270,7 @@ static void verify_category_refresh(void)
     verify_take_last_open_request();
     verify_keep_aside();
     verify_keep_aside_numbers();
+    verify_keep_aside_long_name();
     verify_take_open_request_allocation();
     verify_reload_document_editing();
     verify_category_refresh_adds();

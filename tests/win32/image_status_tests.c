@@ -11804,6 +11804,9 @@ struct request_step
     int identity; /* the button to answer with: IDOK, 3 (keep) or IDCANCEL */
     bool by_key;  /* give that button the keyboard and press Enter, instead of clicking it */
     bool pile;    /* before answering, two more requests arrive: an older and a newer one */
+    /* The user was typing when the surface appeared: a letter, a space and Enter reach it at once.
+     * They must not answer it. A second later Enter does (the real key, through the dialog). */
+    bool typing;
 };
 static struct
 {
@@ -11814,6 +11817,7 @@ static struct
     size_t count;
     size_t answered;
     unsigned ticks;
+    unsigned typed; /* observer ticks since the keys of a typing step were posted; 0: not yet */
     wchar_t message[512];
     wchar_t keep_hint[512];
 } request_dialog;
@@ -11863,6 +11867,22 @@ static void request_pixels(HWND dialog)
     ReleaseDC(dialog, source);
 }
 
+/* The keys a typing user would still be sending. True once a second has passed since. */
+static bool request_typed(HWND dialog)
+{
+    if (request_dialog.typed == 0)
+    {
+        HWND focus = GetFocus();
+        require(focus == GetDlgItem(dialog, IDOK), "the keys go to the surface's first button");
+        PostMessageW(focus, WM_CHAR, L's', 0);
+        PostMessageW(focus, WM_KEYDOWN, VK_SPACE, 0);
+        PostMessageW(focus, WM_KEYUP, VK_SPACE, 0);
+        PostMessageW(focus, WM_KEYDOWN, VK_RETURN, 0);
+        PostMessageW(focus, WM_KEYDOWN, VK_ESCAPE, 0);
+    }
+    return ++request_dialog.typed > 22; /* 22 ticks of 50 ms: past the 700 ms the surface waits */
+}
+
 static BOOL CALLBACK request_found(HWND dialog, LPARAM parameter)
 {
     wchar_t kind[32];
@@ -11883,10 +11903,16 @@ static BOOL CALLBACK request_found(HWND dialog, LPARAM parameter)
     GetWindowRect(keep, &keep_bounds);
     require(keep_bounds.top > save_bounds.bottom && keep_bounds.left == save_bounds.left,
             "the choices are stacked, one under the other");
-    if (request_dialog.answered == 0)
+    if (request_dialog.answered == 0 && request_dialog.typed == 0)
         request_pixels(dialog);
-    struct request_step step = request_dialog.steps[request_dialog.answered++];
-    request_answer(dialog, step);
+    struct request_step step = request_dialog.steps[request_dialog.answered];
+    if (step.typing && !request_typed(dialog))
+        return FALSE; /* still inside the second in which keys are not taken */
+    ++request_dialog.answered;
+    if (step.typing)
+        PostMessageW(GetFocus(), WM_KEYDOWN, VK_RETURN, 0);
+    else
+        request_answer(dialog, step);
     return FALSE;
 }
 
@@ -11911,6 +11937,7 @@ static void request_expect(struct folio_window *_Nonnull window,
     request_dialog.count = count;
     request_dialog.answered = 0;
     request_dialog.ticks = 0;
+    request_dialog.typed = 0;
     request_dialog.message[0] = L'\0';
     request_dialog.keep_hint[0] = L'\0';
     for (size_t at = 0; at < count; ++at)
@@ -11977,7 +12004,7 @@ static void request_saved(struct native_fixture *_Nonnull fixture,
             "an edited note without unsaved changes is left without a question");
     request_edit(window, fixture);
     append_switch_text(window);
-    static const struct request_step save[] = {{.identity = IDOK}};
+    static const struct request_step save[] = {{.identity = IDOK, .typing = true}};
     request_expect(window, fixture, save, 1);
     request_arrives(fixture, window, request_one);
     request_settled(window, 1);
@@ -11985,6 +12012,8 @@ static void request_saved(struct native_fixture *_Nonnull fixture,
                 request_file_holds(fixture, "two", "追記") &&
                 !outside_request_waits(fixture, L"open-1.json"),
             "saving and opening writes the edited note, then opens the requested one");
+    require(request_dialog.typed > 22,
+            "the keys typed as the surface appeared did not answer it; Enter did, a second later");
     require(wcsstr(request_dialog.message, L"one") != nullptr &&
                 wcsstr(request_dialog.message, L"two") != nullptr &&
                 wcsstr(request_dialog.keep_hint, L"1_two") != nullptr,
