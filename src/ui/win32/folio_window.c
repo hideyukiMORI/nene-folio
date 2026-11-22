@@ -701,7 +701,6 @@ constexpr int base_settings_item_height = 32;
 constexpr int base_settings_item_gap = 8;
 constexpr int base_settings_group_gap = 20;
 
-static size_t append_text(char *_Nonnull out, size_t at, const char *_Nonnull text);
 static WPARAM shortcut_character_for(enum folio_command command);
 static bool shortcut_keydown(struct folio_window *_Nonnull self, WPARAM key);
 static bool accessible_command(enum accessible_kind kind, enum folio_command *_Nonnull out);
@@ -4074,10 +4073,9 @@ static void layout_chooser_help(const struct folio_window *_Nonnull self, char *
             return;
         }
         if (used != 0)
-            used = append_text(out, used, "\n");
-        used = append_text(out, used, line);
+            (void)bounded_text_append(out, draw_unit_limit, "\n");
+        used = bounded_text_append(out, draw_unit_limit, line);
     }
-    out[used] = '\0';
 }
 
 static void command_help_text(const struct folio_window *_Nonnull self, size_t slot,
@@ -4344,13 +4342,6 @@ static void draw_command_row(const struct folio_window *_Nonnull self, HDC devic
     aliases.left = aliases.right;
     SetTextColor(device, row.selected ? self->palette.selected_text : self->palette.header_text);
     draw_aliases(self, device, row.command, aliases);
-}
-
-static size_t append_text(char *_Nonnull out, size_t at, const char *_Nonnull text)
-{
-    size_t length = strlen(text);
-    memcpy(out + at, text, length);
-    return at + length;
 }
 
 /* いまの向きを欄に示す（`/` で開けば次へ、`?` で開けば前へ・ADR 0023 の決定 4）。 */
@@ -18466,13 +18457,13 @@ static void guide_help(const struct folio_window *_Nonnull self, char16_t *_Nonn
     char destination[draw_unit_limit];
     guide_lines(self, lines, destination);
     char joined[draw_unit_limit];
+    joined[0] = '\0';
     size_t at = 0;
     for (size_t index = 1; index < 4 && at + strlen(lines[index]) + 2 <= sizeof joined; ++index)
     {
-        at = append_text(joined, at, lines[index]);
-        at = append_text(joined, at, index < 3 ? "\n" : "");
+        (void)bounded_text_append(joined, sizeof joined, lines[index]);
+        at = bounded_text_append(joined, sizeof joined, index < 3 ? "\n" : "");
     }
-    joined[at] = '\0';
     (void)wide_units(joined, out);
 }
 

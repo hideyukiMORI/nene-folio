@@ -97,6 +97,53 @@ class SourceChecks(unittest.TestCase):
     def test_arc003_adapter_positive(self):
         self.assertNotIn("ARC-003", self.ids("#include <windows.h>", "src/adapters/win32/file_store.c"))
 
+    def details(self, source, path="src/ui/win32/note_pane.c"):
+        return [f.detail for f in cnf.source_checks(path, source, RULES, {}) if f.rule == "CNF-013"]
+
+    def test_cnf013_forbidden_names(self):
+        for name in RULES["abortingCalls"]["forbidden"]:
+            with self.subTest(name=name):
+                found = self.details(f"static void fill(char *out)\n{{\n    (void){name}(out, 4, \"x\");\n}}\n")
+                self.assertEqual(1, len(found))
+                self.assertIn("line 3", found[0])
+
+    def test_cnf013_forbidden_name_without_a_call(self):
+        """An alias or a function pointer reaches the same function, so the bare name is refused too."""
+        self.assertTrue(self.details("#define copy_text strcpy_s\n"))
+
+    def test_cnf013_truncating_call_needs_the_marker(self):
+        for name in RULES["abortingCalls"]["truncating"]:
+            with self.subTest(name=name):
+                self.assertTrue(self.details(f"static void fill(wchar_t *out, const wchar_t *in)\n{{\n    (void){name}(out, 4, in, 3);\n}}\n"))
+                self.assertEqual([], self.details(f"static void fill(wchar_t *out, const wchar_t *in)\n{{\n    (void){name}(out, 4, in, _TRUNCATE);\n}}\n"))
+
+    def test_cnf013_marker_must_sit_inside_the_call(self):
+        source = "static void fill(wchar_t *out, const wchar_t *in)\n{\n    (void)wcsncpy_s(out, measure(4), in, 3);\n    use(_TRUNCATE);\n}\n"
+        self.assertTrue(self.details(source))
+
+    def test_cnf013_marker_in_a_nested_argument_and_across_lines(self):
+        source = "static void fill(wchar_t *out)\n{\n    (void)_snwprintf_s(out, count(out),\n                       _TRUNCATE, L\"%zu\", size(1));\n}\n"
+        self.assertEqual([], self.details(source))
+
+    def test_cnf013_truncating_name_without_a_call(self):
+        self.assertTrue(self.details("static void *const copy = wcsncpy_s;\n"))
+
+    def test_cnf013_comments_and_strings_are_out_of_scope(self):
+        self.assertEqual([], self.details('/* strcpy_s は使わない */\nstatic const char note[] = "swprintf_s";\n// wcscpy_s\n'))
+
+    def test_cnf013_longer_names_are_not_the_forbidden_ones(self):
+        self.assertEqual([], self.details("static int my_strcpy_s_count(void)\n{\n    return bounded_text_copy_s1();\n}\n"))
+
+    def test_cnf013_tests_are_out_of_scope(self):
+        self.assertEqual([], self.details("static void fill(char *out)\n{\n    (void)strcpy_s(out, 4, \"x\");\n}\n", "tests/unit/text_tests.c"))
+
+    def test_cnf013_repository_has_no_aborting_call(self):
+        found = []
+        for path in cnf.inventory(ROOT):
+            if path.suffix in RULES["cExtensions"]:
+                found += self.details((ROOT / path).read_text(encoding="utf-8"), path.as_posix())
+        self.assertEqual([], found)
+
 
 class RepositoryChecks(unittest.TestCase):
     def setUp(self):

@@ -376,6 +376,24 @@ Ready前の既存suiteを除外し、実スクリプト8テスト/9子process・
 - 対応する規則: ARC-001
 - 機械強制: **active**（`eng/conformance.py` の `bundled_asset_checks` ＋ `eng/prove-gates.py` の実ツール反例 P24 / P25）
 
+### CNF-013 — 収まらないとプロセスを終了させる関数の禁止
+
+`eng/conformance-rules.json` の `abortingCalls` が名指しする根（`src/`）の C ソース（`.c` / `.h`）について、
+(a) `forbidden` の名前（`strcpy_s`・`strcat_s`・`wcscpy_s`・`wcscat_s`・`sprintf_s`・`swprintf_s`・`vsprintf_s`・`vswprintf_s`・
+`memcpy_s`・`memmove_s`・`wmemcpy_s`・`wmemmove_s`）が識別子として現れること、
+(b) `truncating` の名前（`strncpy_s`・`strncat_s`・`wcsncpy_s`・`wcsncat_s`・`_snprintf_s`・`_snwprintf_s`・`_vsnprintf_s`・`_vsnwprintf_s`）が、
+**その呼び出しの括弧の中に `_TRUNCATE` を持たない形**で現れること（呼び出しでない現れ方も含む）、を字句で拒否する。
+これらの関数は、行き先が小さいと負や非 0 を返さず、不正な引数の処理（既定ではプロセスの終了。`0xc0000409`）へ進む。
+公開した 1.5.0 で、約 1000 文字を超える画像のパスのあるノートを開くとアプリが終了した（#1129）。同じ形が状態の文の連結にもあった（#1131）。
+2026-11-22 に `src/` の該当の呼び出しを全部置き換え（#1138）、もう一度書かれることをこの検査が止める（#1133）。
+(a) は別名や関数ポインタでも同じ関数へ届くので、呼び出しの形に限らず名前そのものを拒む。注記と文字列の中は対象外。
+`tests/` は対象外（試験の中で止まれば、その試験が落ちて分かる）。
+字句の検査なので、`##` でつないで作った名前は見えない。`_TRUNCATE` を渡しても、行き先が空（`nullptr`）・大きさ 0・書式の誤りでは同じく終了する。
+禁止の一覧に無い `_s` の関数（`_itoa_s`・`_splitpath_s` など）は対象にしていない。いまの `src/` には無く、書くときに一覧へ足す。
+
+- 対応する規則: C-016
+- 機械強制: **active**（`eng/conformance.py` の `aborting_call_checks` ＋ `tests/conformance` の 10 件 ＋ `eng/prove-gates.py` の実ツール反例 P26 / P27）
+
 🔴 **検出語は検査器のソースに直書きしない**（検査器が自分自身を違反として報告する。前例: xi-tools 初版で 7 件の自己検出）。
 🔴 **テストソースは検査対象から外す**（テストは意図的な違反を書く場所）。
 
@@ -415,7 +433,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | C-013 | planned | `eng/symbols.py`（スレッド API） |
 | C-014 | planned |  |
 | C-015 | planned | CNF-003 ＋ CNF-004 |
-| C-016 | planned | `-Werror=vla`・clang-tidy insecureAPI・ASan/UBSan |
+| C-016 | planned | `-Werror=vla`・clang-tidy insecureAPI・ASan/UBSan・CNF-013（収まらないと終了させる関数） |
 | C-017 | planned |  |
 | C-018 | active | eng/conformance.py（CNF-010。列の網羅は CNF-011） |
 | GIT-001 | planned | PR テンプレート＋CI（`Closes #N`） |
@@ -447,6 +465,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | CNF-010 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 | CNF-011 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 | CNF-012 | active | eng/conformance.py / eng/prove-gates.py |
+| CNF-013 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 
 ---
 
