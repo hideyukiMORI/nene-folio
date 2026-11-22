@@ -6,7 +6,7 @@
 - Owner: NeNe Folioリナ
 - Created: 2026-11-22
 - Expires: 2026-12-22
-- Scope: `src/ui/win32/note_pane_ole.c#ole_accept`
+- Scope: `src/ui/win32/note_pane_ole.c#ole_accept` と `src/ui/win32/note_pane_ole.c#ole_menu`
 
 **hideの判断（2026-11-23、原文）: 「例外＝＞認める。必要な理由を明記。」** 実装の席が、ほかの書き方を確かめたうえで要ると判断して書き、hideが認めた。
 
@@ -19,8 +19,8 @@
 - `ole_accept`（`IRichEditOleCallback::QueryAcceptData`。`this`を含めて6引数）
 - `ole_menu`（`IRichEditOleCallback::GetContextMenu`。`this`を含めて5引数）
 
-同じcheckerの行数/ネストの診断も抑制されるため、2つの関数は60行/ネスト3以内に保つ（2026-11-23の時点で、`ole_accept`は本体20行以下・ネスト2、`ole_menu`は本体10行以下・ネスト1）。
-`ole_accept`は「投下かどうか・入力を止めているか・ファイルの並びかどうか」の振り分けだけ、`ole_menu`は「出さない」と答えるだけにする。
+同じcheckerの行数/ネストの診断も抑制されるため、2つの関数は60行/ネスト3以内に保つ（2026-11-23の時点で、`ole_accept`は本体15行以下・ネスト1、`ole_menu`は本体10行以下・ネスト1）。
+`ole_accept`は「投下か貼り付けか・ファイルの並びかどうか・文字を受けてよいか」の振り分けだけ（ファイルの扱いは`accept_files`、文字を受けてよいかは欄の`note_pane_text_open`）、`ole_menu`は「出さない」と答えるだけにする。
 認知的複雑度10は別checkerで引き続き強制する。閾値・除外設定は変更しない。
 
 ## 理由
@@ -34,9 +34,9 @@
 
 ## リスクと封じ込め
 
-2つの関数は状態をほとんど持たない（`ole_accept`が「ファイルが上にあるか」を1つ覚えるだけ）。
+2つの関数は状態をほとんど持たない（`ole_accept`と、そこから呼ぶ`accept_files`が「ファイルが上にあるか」を1つ覚えるだけ）。
 取り込みそのものは、主窓の1つの道（`folio_message_files_dropped`）へ渡すだけで、ここではパスを読まない。
-実窓の試験（CTestの`image_drop_native`）が、RichEdit自身の投下先と、製品と同じ「作る関数」で作ったコールバックへ、データの物を渡して確かめる。コールバックと欄に当てた変異13本は、全部その試験が落ちた（[品質記録](../quality/2026-11-23-ole-drop.md)）。
+実窓の試験（CTestの`image_drop_native`）が、RichEdit自身の投下先と、製品と同じ「作る関数」で作ったコールバックへ、データの物を渡して確かめる。コールバックと欄に当てた変異の結果（最初の13本と、レビューの後の直しの分）は[品質記録](../quality/2026-11-23-ole-drop.md)。
 
 ## 解除条件
 

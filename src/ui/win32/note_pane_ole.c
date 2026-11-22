@@ -1,6 +1,7 @@
 #include "note_pane_ole.h"
 
 #include "folio_message.h"
+#include "note_pane.h"
 #include <shellapi.h>
 #include <shlobj.h>
 #include <stdlib.h>
@@ -13,7 +14,9 @@ struct note_pane_ole
     HWND _Nonnull pane;
     /* 直前の QueryAcceptData(RECO_DROP) が見たデータがファイルの並びだったか。GetDragDropEffect は
      * データを受け取らないので、ここで覚える（RichEdit は欄へ入るたびに QueryAcceptData を呼ぶ）。
-     */
+     * 欄から出たことは知らされないので、真のまま残ることがある。次の投下は欄へ入るときに尋ね
+     * 直されるが、尋ねられない道に古い値を読ませないよう、ほかの問い合わせ（投下でない
+     * QueryAcceptData・欄からのドラッグの GetDragDropEffect）でも偽へ戻す。 */
     bool files_over;
 };
 
@@ -54,7 +57,7 @@ static ULONG STDMETHODCALLTYPE ole_release(IRichEditOleCallback *_Nonnull self)
 }
 
 /* 埋め込みの物（OLE の物）の置き場は渡さない。外から来るデータは ole_accept が先に振り分ける
- * （投下はファイルか文字だけ、貼り付けは欄が文字だけにしている）ので、ここは二重の守り。 */
+ * （投下はファイルか文字だけ、貼り付けは文字だけ）ので、ここは二重の守り。 */
 static HRESULT STDMETHODCALLTYPE ole_storage(IRichEditOleCallback *_Nonnull self,
                                              LPSTORAGE *_Nullable storage)
 {
@@ -70,9 +73,17 @@ static HRESULT STDMETHODCALLTYPE ole_in_place(IRichEditOleCallback *_Nonnull sel
                                               LPOLEINPLACEFRAMEINFO _Nullable information)
 {
     (void)self;
-    (void)frame;
-    (void)document;
-    (void)information;
+    if (frame != nullptr)
+        *frame = nullptr;
+    if (document != nullptr)
+        *document = nullptr;
+    if (information != nullptr)
+    {
+        information->fMDIApp = FALSE;
+        information->hwndFrame = nullptr;
+        information->haccel = nullptr;
+        information->cAccelEntries = 0;
+    }
     return E_NOTIMPL;
 }
 
@@ -116,19 +127,12 @@ static bool holds_files(LPDATAOBJECT _Nullable data)
     return data != nullptr && data->lpVtbl->QueryGetData(data, &wanted) == S_OK;
 }
 
-/* ReleaseStgMedium と同じ意味: 持ち主（pUnkForRelease）がいればそれを Release し、いなければ
- * HGLOBAL を自分で放す。HGLOBAL 以外の形は頼んでいないので、持ち主の Release だけを行う。 */
-static void release_medium(STGMEDIUM *_Nonnull medium)
-{
-    if (medium->pUnkForRelease != nullptr)
-        medium->pUnkForRelease->lpVtbl->Release(medium->pUnkForRelease);
-    else if (medium->tymed == TYMED_HGLOBAL && medium->hGlobal != nullptr)
-        GlobalFree(medium->hGlobal);
-}
-
 /* 渡されたファイルの並び（DROPFILES）の写し。よそのプログラムが作ったものなので、頭の大きさと
  * 名前の始まりを確かめ、末尾に 0 を足して、終わりの無い並びを読ませない。呼んだ側が GlobalFree
- * する。 */
+ * する。足すのは、名前の部分（pFiles から後ろ）を偶数バイトへ切り上げる分と、0 の文字 2 つ分:
+ * 名前の部分が奇数バイトで 0 で終わっていないと、最後の半端な 1 バイトが 1 文字の下位になるので、
+ * その上位と、並びの終わりの 0 が 2 つ（UTF-16）要る。fWide が 0 の並び（1 バイトの 0 が 2 つ）は
+ * これより少なくて足りる。 */
 static HDROP _Nullable closed_list(HGLOBAL _Nonnull source)
 {
     constexpr SIZE_T closing = 2 * sizeof(wchar_t);
@@ -136,9 +140,10 @@ static HDROP _Nullable closed_list(HGLOBAL _Nonnull source)
     const DROPFILES *_Nullable from = size < sizeof *from ? nullptr : GlobalLock(source);
     if (from == nullptr)
         return nullptr;
-    HGLOBAL copy = from->pFiles < sizeof *from || from->pFiles > size
-                       ? nullptr
-                       : GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, size + closing);
+    bool sound = from->pFiles >= sizeof *from && from->pFiles <= size;
+    SIZE_T odd = sound ? (size - from->pFiles) % sizeof(wchar_t) : 0;
+    HGLOBAL copy =
+        sound ? GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, size + odd + closing) : nullptr;
     void *_Nullable to = copy == nullptr ? nullptr : GlobalLock(copy);
     if (to != nullptr)
     {
@@ -154,40 +159,58 @@ static HDROP _Nullable closed_list(HGLOBAL _Nonnull source)
     return (HDROP)copy;
 }
 
-/* ファイルの並びを、主窓の 1 つの取り込みの道（folio_message_files_dropped。欄の WM_DROPFILES と
- * 同じ行き先）へ渡す。ここではパスを読まず、取り込むかどうかも決めない（ARC-001）。
- * 位置は選択の始まり: RichEdit は、投下を尋ねる前に、落とした点へ選択を畳んでいる（2026-11-23 の
- * 実験。落とした点の EM_CHARFROMPOS と同じ位置だった）。 */
-static void hand_files(HWND _Nonnull pane, LPDATAOBJECT _Nonnull data)
+/* 送り手のデータからファイルの並びの写しを取る。取れなければ（GetData の失敗・HGLOBAL でない・
+ * 並びが壊れている・記憶が足りない）nullptr。データは OS の ReleaseStgMedium で放す。 */
+static HDROP _Nullable taken_list(LPDATAOBJECT _Nonnull data)
 {
     FORMATETC wanted = files_shape();
     STGMEDIUM medium = {0};
     if (FAILED(data->lpVtbl->GetData(data, &wanted, &medium)))
-        return;
+        return nullptr;
     HDROP list = medium.tymed == TYMED_HGLOBAL && medium.hGlobal != nullptr
                      ? closed_list(medium.hGlobal)
                      : nullptr;
-    release_medium(&medium);
-    if (list == nullptr)
-        return;
+    ReleaseStgMedium(&medium);
+    return list;
+}
+
+/* ファイルの並びを、主窓の 1 つの取り込みの道（folio_message_files_dropped。欄の WM_DROPFILES と
+ * 同じ行き先）へ渡す。ここではパスを読まず、取り込むかどうかも決めない（ARC-001）。
+ * 並びを取れなかったときは、並び無し（lParam が 0）で同じ道へ知らせる: 主窓が「読めません」の
+ * 1 行を出す（黙って「扱った」と答えない）。
+ * 位置は選択の始まり: RichEdit は、投下を尋ねる前に、落とした点へ選択を畳んでいる（2026-11-23 の
+ * 実験。落とした点の EM_CHARFROMPOS と同じ位置だった）。 */
+static void hand_files(HWND _Nonnull pane, LPDATAOBJECT _Nonnull data)
+{
+    HDROP list = taken_list(data);
     CHARRANGE selected = {0};
     SendMessageW(pane, EM_EXGETSEL, 0, (LPARAM)&selected);
     SendMessageW(GetParent(pane), folio_message_files_dropped,
                  (WPARAM)(selected.cpMin < 0 ? 0 : selected.cpMin), (LPARAM)list);
-    GlobalFree(list);
+    if (list != nullptr)
+        GlobalFree(list);
 }
 
-/* 貼り付け（WM_PASTE）が断るのと同じ: 欄か主窓が入力を止めているあいだ（取り込みの途中・
- * 面が出ているあいだ）は、投下で本文を動かさせない。 */
-static bool drop_open(HWND _Nonnull pane)
+/* ファイルの投下: 欄か主窓が入力を止めているあいだ（取り込みの途中など）は断る。それ以外の
+ * 断り（面・変換の途中・閲覧表示・無題）は、渡した先の主窓と application が決めて 1 行で言う。
+ * RichEdit には取り込ませない（S_FALSE＝こちらで調べた／扱った）。 */
+static HRESULT accept_files(struct note_pane_ole *_Nonnull ole, LPDATAOBJECT _Nonnull data,
+                            bool really)
 {
-    return IsWindowEnabled(pane) && IsWindowEnabled(GetAncestor(pane, GA_ROOT));
+    if (!IsWindowEnabled(ole->pane) || !IsWindowEnabled(GetAncestor(ole->pane, GA_ROOT)))
+        return E_FAIL;
+    ole->files_over = !really;
+    if (really)
+        hand_files(ole->pane, data);
+    return S_FALSE;
 }
 
-/* 投下（RECO_DROP）だけを見る。ファイルの並びは RichEdit に取り込ませず（S_FALSE＝こちらで
- * 調べた／扱った）、本当に落とされたときに主窓へ渡す。それ以外の投下は、文字としてだけ受けさせる
- * （書式つきの文字も、物も入れさせない）。貼り付け（RECO_PASTE）は、欄が EM_PASTESPECIAL で
- * 文字だけにしているので、そのまま通す。 */
+/* 外から来るデータの振り分け。投下（RECO_DROP）のファイルの並びは accept_files。それ以外の投下と
+ * 貼り付け（RECO_PASTE）は、文字としてだけ受けさせる（書式つきの文字も、物も入れさせない）。
+ * 文字の投下は、欄の貼り付けと同じ 1 つの判定（note_pane_text_open: 準備中・変換の途中・着色の錠・
+ * 読み取り専用・入力を止めているあいだ）で断る。貼り付けは、欄がその判定を済ませてから
+ * EM_PASTESPECIAL で頼むので、ここでは形式だけを文字に固定する。欄からの写し・切り取り・ドラッグ
+ * （RECO_COPY・RECO_CUT・RECO_DRAG）は触らない。 */
 // Waiver: WVR-0002
 // NOLINTNEXTLINE(readability-function-size)
 static HRESULT STDMETHODCALLTYPE ole_accept(IRichEditOleCallback *_Nonnull self,
@@ -197,21 +220,16 @@ static HRESULT STDMETHODCALLTYPE ole_accept(IRichEditOleCallback *_Nonnull self,
 {
     (void)picture;
     struct note_pane_ole *_Nonnull ole = owner(self);
-    if (operation != RECO_DROP)
-        return S_OK;
     ole->files_over = false;
-    if (!drop_open(ole->pane))
-        return E_FAIL;
-    if (!holds_files(data))
-    {
-        if (format != nullptr)
-            *format = CF_UNICODETEXT;
+    if (operation != RECO_DROP && operation != RECO_PASTE)
         return S_OK;
-    }
-    ole->files_over = !really;
-    if (really && data != nullptr)
-        hand_files(ole->pane, data);
-    return S_FALSE;
+    if (operation == RECO_DROP && data != nullptr && holds_files(data))
+        return accept_files(ole, data, really != FALSE);
+    if (operation == RECO_DROP && !note_pane_text_open(ole->pane))
+        return E_FAIL;
+    if (format != nullptr)
+        *format = CF_UNICODETEXT;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE ole_help(IRichEditOleCallback *_Nonnull self, BOOL enter)
@@ -242,7 +260,10 @@ static HRESULT STDMETHODCALLTYPE ole_effect(IRichEditOleCallback *_Nonnull self,
 {
     (void)keys;
     if (drag)
+    {
+        owner(self)->files_over = false;
         return S_OK;
+    }
     if (effect == nullptr || !owner(self)->files_over)
         return E_NOTIMPL;
     *effect &= DROPEFFECT_COPY;

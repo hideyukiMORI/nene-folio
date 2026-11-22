@@ -71,6 +71,9 @@ constexpr int note_pane_control_id = 3;
 [[nodiscard]] HWND _Nullable note_pane_handle(const struct note_pane *_Nonnull pane);
 /* 未確定入力中は親がキーを操作へ変換せず、RichEdit/IMEへ渡す（ADR 0018）。 */
 [[nodiscard]] bool note_pane_composing(const struct note_pane *_Nonnull pane);
+/* 外から来る文字（貼り付け・OLE の投下）を、いま本文へ入れてよいか。window は本文の欄の窓
+ * （OLE のコールバックは欄の窓しか持たない）。欄の窓でなければ偽。貼り付けと同じ 1 つの判定。 */
+[[nodiscard]] bool note_pane_text_open(HWND _Nonnull window);
 /* 本文のzoomは両モード、Ctrl+hjklは編集だけで翻訳する。処理済みなら再翻訳しない。 */
 [[nodiscard]] bool note_pane_translate(const struct note_pane *_Nonnull pane,
                                        const MSG *_Nonnull message, enum pane_mode mode);

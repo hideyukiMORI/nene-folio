@@ -571,13 +571,20 @@ static bool pane_wheel(struct note_pane *_Nonnull pane, UINT message, WPARAM key
     return true;
 }
 
+/* 外から来る文字（貼り付けと、OLE の投下）を、いま本文へ入れてよいか。判定はここだけ（ARC-001）:
+ * 準備中・変換の途中・着色の錠・欄か主窓が入力を止めているあいだ・読み取り専用は断る。 */
+static bool text_open(const struct note_pane *_Nonnull pane)
+{
+    return pane->handle != nullptr && pane->readiness == NOTE_PANE_READINESS_READY &&
+           !pane->composing && !pane->recolor_undo_pending && !pane->recolor_input_locked &&
+           IsWindowEnabled(pane->handle) && IsWindowEnabled(GetAncestor(pane->handle, GA_ROOT)) &&
+           (GetWindowLongPtrW(pane->handle, GWL_STYLE) & ES_READONLY) == 0;
+}
+
 /* Keep native replacement/Undo, but never import the clipboard's character or paragraph format. */
 static void paste_text(struct note_pane *_Nonnull pane)
 {
-    if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing ||
-        pane->recolor_undo_pending || pane->recolor_input_locked ||
-        !IsWindowEnabled(pane->handle) || !IsWindowEnabled(GetAncestor(pane->handle, GA_ROOT)) ||
-        (GetWindowLongPtrW(pane->handle, GWL_STYLE) & ES_READONLY) != 0)
+    if (!text_open(pane))
         return;
     cancel_scroll(pane);
     SendMessageW(pane->handle, EM_PASTESPECIAL, CF_UNICODETEXT, 0);
@@ -1218,6 +1225,13 @@ HWND _Nullable note_pane_handle(const struct note_pane *_Nonnull pane)
 bool note_pane_composing(const struct note_pane *_Nonnull pane)
 {
     return pane->composing;
+}
+
+bool note_pane_text_open(HWND _Nonnull window)
+{
+    const struct note_pane *_Nullable pane =
+        (const struct note_pane *)GetWindowLongPtrW(window, GWLP_USERDATA);
+    return pane != nullptr && pane->handle == window && text_open(pane);
 }
 
 bool note_pane_translate(const struct note_pane *_Nonnull pane, const MSG *_Nonnull message,

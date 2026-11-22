@@ -1,7 +1,9 @@
 /* #1195 / ADR0120: 本文の欄（RichEdit）へ渡す IRichEditOleCallback。編集できる RichEdit は OLE の
  * 投下先を自分で登録し、エクスプローラからのファイルを「埋め込みの物」として取り込む。ここで
  * それを断り、ファイルの並びは主窓の取り込みの道（folio_message_files_dropped。欄の WM_DROPFILES と
- * 同じ行き先）へ回す。文字の投下は文字としてだけ受けさせ、物の挿入は断る。 */
+ * 同じ行き先）へ回す。文字の投下と貼り付けは文字としてだけ受けさせ、埋め込みの物の置き場は
+ * 渡さない。挿入の問い合わせ（QueryInsertObject）は通す: Folio 自身が閲覧表示の画像を同じ入口から
+ * 入れるので、断れない。 */
 #ifndef NENEFOLIO_NOTE_PANE_OLE_H
 #define NENEFOLIO_NOTE_PANE_OLE_H
 #include <windows.h>

@@ -37,4 +37,4 @@ WVR-NNNN-short-kebab-title.md
 | Waiver | 規則 | Scope | 解除条件 | 期限 |
 | --- | --- | --- | --- | --- |
 | [WVR-0001](WVR-0001-winhttp-callback-abi.md) | C-012 | `src/adapters/win32/image_download.c#status_callback` | OS ABI引数のみの検査へ置換/当該callback廃止 | 2026-12-02 |
-| [WVR-0002](WVR-0002-richedit-ole-callback-abi.md) | C-012 | `src/ui/win32/note_pane_ole.c#ole_accept`（と`ole_menu`） | OS ABI引数のみの検査へ置換 | 2026-12-22 |
+| [WVR-0002](WVR-0002-richedit-ole-callback-abi.md) | C-012 | `src/ui/win32/note_pane_ole.c#ole_accept` と `src/ui/win32/note_pane_ole.c#ole_menu` | OS ABI引数のみの検査へ置換 | 2026-12-22 |

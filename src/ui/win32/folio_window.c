@@ -740,7 +740,8 @@ static void menu_accessible(const struct folio_window *_Nonnull self, size_t ind
 static void report_outcome(struct folio_window *_Nonnull self, enum folio_state_outcome outcome);
 static bool current_unsaved(const struct folio_window *_Nonnull self, uint64_t revision,
                             bool *_Nonnull out);
-static void files_dropped(struct folio_window *_Nonnull self, HDROP _Nonnull drop, size_t position);
+static void files_dropped(struct folio_window *_Nonnull self, HDROP _Nullable drop,
+                          size_t position);
 [[nodiscard]] static bool preview_theme(struct folio_window *_Nonnull self,
                                         enum folio_theme_choice choice);
 static bool refresh_band_layout(struct folio_window *_Nonnull self);
@@ -20036,11 +20037,17 @@ static void report_lost_drop(struct folio_window *_Nonnull self, size_t lost)
         show_drop_line(self, image_adoption_notice_finished(&summary, IMAGE_ADOPTION_LANDED), true);
 }
 
-static void files_dropped(struct folio_window *_Nonnull self, HDROP _Nonnull drop, size_t position)
+static void files_dropped(struct folio_window *_Nonnull self, HDROP _Nullable drop, size_t position)
 {
     struct dropped_files *_Nullable files = nullptr;
     if (!drop_accepted_now(self))
         return;
+    if (drop ==
+        nullptr) /* #1195: 落とされたが、並びを読めなかった（folio_message_files_dropped） */
+    {
+        report_lost_drop(self, 1);
+        return;
+    }
     if (!dropped_files_create(drop, image_adoption_limit, &files) || files == nullptr)
     {
         report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
