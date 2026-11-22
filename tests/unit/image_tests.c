@@ -1484,66 +1484,91 @@ static void adoption_refusal_notices(void)
 static void adoption_result_notices(void)
 {
     struct image_adoption_summary all = {.dropped = 3, .taken = 3, .finished = true};
-    struct image_adoption_notice notice = image_adoption_notice_finished(&all, true);
+    struct image_adoption_notice notice =
+        image_adoption_notice_finished(&all, IMAGE_ADOPTION_LANDED);
     require(notice_is(notice, UI_TEXT_IMAGE_DROP_TAKEN, 3, 0) &&
                 notice.offset == image_adoption_limit,
             "everything taken in");
-    require(notice_is(image_adoption_notice_finished(&all, false), UI_TEXT_IMAGE_DROP_NOT_WRITTEN,
-                      3, 0),
+    require(notice_is(image_adoption_notice_finished(&all, IMAGE_ADOPTION_DISPLACED),
+                      UI_TEXT_IMAGE_DROP_NOT_WRITTEN, 3, 0),
             "copied but not written into the text");
     struct image_adoption_summary one = {.dropped = 5, .taken = 3, .not_image = 2};
-    require(notice_is(image_adoption_notice_finished(&one, true), UI_TEXT_IMAGE_DROP_SOME_NOT_IMAGE,
-                      3, 2),
+    require(notice_is(image_adoption_notice_finished(&one, IMAGE_ADOPTION_LANDED),
+                      UI_TEXT_IMAGE_DROP_SOME_NOT_IMAGE, 3, 2),
             "some taken, the rest not images");
     one = (struct image_adoption_summary){.dropped = 4, .taken = 3, .too_large = 1};
-    require(image_adoption_notice_finished(&one, true).id == UI_TEXT_IMAGE_DROP_SOME_TOO_LARGE,
+    require(image_adoption_notice_finished(&one, IMAGE_ADOPTION_LANDED).id ==
+                UI_TEXT_IMAGE_DROP_SOME_TOO_LARGE,
             "some taken, the rest too large");
     one = (struct image_adoption_summary){.dropped = 4, .taken = 3, .unreadable = 1};
-    require(image_adoption_notice_finished(&one, true).id == UI_TEXT_IMAGE_DROP_SOME_UNREADABLE,
+    require(image_adoption_notice_finished(&one, IMAGE_ADOPTION_LANDED).id ==
+                UI_TEXT_IMAGE_DROP_SOME_UNREADABLE,
             "some taken, the rest unreadable");
     one = (struct image_adoption_summary){
         .dropped = 6, .taken = 3, .not_stored = 1, .out_of_memory = 1, .pending = 1};
-    require(notice_is(image_adoption_notice_finished(&one, true),
+    require(notice_is(image_adoption_notice_finished(&one, IMAGE_ADOPTION_LANDED),
                       UI_TEXT_IMAGE_DROP_SOME_NOT_STORED, 3, 3),
             "not stored, out of memory and left pending read as one reason");
     one = (struct image_adoption_summary){.dropped = 70, .beyond = 6, .taken = 64};
-    require(notice_is(image_adoption_notice_finished(&one, true), UI_TEXT_IMAGE_DROP_SOME_BEYOND,
-                      64, 6),
+    require(notice_is(image_adoption_notice_finished(&one, IMAGE_ADOPTION_LANDED),
+                      UI_TEXT_IMAGE_DROP_SOME_BEYOND, 64, 6),
             "only the limit kept files out");
     one = (struct image_adoption_summary){.dropped = 5, .taken = 3, .not_image = 1, .too_large = 1};
-    require(
-        notice_is(image_adoption_notice_finished(&one, true), UI_TEXT_IMAGE_DROP_SOME_MIXED, 3, 2),
-        "two reasons are summed up in one line");
+    require(notice_is(image_adoption_notice_finished(&one, IMAGE_ADOPTION_LANDED),
+                      UI_TEXT_IMAGE_DROP_SOME_MIXED, 3, 2),
+            "two reasons are summed up in one line");
+}
+static void adoption_unwritten_notices(void)
+{
+    struct image_adoption_summary all = {.dropped = 3, .taken = 3, .finished = true};
+    require(notice_is(image_adoption_notice_finished(&all, IMAGE_ADOPTION_UNWRITTEN),
+                      UI_TEXT_IMAGE_DROP_NOT_INSERTED, 3, 0),
+            "copied, still the same note, but the text did not take the Markdown");
+    struct image_adoption_summary none = {.dropped = 2, .not_image = 2};
+    require(image_adoption_notice_finished(&none, IMAGE_ADOPTION_LANDED).id ==
+                    UI_TEXT_IMAGE_DROP_NONE_NOT_IMAGE &&
+                image_adoption_notice_finished(&none, IMAGE_ADOPTION_UNWRITTEN).id ==
+                    UI_TEXT_IMAGE_DROP_NONE_NOT_IMAGE,
+            "with nothing taken in, how the text fared does not change the reason");
+    none = (struct image_adoption_summary){.dropped = 3, .pending = 3, .interrupted = true};
+    require(image_adoption_notice_finished(&none, IMAGE_ADOPTION_LANDED).id ==
+                UI_TEXT_IMAGE_DROP_NONE_NOT_STORED,
+            "stopped for want of memory in the same note is not the note changing");
 }
 static void adoption_empty_notices(void)
 {
     struct image_adoption_summary none = {.dropped = 2, .not_image = 2};
-    require(notice_is(image_adoption_notice_finished(&none, false),
+    require(notice_is(image_adoption_notice_finished(&none, IMAGE_ADOPTION_DISPLACED),
                       UI_TEXT_IMAGE_DROP_NONE_NOT_IMAGE, 0, 2),
             "nothing taken: not images");
     none = (struct image_adoption_summary){.dropped = 1, .too_large = 1};
-    require(image_adoption_notice_finished(&none, false).id == UI_TEXT_IMAGE_DROP_NONE_TOO_LARGE,
+    require(image_adoption_notice_finished(&none, IMAGE_ADOPTION_DISPLACED).id ==
+                UI_TEXT_IMAGE_DROP_NONE_TOO_LARGE,
             "nothing taken: too large");
     none = (struct image_adoption_summary){.dropped = 1, .unreadable = 1};
-    require(image_adoption_notice_finished(&none, false).id == UI_TEXT_IMAGE_DROP_NONE_UNREADABLE,
+    require(image_adoption_notice_finished(&none, IMAGE_ADOPTION_DISPLACED).id ==
+                UI_TEXT_IMAGE_DROP_NONE_UNREADABLE,
             "nothing taken: unreadable");
     none = (struct image_adoption_summary){.dropped = 1, .not_stored = 1};
-    require(image_adoption_notice_finished(&none, false).id == UI_TEXT_IMAGE_DROP_NONE_NOT_STORED,
+    require(image_adoption_notice_finished(&none, IMAGE_ADOPTION_DISPLACED).id ==
+                UI_TEXT_IMAGE_DROP_NONE_NOT_STORED,
             "nothing taken: not stored");
     none = (struct image_adoption_summary){.dropped = 2, .unreadable = 1, .too_large = 1};
-    require(image_adoption_notice_finished(&none, false).id == UI_TEXT_IMAGE_DROP_NONE_MIXED,
+    require(image_adoption_notice_finished(&none, IMAGE_ADOPTION_DISPLACED).id ==
+                UI_TEXT_IMAGE_DROP_NONE_MIXED,
             "nothing taken: two reasons");
     none = (struct image_adoption_summary){.dropped = 66, .beyond = 2, .not_image = 64};
-    require(image_adoption_notice_finished(&none, false).id == UI_TEXT_IMAGE_DROP_NONE_MIXED,
+    require(image_adoption_notice_finished(&none, IMAGE_ADOPTION_DISPLACED).id ==
+                UI_TEXT_IMAGE_DROP_NONE_MIXED,
             "nothing taken and files past the limit");
     none = (struct image_adoption_summary){.dropped = 3, .pending = 3, .interrupted = true};
-    require(
-        notice_is(image_adoption_notice_finished(&none, false), UI_TEXT_IMAGE_DROP_STOPPED, 0, 3),
-        "stopped before anything was taken");
+    require(notice_is(image_adoption_notice_finished(&none, IMAGE_ADOPTION_DISPLACED),
+                      UI_TEXT_IMAGE_DROP_STOPPED, 0, 3),
+            "stopped before anything was taken");
     none = (struct image_adoption_summary){
         .dropped = 3, .taken = 1, .pending = 2, .interrupted = true};
-    require(notice_is(image_adoption_notice_finished(&none, false), UI_TEXT_IMAGE_DROP_NOT_WRITTEN,
-                      1, 2),
+    require(notice_is(image_adoption_notice_finished(&none, IMAGE_ADOPTION_DISPLACED),
+                      UI_TEXT_IMAGE_DROP_NOT_WRITTEN, 1, 2),
             "stopped after one copy: the copy is named, the text is not written");
 }
 void run_image_tests(void)
@@ -1551,6 +1576,7 @@ void run_image_tests(void)
     adoption_refusal_notices(); /* #1062: the line shown for a drop */
     adoption_result_notices();
     adoption_empty_notices();
+    adoption_unwritten_notices();
     adoption_refusals(); /* #1062: the intent that takes dropped files in */
     adoption_outcomes();
     adoption_separators();

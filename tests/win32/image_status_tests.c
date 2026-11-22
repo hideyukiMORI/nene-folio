@@ -3481,10 +3481,23 @@ static void drop_written(struct folio_window *_Nonnull window,
             "the drop starts with input held and takes no file in the message itself");
     (void)drop_body(window, now);
     require(wcscmp(before, now) == 0, "nothing is written before the files are taken in");
+    /* Keys typed while the files are taken in must not reach the body: they would move the text
+     * under the dropped place. */
+    PostMessageW(body, WM_CHAR, L'x', 0);
+    PostMessageW(body, WM_KEYDOWN, VK_BACK, 0);
+    PostMessageW(body, WM_CHAR, L'\b', 0);
+    PostMessageW(body, WM_KEYDOWN, 'Z', 0);
+    pump(window);
+    (void)drop_body(window, now);
+    require(wcscmp(before, now) == 0 && !IsWindowEnabled(root),
+            "typing during the drop changes nothing");
     require(drop_turns(window) == 3 && image_drop_calls == 3, "one file per idle turn");
     expect_drop_text(window, before, 5, L"![a](images/a.png)\r![b c](<images/b c.png>)");
     require(SendMessageW(body, EM_GETMODIFY, 0, 0) != 0 && GetFocus() == body,
             "the note reads as changed and the body has the keyboard again");
+    size_t written = drop_body(window, now);
+    require(folio_state_unsaved(fixture->state, now, written) == FOLIO_NOTE_CHANGED,
+            "the application sees the note as unsaved");
     expect_drop_notice(
         window, fixture->state,
         (struct ui_text_request){.id = UI_TEXT_IMAGE_DROP_SOME_NOT_IMAGE, .n = 2, .k = 1});
@@ -3501,6 +3514,56 @@ static void drop_written(struct folio_window *_Nonnull window,
     expect_drop_notice(window, fixture->state,
                        (struct ui_text_request){.id = UI_TEXT_IMAGE_DROP_TAKEN, .n = 1});
     history_undo(window);
+}
+/* The body is read again from the file while the files are taken in: the dropped place belonged to
+ * the old text, so nothing is written, the copies stay, and the window takes input again. */
+static void drop_displaced(struct folio_window *_Nonnull window,
+                           struct native_fixture *_Nonnull fixture)
+{
+    static const wchar_t *const three[] = {L"C:\\drop\\a.png", L"C:\\drop\\b.png",
+                                           L"C:\\drop\\c.png"};
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    wchar_t before[drop_text_capacity];
+    wchar_t now[drop_text_capacity];
+    size_t calls = image_drop_calls;
+    (void)drop_body(window, before);
+    drop_on_pane(window, three, 3, 4);
+    require(!IsWindowEnabled(root) && folio_window_idle_work_ready(window),
+            "the drop to be displaced is running");
+    folio_window_continue_idle_work(window);
+    require(image_drop_calls == calls + 1 &&
+                folio_state_reload_document(fixture->state) == FOLIO_STATE_READY,
+            "one file is taken in, then the body is read again");
+    require(drop_turns(window) == 1 && image_drop_calls == calls + 1,
+            "the rest of the files are left alone");
+    (void)drop_body(window, now);
+    require(wcscmp(before, now) == 0, "nothing is written into a body that was read again");
+    expect_drop_notice(window, fixture->state,
+                       (struct ui_text_request){.id = UI_TEXT_IMAGE_DROP_NOT_WRITTEN, .n = 1});
+}
+/* A dropped name that is no absolute path cannot be handed on: it counts as unreadable. */
+static void drop_lost(struct folio_window *_Nonnull window, struct native_fixture *_Nonnull fixture)
+{
+    static const wchar_t *const pair[] = {L"relative.png", L"C:\\drop\\kept.png"};
+    static const wchar_t *const lone[] = {L"relative.png"};
+    wchar_t before[drop_text_capacity];
+    wchar_t now[drop_text_capacity];
+    (void)drop_body(window, before);
+    drop_on_pane(window, pair, 2, 1);
+    require(drop_turns(window) == 1, "only the usable path is taken in");
+    expect_drop_text(window, before, 1, L"![kept](images/kept.png)");
+    expect_drop_notice(
+        window, fixture->state,
+        (struct ui_text_request){.id = UI_TEXT_IMAGE_DROP_SOME_UNREADABLE, .n = 1, .k = 1});
+    history_undo(window);
+    drop_on_pane(window, lone, 1, 1);
+    pump(window);
+    (void)drop_body(window, now);
+    require(wcscmp(before, now) == 0 &&
+                IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_WINDOW)),
+            "a drop with no usable path starts nothing");
+    expect_drop_notice(window, fixture->state,
+                       (struct ui_text_request){.id = UI_TEXT_IMAGE_DROP_NONE_UNREADABLE, .k = 1});
 }
 /* The edit control's own drop target reports files with EN_DROPFILES; the position comes with it.
  */
@@ -3561,6 +3624,8 @@ static void run_image_drop_case(struct native_fixture *_Nonnull fixture)
     action(window, ACCESSIBLE_EDIT);
     drop_written(window, fixture);
     drop_notified(window, fixture);
+    drop_lost(window, fixture);
+    drop_displaced(window, fixture);
     folio_window_destroy(window);
     image_drop_calls = 0;
     drop_refused_untitled(fixture);

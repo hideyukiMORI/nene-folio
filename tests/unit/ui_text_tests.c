@@ -122,7 +122,7 @@ static const char *_Nonnull const expected[] = {
                                        "件までで、残りの{k}件は取り込んでいません。",
     [UI_TEXT_IMAGE_DROP_SOME_MIXED] =
         "{n}件を取り込みました。{k}"
-        "件は取り込んでいません（画像でない・大きすぎる・読めないなど）。",
+        "件は取り込んでいません（画像でない・大きすぎる・読めない・上限を超えたなど）。",
     [UI_TEXT_IMAGE_DROP_NONE_NOT_IMAGE] = "取り込んでいません。PNGかJPEGの画像を落としてください。",
     [UI_TEXT_IMAGE_DROP_NONE_TOO_LARGE] = "取り込んでいません。1枚は16MBまでです。",
     [UI_TEXT_IMAGE_DROP_NONE_UNREADABLE] = "取り込んでいません。ファイルを読めません。",
@@ -131,6 +131,8 @@ static const char *_Nonnull const expected[] = {
         "取り込んでいません。画像でない・大きすぎる・読めないファイルでした。",
     [UI_TEXT_IMAGE_DROP_NOT_WRITTEN] =
         "{n}件をimagesフォルダへ写しましたが、ノートが切り替わったため本文には書いていません。",
+    [UI_TEXT_IMAGE_DROP_NOT_INSERTED] =
+        "{n}件をimagesフォルダへ写しましたが、本文へ書き込めませんでした。",
     [UI_TEXT_IMAGE_DROP_STOPPED] = "ノートが切り替わったため、画像を取り込んでいません。",
     [UI_TEXT_TAG_MANAGE_SOURCE] = "対象のタグ: {name}",
     [UI_TEXT_TAG_MANAGE_CHANGE] = "変更内容",

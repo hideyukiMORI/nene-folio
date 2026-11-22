@@ -58,8 +58,24 @@ static size_t reason_of(const struct image_adoption_summary *_Nonnull summary)
     return stored != 0 ? reason_not_stored : reason_beyond;
 }
 
+/* 写したのに本文へ入らなかったときの文。入ったときは UI_TEXT_EMPTY。 */
+static enum ui_text unwritten_text(enum image_adoption_landing landing)
+{
+    switch (landing)
+    {
+    case IMAGE_ADOPTION_DISPLACED:
+        return UI_TEXT_IMAGE_DROP_NOT_WRITTEN;
+    case IMAGE_ADOPTION_UNWRITTEN:
+        return UI_TEXT_IMAGE_DROP_NOT_INSERTED;
+    case IMAGE_ADOPTION_LANDED:
+        break;
+    }
+    return UI_TEXT_EMPTY;
+}
+
 struct image_adoption_notice
-image_adoption_notice_finished(const struct image_adoption_summary *_Nonnull summary, bool written)
+image_adoption_notice_finished(const struct image_adoption_summary *_Nonnull summary,
+                               enum image_adoption_landing landing)
 {
     static const enum ui_text some[reason_count] = {
         UI_TEXT_IMAGE_DROP_SOME_NOT_IMAGE,  UI_TEXT_IMAGE_DROP_SOME_TOO_LARGE,
@@ -75,9 +91,9 @@ image_adoption_notice_finished(const struct image_adoption_summary *_Nonnull sum
                                            .n = summary->taken,
                                            .k = left,
                                            .offset = image_adoption_limit};
-    if (!written && summary->taken != 0)
-        notice.id = UI_TEXT_IMAGE_DROP_NOT_WRITTEN;
-    else if (!written && summary->interrupted)
+    if (summary->taken != 0 && landing != IMAGE_ADOPTION_LANDED)
+        notice.id = unwritten_text(landing);
+    else if (summary->taken == 0 && summary->interrupted && landing == IMAGE_ADOPTION_DISPLACED)
         notice.id = UI_TEXT_IMAGE_DROP_STOPPED;
     else if (left != 0)
         notice.id = (summary->taken != 0 ? some : none)[reason_of(summary)];

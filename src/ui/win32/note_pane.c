@@ -2054,6 +2054,26 @@ void note_pane_replace(struct note_pane *_Nonnull pane, struct note_search_span 
     SendMessageW(pane->handle, EM_REPLACESEL, TRUE, (LPARAM)units);
 }
 
+static LONG body_units(const struct note_pane *_Nonnull pane)
+{
+    GETTEXTLENGTHEX count = {.flags = GTL_PRECISE | GTL_NUMCHARS, .codepage = 1200};
+    return (LONG)SendMessageW(pane->handle, EM_GETTEXTLENGTHEX, (WPARAM)&count, 0);
+}
+
+bool note_pane_insert(struct note_pane *_Nonnull pane, size_t position,
+                      const char16_t *_Nonnull units)
+{
+    if (pane->handle == nullptr || pane->readiness != NOTE_PANE_READINESS_READY ||
+        pane->composing || !pane_writable(pane))
+        return false;
+    LONG added = 0;
+    while (units[added] != 0)
+        ++added;
+    LONG before = body_units(pane);
+    note_pane_replace(pane, (struct note_search_span){position, position}, units);
+    return body_units(pane) - before == added;
+}
+
 bool note_pane_selection(const struct note_pane *_Nonnull pane, size_t *_Nonnull start,
                          size_t *_Nonnull end)
 {

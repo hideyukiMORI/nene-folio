@@ -181,29 +181,30 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_IMAGE_DROP_SOME_NOT_IMAGE] =
         {"{n}件を取り込みました。{k}件はPNGでもJPEGでもないため、取り込んでいません。",
          "Images added: {n}. Not added: {k} (not PNG or JPEG).",
-         "已添加 {n} 张。{k} 张不是 PNG 或 JPEG，未添加。"},
+         "已添加 {n} 张。{k} 个文件不是 PNG 或 JPEG，未添加。"},
     [UI_TEXT_IMAGE_DROP_SOME_TOO_LARGE] =
         {"{n}件を取り込みました。{k}件は16MBを超えるため、取り込んでいません。",
          "Images added: {n}. Not added: {k} (over 16 MB).",
-         "已添加 {n} 张。{k} 张超过 16MB，未添加。"},
+         "已添加 {n} 张。{k} 个文件超过 16MB，未添加。"},
     [UI_TEXT_IMAGE_DROP_SOME_UNREADABLE] =
         {"{n}件を取り込みました。{k}件は読めないため、取り込んでいません。",
          "Images added: {n}. Not added: {k} (could not be read).",
-         "已添加 {n} 张。{k} 张无法读取，未添加。"},
+         "已添加 {n} 张。{k} 个文件无法读取，未添加。"},
     [UI_TEXT_IMAGE_DROP_SOME_NOT_STORED] =
         {"{n}件を取り込みました。{k}件はimagesフォルダへ書けないため、取り込んでいません。",
          "Images added: {n}. Not added: {k} (could not write to the images folder).",
-         "已添加 {n} 张。{k} 张无法写入 images 文件夹，未添加。"},
+         "已添加 {n} 张。{k} 个文件无法写入 images 文件夹，未添加。"},
     [UI_TEXT_IMAGE_DROP_SOME_BEYOND] =
         {"{n}件を取り込みました。1回に取り込めるのは{offset}件までで、残りの{k}"
          "件は取り込んでいません。",
          "Images added: {n}. Only {offset} can be added at a time; {k} were left out.",
-         "已添加 {n} 张。一次最多添加 {offset} 张，其余 {k} 张未添加。"},
+         "已添加 {n} 张。一次最多添加 {offset} 张，其余 {k} 个文件未添加。"},
     [UI_TEXT_IMAGE_DROP_SOME_MIXED] =
         {"{n}件を取り込みました。{k}"
-         "件は取り込んでいません（画像でない・大きすぎる・読めないなど）。",
-         "Images added: {n}. Not added: {k} (not an image, too large, or unreadable).",
-         "已添加 {n} 张。{k} 张未添加（不是图片、过大或无法读取等）。"},
+         "件は取り込んでいません（画像でない・大きすぎる・読めない・上限を超えたなど）。",
+         "Images added: {n}. Not added: {k} (not an image, too large, unreadable, or over the "
+         "limit).",
+         "已添加 {n} 张。{k} 个文件未添加（不是图片、过大、无法读取或超出上限等）。"},
     [UI_TEXT_IMAGE_DROP_NONE_NOT_IMAGE] =
         {"取り込んでいません。PNGかJPEGの画像を落としてください。",
          "Nothing was added. Drop PNG or JPEG images.", "未添加。请拖入 PNG 或 JPEG 图片。"},
@@ -226,6 +227,10 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "Copied {n} to the images folder, but the note changed, so nothing was written into the "
          "text.",
          "已将 {n} 张复制到 images 文件夹，但笔记已切换，未写入正文。"},
+    [UI_TEXT_IMAGE_DROP_NOT_INSERTED] =
+        {"{n}件をimagesフォルダへ写しましたが、本文へ書き込めませんでした。",
+         "Copied {n} to the images folder, but could not write them into the text.",
+         "已将 {n} 张复制到 images 文件夹，但未能写入正文。"},
     [UI_TEXT_IMAGE_DROP_STOPPED] = {"ノートが切り替わったため、画像を取り込んでいません。",
                                     "The note changed, so no images were added.",
                                     "笔记已切换，未添加图片。"},

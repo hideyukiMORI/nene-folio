@@ -3,6 +3,7 @@
  * ui_text_format へ渡して出すだけで、どの文にするかを決めない（ARC-011）。 */
 #ifndef NENEFOLIO_IMAGE_ADOPTION_NOTICE_H
 #define NENEFOLIO_IMAGE_ADOPTION_NOTICE_H
+#include "image_adoption_landing.h"
 #include "image_adoption_start.h"
 #include "image_adoption_summary.h"
 #include "ui_text.h"
@@ -21,7 +22,8 @@ image_adoption_notice_refused(enum image_adoption_start start);
 /* 進んでいるあいだの 1 行（「k/n」）。 */
 [[nodiscard]] struct image_adoption_notice
 image_adoption_notice_progress(const struct image_adoption_summary *_Nonnull summary);
-/* 終わった後の 1 行。written は、ためた Markdown を本文へ入れたかどうか。 */
+/* 終わった後の 1 行。landing は、ためた Markdown が本文へ入ったかどうか（窓が答える）。 */
 [[nodiscard]] struct image_adoption_notice
-image_adoption_notice_finished(const struct image_adoption_summary *_Nonnull summary, bool written);
+image_adoption_notice_finished(const struct image_adoption_summary *_Nonnull summary,
+                               enum image_adoption_landing landing);
 #endif

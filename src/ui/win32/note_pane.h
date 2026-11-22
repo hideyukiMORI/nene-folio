@@ -142,6 +142,11 @@ void note_pane_restore_selection(struct note_pane *_Nonnull pane, struct note_se
 void note_pane_replace(struct note_pane *_Nonnull pane, struct note_search_span span,
                        const char16_t *_Nonnull units);
 /* いまの選択範囲（表示中の平文の位置）。窓が無ければ false で start も end も触らない。 */
+/* #1062: position へ units を入れる（Undo は 1 回）。キャレットは入れた文字の後ろへ行く。
+ * 入れた文字の数だけ本文が伸びたら真。用意ができていない・変換の途中・入力を止めている・
+ * 読み取り専用のときは、何もせずに偽。 */
+[[nodiscard]] bool note_pane_insert(struct note_pane *_Nonnull pane, size_t position,
+                                    const char16_t *_Nonnull units);
 [[nodiscard]] bool note_pane_selection(const struct note_pane *_Nonnull pane,
                                        size_t *_Nonnull start, size_t *_Nonnull end);
 /* 論理行の表を「古い」と印を付ける（EN_CHANGE と本文の差し替え・ADR 0026 の決定 3）。

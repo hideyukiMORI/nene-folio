@@ -840,7 +840,8 @@ static bool session_input_message(UINT message)
 
 static bool session_blocks_message(const struct folio_window *_Nonnull self, UINT message)
 {
-    return (session_busy(self) || self->native_modal_depth > 0 ||
+    /* 画像の取り込みの途中（#1062）も、鍵と変換を本文へ通さない: 落とした位置を動かさない。 */
+    return (session_busy(self) || self->adopting || self->native_modal_depth > 0 ||
             self->close_phase != CLOSE_PHASE_IDLE) &&
            session_input_message(message);
 }
@@ -915,7 +916,7 @@ static bool shell_system_command(WPARAM command)
 static bool root_blocks_message(const struct folio_window *_Nonnull self, UINT message,
                                 WPARAM wparam)
 {
-    if (session_busy(self))
+    if (session_busy(self) || self->adopting)
         return session_input_message(message);
     if (self->native_modal_depth == 0 && self->close_phase == CLOSE_PHASE_IDLE)
         return false;
@@ -16468,6 +16469,10 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     }
     free(window->queued_link);
     window->queued_link = nullptr;
+    /* 取り込みの途中で窓が無くなるとき: 開いたままの一連を残さない（次の窓が BUSY で断られる）。 */
+    if (window->adopting)
+        folio_state_close_image_adoption(window->state);
+    window->adopting = false;
     if (window->handle != nullptr)
     {
         discovery_motion_settle(window);
@@ -19869,8 +19874,9 @@ static void show_drop_line(struct folio_window *_Nonnull self, struct image_adop
 
 static bool drop_accepted_now(const struct folio_window *_Nonnull self)
 {
-    return self->pane != nullptr && IsWindowEnabled(self->handle) && !session_busy(self) &&
-           !pane_streaming(self) && !self->removal_running && self->native_modal_depth == 0 &&
+    /* リンクで開く依頼と同じ断り（面・OSの面・終了の途中・変換の途中・ほかの処理の途中・主窓が
+     * 無効）に、検索の面も足す。 */
+    return self->pane != nullptr && !open_link_blocked(self) &&
            self->command_surface == COMMAND_SURFACE_CLOSED;
 }
 
@@ -19891,7 +19897,7 @@ static void report_lost_drop(struct folio_window *_Nonnull self, size_t lost)
 {
     struct image_adoption_summary summary = {.dropped = lost, .unreadable = lost, .finished = true};
     if (lost != 0)
-        show_drop_line(self, image_adoption_notice_finished(&summary, false), true);
+        show_drop_line(self, image_adoption_notice_finished(&summary, IMAGE_ADOPTION_LANDED), true);
 }
 
 static void files_dropped(struct folio_window *_Nonnull self, HDROP _Nonnull drop, size_t position)
@@ -19928,37 +19934,37 @@ static void files_dropped(struct folio_window *_Nonnull self, HDROP _Nonnull dro
     }
 }
 
-/* ためた Markdown を、落とした位置へ入れる（Undo は 1 回）。入れたら真。 */
-static bool write_dropped(struct folio_window *_Nonnull self)
+/* ためた Markdown を、落とした位置へ入れる（Undo は 1 回）。 */
+static enum image_adoption_landing write_dropped(struct folio_window *_Nonnull self)
 {
     const char *_Nonnull text = folio_state_image_adoption_text(self->state);
     struct utf16_text *_Nullable units = nullptr;
-    if (text[0] == '\0' || self->pane == nullptr ||
-        note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY ||
-        !folio_state_image_adoption_lands(self->state) ||
+    if (!folio_state_image_adoption_lands(self->state))
+        return IMAGE_ADOPTION_DISPLACED;
+    if (text[0] == '\0')
+        return IMAGE_ADOPTION_LANDED;
+    if (self->pane == nullptr ||
         utf16_text_create(text, strlen(text), &units) != UTF16_TEXT_CONVERTED || units == nullptr)
-        return false;
-    size_t end = self->drop_position + utf16_text_length(units);
-    note_pane_replace(self->pane,
-                      (struct note_search_span){self->drop_position, self->drop_position},
-                      utf16_text_units(units));
-    note_pane_select(self->pane, end, end);
+        return IMAGE_ADOPTION_UNWRITTEN;
+    bool inserted = note_pane_insert(self->pane, self->drop_position, utf16_text_units(units));
     utf16_text_destroy(units);
-    return true;
+    return inserted ? IMAGE_ADOPTION_LANDED : IMAGE_ADOPTION_UNWRITTEN;
 }
 
 static void finish_drop(struct folio_window *_Nonnull self)
 {
-    bool written = write_dropped(self);
     struct image_adoption_summary summary = folio_state_image_adoption_summary(self->state);
     summary.dropped += self->drop_lost;
     summary.unreadable += self->drop_lost;
-    folio_state_close_image_adoption(self->state);
+    /* 入力を戻してから入れる: 入れたことの知らせ（EN_CHANGE）を、止めているあいだの入力として
+     * 捨てない。ここまで入力待ちの回の中なので、あいだに利用者の入力は入らない。 */
     self->adopting = false;
     EnableWindow(self->handle, self->adopting_enabled);
+    enum image_adoption_landing landing = write_dropped(self);
+    folio_state_close_image_adoption(self->state);
     if (self->adopting_enabled && self->pane != nullptr)
         restore_valid_focus(self, note_pane_handle(self->pane));
-    show_drop_line(self, image_adoption_notice_finished(&summary, written), true);
+    show_drop_line(self, image_adoption_notice_finished(&summary, landing), true);
     (void)settle_save_state(self);
 }
 
