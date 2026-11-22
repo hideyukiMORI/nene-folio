@@ -149,6 +149,14 @@ static void continued_tokens(void)
     expect("pwsh", "@'\n\"#text\n'@; return",
            "{\\cf8 @'}\n{\\cf8 \"#text}\n{\\cf8 '@}; {\\cf7 return}");
     expect("pwsh", "@\"\n\n' here\n\"@", "{\\cf8 @\"}\n\n{\\cf8 ' here}\n{\\cf8 \"@}");
+    /* A here-string opens only when nothing but spaces follows the opener on its line. */
+    expect("pwsh", "@\" x", "@{\\cf8 \" x}");
+    expect("pwsh", "@'  \t\nbody\n'@", "{\\cf8 @'  \t}\n{\\cf8 body}\n{\\cf8 '@}");
+    /* Numbers: a leading dot, an exponent with a sign, and a sign that belongs to no exponent. */
+    expect("c", "x = .5 + 1e-5;", "x = {\\cf10 .5} + {\\cf10 1e-5};");
+    expect("c", "a.b - 1", "a.b - {\\cf10 1}");
+    expect("c", "1e+ x", "{\\cf10 1e}+ x");
+    expect("c", "0x1F+2", "{\\cf10 0x1F}+{\\cf10 2}");
     expect("pwsh", "\"a`\"b\" 'it''s'", "{\\cf8 \"a`\"b\"} {\\cf8 'it''s'}");
     expect("sql", "/* outer /* nested */ end */ SELECT",
            "{\\cf9 /* outer /* nested */ end */} {\\cf7 SELECT}");
