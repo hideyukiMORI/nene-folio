@@ -14,6 +14,7 @@ struct image_adoption
     size_t count; /* sources のうち、写し終えた数（＝扱う数） */
     size_t next;
     struct image_adoption_summary counts;
+    bool displaced; /* 宛先のノートから離れた・本文が入れ替わった。ためた文はもう入れられない */
 };
 
 /* destination は消さない: 作りかけを片付けるときは、まだ呼んだ側のもの。 */
@@ -133,19 +134,32 @@ static void record(struct image_adoption_summary *_Nonnull counts, enum image_ad
     }
 }
 
+static void finish_early(struct image_adoption *_Nonnull adoption)
+{
+    if (adoption->counts.finished)
+        return;
+    adoption->counts.finished = true;
+    adoption->counts.interrupted = adoption->counts.pending != 0;
+}
+
 enum image_adoption_step image_adoption_advance(struct image_adoption *_Nonnull adoption,
                                                 const struct image_port *_Nonnull port)
 {
     if (adoption->counts.finished)
         return IMAGE_ADOPTION_IDLE;
     const struct storage_path *_Nullable source = adoption->sources[adoption->next];
-    if (source != nullptr)
+    if (source == nullptr)
     {
-        ++adoption->next;
-        --adoption->counts.pending;
-        record(&adoption->counts, take(adoption, port, source));
+        finish_early(adoption);
+        return IMAGE_ADOPTION_FINISHED;
     }
-    if (source != nullptr && adoption->next < adoption->count)
+    ++adoption->next;
+    --adoption->counts.pending;
+    record(&adoption->counts, take(adoption, port, source));
+    /* ためた文をもう伸ばせないなら、残りは写しても Markdown を書けない。写さずに終える。 */
+    if (text_buffer_finish(adoption->text) != TEXT_BUFFER_ACCEPTED)
+        finish_early(adoption);
+    if (!adoption->counts.finished && adoption->next < adoption->count)
         return IMAGE_ADOPTION_PROGRESSED;
     adoption->counts.finished = true;
     return IMAGE_ADOPTION_FINISHED;
@@ -153,7 +167,13 @@ enum image_adoption_step image_adoption_advance(struct image_adoption *_Nonnull 
 
 void image_adoption_stop(struct image_adoption *_Nonnull adoption)
 {
-    adoption->counts.finished = true;
+    adoption->displaced = true;
+    finish_early(adoption);
+}
+
+bool image_adoption_landable(const struct image_adoption *_Nonnull adoption)
+{
+    return !adoption->displaced;
 }
 
 struct image_adoption_summary

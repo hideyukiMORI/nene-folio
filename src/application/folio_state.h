@@ -181,7 +181,9 @@ void folio_state_cancel_images(struct folio_state *_Nonnull state);
 [[nodiscard]] enum image_adoption_start
 folio_state_begin_image_adoption(struct folio_state *_Nonnull state,
                                  struct storage_path *_Nonnull const *_Nonnull paths, size_t count);
-/* 始めたときのノートを、いまも編集表示で開いていなければ、残りを扱わずに終える（FINISHED）。 */
+/* 始めたときのノートを、いまも編集表示で開いていなければ、ファイルを扱わずに終える（FINISHED。
+ * summary の interrupted が真で、pending に扱わなかった数が残る）。ためた文を伸ばせなくなった
+ * ときも、残りを写さずに終える。 */
 [[nodiscard]] enum image_adoption_step
 folio_state_continue_image_adoption(struct folio_state *_Nonnull state);
 /* 始めていなければ、全部 0 で finished。 */
@@ -190,9 +192,12 @@ folio_state_image_adoption_summary(const struct folio_state *_Nonnull state);
 /* 取り込んだ画像の Markdown（1 つずつ改行で区切る。前後に改行は無い）。閉じるまで有効。 */
 [[nodiscard]] const char *_Nonnull folio_state_image_adoption_text(
     const struct folio_state *_Nonnull state);
-/* ためた Markdown を、いまの本文へ入れてよいか: 始めたときのノートを、いまも編集表示で開いている。
- */
+/* ためた Markdown を、いまの本文へ入れてよいか: 始めたときのノートを、始めてからずっと編集表示で
+ * 開いていて、本文を読み直してもいない。進める途中で離れていたら、戻っても偽のまま（落とした
+ * 位置は前の本文のもの）。編集中の本文そのものは窓が持つので、呼ぶ側は、始めてから入れるまで
+ * 本文への入力を止めておくこと。 */
 [[nodiscard]] bool folio_state_image_adoption_lands(const struct folio_state *_Nonnull state);
+/* 始めたら、どの終わり方でも必ず閉じる（閉じるまで次は BUSY）。 */
 void folio_state_close_image_adoption(struct folio_state *_Nonnull state);
 
 [[nodiscard]] struct note_import_result

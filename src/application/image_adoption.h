@@ -24,8 +24,10 @@ image_adoption_create(struct note_identity *_Nonnull destination,
 [[nodiscard]] enum image_adoption_step
 image_adoption_advance(struct image_adoption *_Nonnull adoption,
                        const struct image_port *_Nonnull port);
-/* 残りを扱わずに終える。写した画像と、ためた Markdown はそのまま。 */
+/* 宛先のノートから離れた・その本文が入れ替わったときに呼ぶ: 残りを扱わずに終え、ためた Markdown は
+ * もう入れられないものにする（image_adoption_landable が偽になる）。写した画像はそのまま。 */
 void image_adoption_stop(struct image_adoption *_Nonnull adoption);
+[[nodiscard]] bool image_adoption_landable(const struct image_adoption *_Nonnull adoption);
 [[nodiscard]] struct image_adoption_summary
 image_adoption_summary_of(const struct image_adoption *_Nonnull adoption);
 [[nodiscard]] const struct note_identity *_Nonnull image_adoption_destination(

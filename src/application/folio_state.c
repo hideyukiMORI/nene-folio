@@ -5662,10 +5662,11 @@ folio_state_begin_image_adoption(struct folio_state *_Nonnull state,
     if (state->mode != PANE_MODE_EDIT)
         return IMAGE_ADOPTION_VIEWING;
     struct note_identity *_Nullable destination = nullptr;
-    if (folio_state_capture_note(state, located(state->selected_category, state->selected_note),
-                                 &destination) != FOLIO_STATE_READY ||
-        destination == nullptr)
-        return IMAGE_ADOPTION_OUT_OF_MEMORY;
+    enum folio_state_outcome captured = folio_state_capture_note(
+        state, located(state->selected_category, state->selected_note), &destination);
+    if (captured != FOLIO_STATE_READY || destination == nullptr)
+        return captured == FOLIO_STATE_OUT_OF_MEMORY ? IMAGE_ADOPTION_OUT_OF_MEMORY
+                                                     : IMAGE_ADOPTION_NO_NOTE;
     enum image_adoption_start start =
         image_adoption_create(destination, paths, count, &state->image_adoption);
     if (start != IMAGE_ADOPTION_STARTED)
@@ -5675,15 +5676,14 @@ folio_state_begin_image_adoption(struct folio_state *_Nonnull state,
 
 bool folio_state_image_adoption_lands(const struct folio_state *_Nonnull state)
 {
-    if (state->image_adoption == nullptr || state->mode != PANE_MODE_EDIT ||
-        state->document != FOLIO_DOCUMENT_NAMED || category_rename_pending(state))
+    if (state->image_adoption == nullptr || !image_adoption_landable(state->image_adoption) ||
+        state->mode != PANE_MODE_EDIT || state->document != FOLIO_DOCUMENT_NAMED ||
+        category_rename_pending(state))
         return false;
-    const struct note_identity *destination = image_adoption_destination(state->image_adoption);
-    return strcmp(note_identity_category(destination),
-                  category_ledger_name(state->categories, state->selected_category)) == 0 &&
-           strcmp(note_identity_note(destination),
-                  note_ledger_name(state->notes[state->selected_category], state->selected_note)) ==
-               0;
+    struct note_ref ref = located(0, 0);
+    return folio_state_resolve_note(state, image_adoption_destination(state->image_adoption),
+                                    &ref) == FOLIO_STATE_READY &&
+           ref.category == state->selected_category && ref.note == state->selected_note;
 }
 
 enum image_adoption_step folio_state_continue_image_adoption(struct folio_state *_Nonnull state)
@@ -5908,6 +5908,8 @@ enum folio_state_outcome folio_state_reload_document(struct folio_state *_Nonnul
     if (outcome != FOLIO_STATE_READY)
         return outcome;
     /* The same note with another body: what was derived from the old one goes. */
+    if (state->image_adoption != nullptr)
+        image_adoption_stop(state->image_adoption);
     folio_state_close_tag_edit(state);
     folio_state_refresh_note_times(state);
     folio_state_close_history(state);

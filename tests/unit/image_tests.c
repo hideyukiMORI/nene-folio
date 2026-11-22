@@ -1134,7 +1134,6 @@ static struct folio_state *_Nonnull adoption_state(struct persistence_adapter *_
     static struct appearance_port appearance;
     static struct regex_port regex;
     disk = test_adapter_port(adapter);
-    disk.read_note = read_image_note;
     appearance = test_appearance_port();
     regex = test_regex_port();
     struct folio_state *_Nullable state = nullptr;
@@ -1249,6 +1248,42 @@ static void adoption_outcomes(void)
     folio_state_destroy(state);
     test_adapter_destroy(adapter);
 }
+static void adoption_separators(void)
+{
+    static const struct adopt_step script[] = {
+        {IMAGE_ADOPT_NOT_IMAGE, ""},   {IMAGE_ADOPT_COPIED, "a.png"},  {IMAGE_ADOPT_UNREADABLE, ""},
+        {IMAGE_ADOPT_COPIED, "b.png"}, {IMAGE_ADOPT_PRESENT, "b.png"}, {IMAGE_ADOPT_TOO_LARGE, ""}};
+    struct persistence_adapter *adapter = adoption_adapter();
+    struct folio_state *state = adoption_state(adapter);
+    struct dropped_files files;
+    drop(&files, 6);
+    script_adoption(script, 6);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_begin_image_adoption(state, paths_of(&files), 6) ==
+                    IMAGE_ADOPTION_STARTED,
+            "start a drop that fails first and last");
+    while (folio_state_continue_image_adoption(state) == IMAGE_ADOPTION_PROGRESSED)
+        continue;
+    require(strcmp(folio_state_image_adoption_text(state),
+                   "![a](images/a.png)\n![b](images/b.png)\n![b](images/b.png)") == 0 &&
+                folio_state_image_adoption_summary(state).taken == 3 &&
+                !folio_state_image_adoption_summary(state).interrupted &&
+                folio_state_image_adoption_lands(state),
+            "failures before, between and after leave no stray line break; the same image "
+            "dropped twice is linked twice");
+    pick_up(&files);
+    script_adoption(nullptr, 0);
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+}
+static size_t adoption_lines(const char *_Nonnull text)
+{
+    size_t lines = text[0] == '\0' ? 0 : 1;
+    for (const char *at = text; *at != '\0'; ++at)
+        lines += *at == '\n';
+    return lines;
+}
 static void adoption_limit(void)
 {
     static struct adopt_step script[dropped_capacity];
@@ -1272,12 +1307,50 @@ static void adoption_limit(void)
         ++steps;
     summary = folio_state_image_adoption_summary(state);
     require(steps == 63 && adopt_calls == 64 && summary.taken == 64 && summary.beyond == 2 &&
-                summary.pending == 0 && summary.finished,
+                summary.pending == 0 && summary.finished && !summary.interrupted &&
+                adoption_lines(folio_state_image_adoption_text(state)) == 64,
             "the 64th file finishes the drop; the files past the limit are never read");
     pick_up(&files);
     script_adoption(nullptr, 0);
     folio_state_destroy(state);
     test_adapter_destroy(adapter);
+}
+/* The other ways of leaving the body the drop position pointed into. The note is being edited. */
+static void adoption_left(struct folio_state *_Nonnull state,
+                          struct dropped_files *_Nonnull dropped)
+{
+    static const struct adopt_step script[] = {{IMAGE_ADOPT_COPIED, "a.png"},
+                                               {IMAGE_ADOPT_COPIED, "b.png"},
+                                               {IMAGE_ADOPT_COPIED, "c.png"}};
+    /* Leaving the editor of the same note stops the drop as well. */
+    script_adoption(script, 3);
+    require(folio_state_begin_image_adoption(state, paths_of(dropped), 3) ==
+                    IMAGE_ADOPTION_STARTED &&
+                folio_state_continue_image_adoption(state) == IMAGE_ADOPTION_PROGRESSED &&
+                folio_state_end_edit(state, u"x", 1) == FOLIO_STATE_READY &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW,
+            "the note is saved back to the reading view while the drop is running");
+    require(!folio_state_image_adoption_lands(state) &&
+                folio_state_continue_image_adoption(state) == IMAGE_ADOPTION_FINISHED &&
+                adopt_calls == 1 && folio_state_image_adoption_summary(state).interrupted,
+            "the rest is left alone once the note is no longer being edited");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                !folio_state_image_adoption_lands(state),
+            "editing again does not revive the drop either");
+    folio_state_close_image_adoption(state);
+    /* Reading the body again from the file replaces what the drop position pointed into. */
+    script_adoption(script, 3);
+    require(folio_state_begin_image_adoption(state, paths_of(dropped), 3) ==
+                    IMAGE_ADOPTION_STARTED &&
+                folio_state_continue_image_adoption(state) == IMAGE_ADOPTION_PROGRESSED &&
+                folio_state_image_adoption_lands(state) &&
+                folio_state_reload_document(state) == FOLIO_STATE_READY,
+            "the body is read again while the drop is running");
+    require(!folio_state_image_adoption_lands(state) &&
+                folio_state_continue_image_adoption(state) == IMAGE_ADOPTION_IDLE &&
+                adopt_calls == 1 && folio_state_image_adoption_summary(state).pending == 2,
+            "a reloaded body ends the drop at once");
+    folio_state_close_image_adoption(state);
 }
 static void adoption_interrupted(void)
 {
@@ -1303,29 +1376,25 @@ static void adoption_interrupted(void)
                 adopt_calls == 1,
             "the rest is left alone once the note is no longer the one dropped onto");
     struct image_adoption_summary summary = folio_state_image_adoption_summary(state);
-    require(summary.finished && summary.taken == 1 && summary.pending == 2 &&
+    require(summary.finished && summary.interrupted && summary.taken == 1 && summary.pending == 2 &&
                 strcmp(folio_state_image_adoption_text(state), "![a](images/a.png)") == 0,
             "what was taken in stays counted, and the untouched files stay pending");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                !folio_state_image_adoption_lands(state),
+            "coming back to the note does not revive the drop: its position is stale");
     require(folio_state_begin_image_adoption(state, paths_of(&files), 3) == IMAGE_ADOPTION_BUSY,
             "an interrupted drop still has to be closed");
     folio_state_close_image_adoption(state);
-    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
-            "back to the first note");
+    adoption_left(state, &files);
     pick_up(&files);
     script_adoption(nullptr, 0);
     folio_state_destroy(state);
     test_adapter_destroy(adapter);
 }
 /* Every allocation of a three-file drop fails once: the drop either does not start, or it
- * finishes with each file counted as taken or as out of memory, and the text holds exactly the
- * links of the files counted as taken. */
-static size_t adoption_lines(const char *_Nonnull text)
-{
-    size_t lines = text[0] == '\0' ? 0 : 1;
-    for (const char *at = text; *at != '\0'; ++at)
-        lines += *at == '\n';
-    return lines;
-}
+ * finishes with each file counted as taken, as out of memory, or left pending (once the gathered
+ * text cannot grow, the rest is not copied), and the text holds exactly the links of the files
+ * counted as taken. */
 /* Runs one three-file drop whose nth allocation fails (0: none fails). Returns the allocations. */
 static size_t adoption_with_failure(struct folio_state *_Nonnull state,
                                     struct dropped_files *_Nonnull files, size_t nth)
@@ -1338,8 +1407,8 @@ static size_t adoption_with_failure(struct folio_state *_Nonnull state,
     allocation_probe_fail_at(0);
     struct image_adoption_summary summary = folio_state_image_adoption_summary(state);
     if (start == IMAGE_ADOPTION_STARTED)
-        require(summary.finished && summary.pending == 0 &&
-                    summary.taken + summary.out_of_memory == 3 &&
+        require(summary.finished && summary.interrupted == (summary.pending != 0) &&
+                    summary.taken + summary.out_of_memory + summary.pending == 3 &&
                     (nth != 0 || summary.taken == 3) &&
                     adoption_lines(folio_state_image_adoption_text(state)) == summary.taken,
                 "a failed allocation loses whole files, never part of a link");
@@ -1351,9 +1420,14 @@ static size_t adoption_with_failure(struct folio_state *_Nonnull state,
 }
 static void adoption_allocations(void)
 {
-    static const struct adopt_step script[] = {{IMAGE_ADOPT_COPIED, "a.png"},
-                                               {IMAGE_ADOPT_COPIED, "b.png"},
-                                               {IMAGE_ADOPT_COPIED, "c.png"}};
+    /* Names long enough that the gathered text has to grow more than once. */
+    static const struct adopt_step script[] = {
+        {IMAGE_ADOPT_COPIED, "a-name-that-is-long-enough-to-make-the-gathered-text-grow-"
+                             "past-its-first-capacity-0123456789-0123456789-0123456789.png"},
+        {IMAGE_ADOPT_COPIED, "b-name-that-is-long-enough-to-make-the-gathered-text-grow-"
+                             "past-its-first-capacity-0123456789-0123456789-0123456789.png"},
+        {IMAGE_ADOPT_COPIED, "c-name-that-is-long-enough-to-make-the-gathered-text-grow-"
+                             "past-its-first-capacity-0123456789-0123456789-0123456789.png"}};
     struct persistence_adapter *adapter = adoption_adapter();
     struct folio_state *state = adoption_state(adapter);
     struct dropped_files files;
@@ -1378,6 +1452,7 @@ void run_image_tests(void)
 {
     adoption_refusals(); /* #1062: the intent that takes dropped files in */
     adoption_outcomes();
+    adoption_separators();
     adoption_limit();
     adoption_interrupted();
     adoption_allocations();

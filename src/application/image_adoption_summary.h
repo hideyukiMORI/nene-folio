@@ -15,5 +15,6 @@ struct image_adoption_summary
     size_t not_stored;    /* images/ へ書けない */
     size_t out_of_memory; /* 記憶が足りない */
     bool finished;        /* もう進めるものが無い */
+    bool interrupted;     /* 扱っていないファイルを残して打ち切った（pending が 0 でない） */
 };
 #endif
