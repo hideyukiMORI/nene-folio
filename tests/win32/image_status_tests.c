@@ -11820,6 +11820,8 @@ static struct
     size_t answered;
     unsigned ticks;
     unsigned typed; /* observer ticks since the keys of a typing step were posted; 0: not yet */
+    bool explained; /* the last surface showed the line under each choice */
+    LONG height;    /* the last surface's height */
     wchar_t message[512];
     wchar_t keep_hint[512];
 } request_dialog;
@@ -11885,13 +11887,10 @@ static bool request_typed(HWND dialog)
     return ++request_dialog.typed > 22; /* 22 ticks of 50 ms: past the 700 ms the surface waits */
 }
 
-static BOOL CALLBACK request_found(HWND dialog, LPARAM parameter)
+/* What every sighting of the surface checks and remembers: three stacked choices inside it, the
+ * keyboard on saving, and the texts. */
+static void request_looked(HWND dialog)
 {
-    wchar_t kind[32];
-    if (GetAncestor(dialog, GA_ROOTOWNER) != (HWND)parameter || !IsWindowVisible(dialog) ||
-        GetClassNameW(dialog, kind, 32) == 0 || wcscmp(kind, L"#32770") != 0)
-        return TRUE;
-    require(request_dialog.answered < request_dialog.count, "no surface beyond the expected ones");
     HWND message = GetWindow(dialog, GW_CHILD);
     HWND keep = GetDlgItem(dialog, 3);
     require(message != nullptr && GetDlgItem(dialog, IDOK) != nullptr && keep != nullptr &&
@@ -11905,6 +11904,24 @@ static BOOL CALLBACK request_found(HWND dialog, LPARAM parameter)
     GetWindowRect(keep, &keep_bounds);
     require(keep_bounds.top > save_bounds.bottom && keep_bounds.left == save_bounds.left,
             "the choices are stacked, one under the other");
+    RECT surface;
+    RECT decline_bounds;
+    GetWindowRect(dialog, &surface);
+    GetWindowRect(GetDlgItem(dialog, IDCANCEL), &decline_bounds);
+    require(decline_bounds.bottom <= surface.bottom && save_bounds.top >= surface.top,
+            "every choice is inside the surface");
+    request_dialog.explained = IsWindowVisible(GetWindow(keep, GW_HWNDNEXT)) != 0;
+    request_dialog.height = surface.bottom - surface.top;
+}
+
+static BOOL CALLBACK request_found(HWND dialog, LPARAM parameter)
+{
+    wchar_t kind[32];
+    if (GetAncestor(dialog, GA_ROOTOWNER) != (HWND)parameter || !IsWindowVisible(dialog) ||
+        GetClassNameW(dialog, kind, 32) == 0 || wcscmp(kind, L"#32770") != 0)
+        return TRUE;
+    require(request_dialog.answered < request_dialog.count, "no surface beyond the expected ones");
+    request_looked(dialog);
     struct request_step step = request_dialog.steps[request_dialog.answered];
     if (step.picture != nullptr && request_dialog.typed == 0)
         request_pixels(dialog, step.picture);
@@ -12156,6 +12173,28 @@ static void request_pictured(struct native_fixture *_Nonnull fixture,
     }
     require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
             "back to the language the other steps expect");
+    require(request_dialog.explained, "with room to spare each choice has its line of explanation");
+    LONG explained_height = request_dialog.height;
+    /* The window at its smallest: the surface would not fit with the explanations, so they are
+     * folded away and the three choices stay inside it. */
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    RECT before;
+    GetWindowRect(root, &before);
+    SetWindowPos(root, nullptr, 0, 0, before.right - before.left, 1,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    pump(window);
+    static const struct request_step smallest = {.identity = IDCANCEL,
+                                                 .picture = "request-prompt-small.bmp"};
+    request_expect(window, fixture, &smallest, 1);
+    request_arrives(fixture, window, request_one);
+    request_settled(window, 1);
+    require(!request_dialog.explained && request_dialog.keep_hint[0] != L'\0' &&
+                request_dialog.height * 4 < explained_height * 3,
+            "in the smallest window the explanations are folded, the surface is lower by their "
+            "lines, and the choices all show");
+    SetWindowPos(root, nullptr, 0, 0, before.right - before.left, before.bottom - before.top,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    pump(window);
 }
 
 static void request_prompt(struct native_fixture *_Nonnull fixture)

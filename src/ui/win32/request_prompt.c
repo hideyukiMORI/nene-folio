@@ -197,29 +197,44 @@ static int text_height(const struct request_prompt *_Nonnull prompt, HWND _Nulla
     return bounds.bottom;
 }
 
-/* 上から: 題の段、知らせ、（釦、その説明）× 3。幅は 440 までで、主窓の中に収める。 */
-static bool lay_out(struct request_prompt *_Nonnull prompt, HWND _Nullable anchor)
+/* 上から: 題の段、知らせ、（釦、その説明）× 3 を置いて、要る高さを返す。置けなければ 0。compact
+ * なら 説明の行を畳む（隠して、高さを取らない）。 */
+static int place_rows(struct request_prompt *_Nonnull prompt, int width, bool compact)
 {
     int edge = scaled(prompt, 16);
-    RECT wanted =
-        dialog_theme_popup_bounds(anchor, (SIZE){scaled(prompt, 440), scaled(prompt, 200)});
-    int width = wanted.right - wanted.left;
     int inner = width - edge * 2;
     int top = scaled(prompt, ui_part_surface_title_height + 12);
     int height = text_height(prompt, prompt->message, inner);
     if (inner <= 0 || height <= 0)
-        return false;
+        return 0;
     position(prompt->message, (RECT){edge, top, edge + inner, top + height});
     top += height + scaled(prompt, 14);
     for (size_t at = 0; at < choice_count; ++at)
     {
         position(prompt->buttons[at], (RECT){edge, top, edge + inner, top + scaled(prompt, 30)});
         top += scaled(prompt, 30 + 4);
-        height = text_height(prompt, prompt->hints[at], inner);
+        height = compact ? 0 : text_height(prompt, prompt->hints[at], inner);
+        ShowWindow(prompt->hints[at], compact ? SW_HIDE : SW_SHOWNA);
         position(prompt->hints[at], (RECT){edge, top, edge + inner, top + height});
-        top += height + scaled(prompt, 12);
+        top += height + scaled(prompt, compact ? 4 : 12);
     }
-    SIZE size = {width, top + scaled(prompt, 4)};
+    return top + scaled(prompt, 4);
+}
+
+/* 幅は 440 までで、主窓の中に収める。説明の行まで入れると主窓に収まらない高さになるとき（小さい
+ * 主窓・長い名前）は、説明の行を畳む: 3 つの釦は、いつも面の中に見える。 */
+static bool lay_out(struct request_prompt *_Nonnull prompt, HWND _Nullable anchor)
+{
+    RECT wanted =
+        dialog_theme_popup_bounds(anchor, (SIZE){scaled(prompt, 440), scaled(prompt, 200)});
+    int width = wanted.right - wanted.left;
+    RECT room = dialog_theme_popup_bounds(anchor, (SIZE){width, scaled(prompt, 4000)});
+    int height = place_rows(prompt, width, false);
+    if (height > room.bottom - room.top)
+        height = place_rows(prompt, width, true);
+    if (height == 0)
+        return false;
+    SIZE size = {width, height};
     position(prompt->dialog, dialog_theme_popup_bounds(anchor, size));
     position(prompt->close, ui_part_surface_rect((RECT){0, 0, size.cx, size.cy}, prompt->dpi,
                                                  UI_PART_SURFACE_CLOSE));
