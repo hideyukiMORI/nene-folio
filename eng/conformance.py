@@ -93,6 +93,42 @@ def generic_name(name: str, suffixes: list[str]) -> bool:
     return any(folded.endswith(suffix) for suffix in suffixes)
 
 
+def call_arguments(code: str, at: int) -> str:
+    """The text between the parenthesis at code[at] and its partner; code has strings masked."""
+    depth = 0
+    for index in range(at, len(code)):
+        if code[index] == "(":
+            depth += 1
+        elif code[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return code[at + 1:index]
+    return code[at + 1:]
+
+
+def aborting_call_checks(path: str, code: str, settings: dict) -> list[Finding]:
+    """No CRT call that ends the process when the destination is too small (CNF-013).
+
+    The forbidden names have no truncating form, so the name itself is refused. The truncating
+    names are allowed only as a call whose arguments carry the marker that asks for truncation.
+    """
+    findings = []
+    forbidden, truncating = set(settings["forbidden"]), set(settings["truncating"])
+    marker = r"\b" + re.escape(settings["marker"]) + r"\b"
+    for match in re.finditer(r"\b[A-Za-z_]\w*\b", code):
+        name = match[0]
+        if name not in forbidden and name not in truncating:
+            continue
+        number = code.count("\n", 0, match.start()) + 1
+        if name in forbidden:
+            findings.append(Finding("CNF-013", path, f"line {number}: {name} ends the process when the destination is too small"))
+            continue
+        call = re.match(r"\s*\(", code[match.end():])
+        if not call or not re.search(marker, call_arguments(code, match.end() + call.end() - 1)):
+            findings.append(Finding("CNF-013", path, f"line {number}: {name} needs {settings['marker']} among its arguments"))
+    return findings
+
+
 def source_checks(path: str, text: str, rules: dict, waivers: dict) -> list[Finding]:
     findings = []
     code = c_code(text.replace("\\\n", ""))
@@ -114,6 +150,8 @@ def source_checks(path: str, text: str, rules: dict, waivers: dict) -> list[Find
             for function in external_functions(code):
                 if not function.startswith(stem + "_"):
                     findings.append(Finding("CNF-002", path, f"external function {function} lacks the {stem}_ prefix"))
+    if path.startswith(tuple(rules["abortingCalls"]["roots"])):
+        findings.extend(aborting_call_checks(path, c_code(text), rules["abortingCalls"]))
     if not path.startswith("src/adapters/win32/"):
         identifiers = set(re.findall(r"\b[A-Za-z_]\w*\b", code))
         banned = identifiers.intersection(rules["nondeterministicNames"])

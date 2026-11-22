@@ -237,6 +237,21 @@ def main() -> None:
         restoration = run(conformance, root, True)
         evidence.append({"rule": "CNF-012", "negative": result, "restorationExit": restoration["exitCode"]})
         print(f"CNF-012: a file absent from the manifest ({planted.name}) was rejected; restoration passed")
+        calls = json.loads((root / "eng/conformance-rules.json").read_text(encoding="utf-8"))["abortingCalls"]
+        original = window.read_text(encoding="utf-8")
+        plants = [
+            (calls["forbidden"][0], f'(void){calls["forbidden"][0]}(out, 4, "x");'),
+            (calls["truncating"][0], f'(void){calls["truncating"][0]}(out, 4, "x", 3);'),
+        ]
+        for name, statement in plants:
+            window.write_text(original + f"\nstatic void planted_fill(char *out)\n{{\n    {statement}\n}}\n", encoding="utf-8", newline="\n")
+            result = run(conformance, root, False, f"CNF-013: {source.as_posix()}")
+            if name not in result["output"]:
+                raise RuntimeError(f"CNF-013 did not name {name}\n{result['output']}")
+            window.write_text(original, encoding="utf-8", newline="\n")
+            restoration = run(conformance, root, True)
+            evidence.append({"rule": "CNF-013", "negative": result, "restorationExit": restoration["exitCode"]})
+            print(f"CNF-013: a call of {name} in {source.as_posix()} was rejected; restoration passed")
     (output_root / "results.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Gate proofs passed: {len(evidence)} real-tool proofs")
 

@@ -834,6 +834,9 @@ static void verify_lines(void)
             require((index == UI_TEXT_EMPTY) == (line[0] == '\0'),
                     "only UI_TEXT_EMPTY is the empty string, in every column");
             require(utf16_units_of(line) <= ui_text_unit_limit, "the line fits in UTF-16");
+            /* 窓の状態の文の入れ物は、小さいもので256バイト。置換子の無い行は、そこへ切られずに
+             * 入る長さにしておく（切り詰めは落ちないが、文が途中で終わる。#1133）。 */
+            require(strlen(line) < 256, "the line fits a 256-byte destination whole");
         }
     }
 }
