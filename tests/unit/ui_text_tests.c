@@ -104,6 +104,34 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_OUTSIDE_RELOADED] = "外部の変更を読み込みました。",
     [UI_TEXT_OUTSIDE_CHANGED] = "このノートは外部で変更されました。編集中の本文はそのままです。",
     [UI_TEXT_DISCARD_KEPT] = "ファイルを読み直せなかったため、最後に読んだ本文に戻しました。",
+    [UI_TEXT_IMAGE_DROP_VIEWING] = "編集表示で落としてください。閲覧表示では画像を取り込みません。",
+    [UI_TEXT_IMAGE_DROP_UNTITLED] = "名前を付けて保存してから、画像を落としてください。",
+    [UI_TEXT_IMAGE_DROP_NO_NOTE] = "ノートを開いてから、画像を落としてください。",
+    [UI_TEXT_IMAGE_DROP_BUSY] = "前の画像を取り込んでいます。終わってから落としてください。",
+    [UI_TEXT_IMAGE_DROP_PROGRESS] = "画像を取り込んでいます（{k}/{n}）",
+    [UI_TEXT_IMAGE_DROP_TAKEN] = "{n}件の画像を取り込みました。",
+    [UI_TEXT_IMAGE_DROP_SOME_NOT_IMAGE] =
+        "{n}件を取り込みました。{k}件はPNGでもJPEGでもないため、取り込んでいません。",
+    [UI_TEXT_IMAGE_DROP_SOME_TOO_LARGE] =
+        "{n}件を取り込みました。{k}件は16MBを超えるため、取り込んでいません。",
+    [UI_TEXT_IMAGE_DROP_SOME_UNREADABLE] =
+        "{n}件を取り込みました。{k}件は読めないため、取り込んでいません。",
+    [UI_TEXT_IMAGE_DROP_SOME_NOT_STORED] =
+        "{n}件を取り込みました。{k}件はimagesフォルダへ書けないため、取り込んでいません。",
+    [UI_TEXT_IMAGE_DROP_SOME_BEYOND] = "{n}件を取り込みました。1回に取り込めるのは{offset}"
+                                       "件までで、残りの{k}件は取り込んでいません。",
+    [UI_TEXT_IMAGE_DROP_SOME_MIXED] =
+        "{n}件を取り込みました。{k}"
+        "件は取り込んでいません（画像でない・大きすぎる・読めないなど）。",
+    [UI_TEXT_IMAGE_DROP_NONE_NOT_IMAGE] = "取り込んでいません。PNGかJPEGの画像を落としてください。",
+    [UI_TEXT_IMAGE_DROP_NONE_TOO_LARGE] = "取り込んでいません。1枚は16MBまでです。",
+    [UI_TEXT_IMAGE_DROP_NONE_UNREADABLE] = "取り込んでいません。ファイルを読めません。",
+    [UI_TEXT_IMAGE_DROP_NONE_NOT_STORED] = "取り込んでいません。imagesフォルダへ書けません。",
+    [UI_TEXT_IMAGE_DROP_NONE_MIXED] =
+        "取り込んでいません。画像でない・大きすぎる・読めないファイルでした。",
+    [UI_TEXT_IMAGE_DROP_NOT_WRITTEN] =
+        "{n}件をimagesフォルダへ写しましたが、ノートが切り替わったため本文には書いていません。",
+    [UI_TEXT_IMAGE_DROP_STOPPED] = "ノートが切り替わったため、画像を取り込んでいません。",
     [UI_TEXT_TAG_MANAGE_SOURCE] = "対象のタグ: {name}",
     [UI_TEXT_TAG_MANAGE_CHANGE] = "変更内容",
     [UI_TEXT_CODE_COPY] = "コピー",

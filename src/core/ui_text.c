@@ -161,6 +161,74 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_DISCARD_KEPT] = {"ファイルを読み直せなかったため、最後に読んだ本文に戻しました。",
                               "The file could not be reloaded, so the last text read was restored.",
                               "无法重新载入文件，已恢复为上次读取的正文。"},
+    [UI_TEXT_IMAGE_DROP_VIEWING] =
+        {"編集表示で落としてください。閲覧表示では画像を取り込みません。",
+         "Drop images in edit mode. View mode does not add them.",
+         "请在编辑模式下拖入图片。查看模式下不会添加。"},
+    [UI_TEXT_IMAGE_DROP_UNTITLED] = {"名前を付けて保存してから、画像を落としてください。",
+                                     "Save the note with a name first, then drop the images.",
+                                     "请先命名并保存笔记，再拖入图片。"},
+    [UI_TEXT_IMAGE_DROP_NO_NOTE] = {"ノートを開いてから、画像を落としてください。",
+                                    "Open a note first, then drop the images.",
+                                    "请先打开笔记，再拖入图片。"},
+    [UI_TEXT_IMAGE_DROP_BUSY] = {"前の画像を取り込んでいます。終わってから落としてください。",
+                                 "Still adding the previous images. Drop again when it finishes.",
+                                 "正在添加之前的图片。请等完成后再拖入。"},
+    [UI_TEXT_IMAGE_DROP_PROGRESS] = {"画像を取り込んでいます（{k}/{n}）", "Adding images ({k}/{n})",
+                                     "正在添加图片（{k}/{n}）"},
+    [UI_TEXT_IMAGE_DROP_TAKEN] = {"{n}件の画像を取り込みました。", "Images added: {n}.",
+                                  "已添加 {n} 张图片。"},
+    [UI_TEXT_IMAGE_DROP_SOME_NOT_IMAGE] =
+        {"{n}件を取り込みました。{k}件はPNGでもJPEGでもないため、取り込んでいません。",
+         "Images added: {n}. Not added: {k} (not PNG or JPEG).",
+         "已添加 {n} 张。{k} 张不是 PNG 或 JPEG，未添加。"},
+    [UI_TEXT_IMAGE_DROP_SOME_TOO_LARGE] =
+        {"{n}件を取り込みました。{k}件は16MBを超えるため、取り込んでいません。",
+         "Images added: {n}. Not added: {k} (over 16 MB).",
+         "已添加 {n} 张。{k} 张超过 16MB，未添加。"},
+    [UI_TEXT_IMAGE_DROP_SOME_UNREADABLE] =
+        {"{n}件を取り込みました。{k}件は読めないため、取り込んでいません。",
+         "Images added: {n}. Not added: {k} (could not be read).",
+         "已添加 {n} 张。{k} 张无法读取，未添加。"},
+    [UI_TEXT_IMAGE_DROP_SOME_NOT_STORED] =
+        {"{n}件を取り込みました。{k}件はimagesフォルダへ書けないため、取り込んでいません。",
+         "Images added: {n}. Not added: {k} (could not write to the images folder).",
+         "已添加 {n} 张。{k} 张无法写入 images 文件夹，未添加。"},
+    [UI_TEXT_IMAGE_DROP_SOME_BEYOND] =
+        {"{n}件を取り込みました。1回に取り込めるのは{offset}件までで、残りの{k}"
+         "件は取り込んでいません。",
+         "Images added: {n}. Only {offset} can be added at a time; {k} were left out.",
+         "已添加 {n} 张。一次最多添加 {offset} 张，其余 {k} 张未添加。"},
+    [UI_TEXT_IMAGE_DROP_SOME_MIXED] =
+        {"{n}件を取り込みました。{k}"
+         "件は取り込んでいません（画像でない・大きすぎる・読めないなど）。",
+         "Images added: {n}. Not added: {k} (not an image, too large, or unreadable).",
+         "已添加 {n} 张。{k} 张未添加（不是图片、过大或无法读取等）。"},
+    [UI_TEXT_IMAGE_DROP_NONE_NOT_IMAGE] =
+        {"取り込んでいません。PNGかJPEGの画像を落としてください。",
+         "Nothing was added. Drop PNG or JPEG images.", "未添加。请拖入 PNG 或 JPEG 图片。"},
+    [UI_TEXT_IMAGE_DROP_NONE_TOO_LARGE] = {"取り込んでいません。1枚は16MBまでです。",
+                                           "Nothing was added. Each image can be up to 16 MB.",
+                                           "未添加。每张图片最大 16MB。"},
+    [UI_TEXT_IMAGE_DROP_NONE_UNREADABLE] = {"取り込んでいません。ファイルを読めません。",
+                                            "Nothing was added. The files could not be read.",
+                                            "未添加。无法读取文件。"},
+    [UI_TEXT_IMAGE_DROP_NONE_NOT_STORED] =
+        {"取り込んでいません。imagesフォルダへ書けません。",
+         "Nothing was added. Could not write to the images folder.",
+         "未添加。无法写入 images 文件夹。"},
+    [UI_TEXT_IMAGE_DROP_NONE_MIXED] =
+        {"取り込んでいません。画像でない・大きすぎる・読めないファイルでした。",
+         "Nothing was added. The files were not images, too large, or unreadable.",
+         "未添加。文件不是图片、过大或无法读取。"},
+    [UI_TEXT_IMAGE_DROP_NOT_WRITTEN] =
+        {"{n}件をimagesフォルダへ写しましたが、ノートが切り替わったため本文には書いていません。",
+         "Copied {n} to the images folder, but the note changed, so nothing was written into the "
+         "text.",
+         "已将 {n} 张复制到 images 文件夹，但笔记已切换，未写入正文。"},
+    [UI_TEXT_IMAGE_DROP_STOPPED] = {"ノートが切り替わったため、画像を取り込んでいません。",
+                                    "The note changed, so no images were added.",
+                                    "笔记已切换，未添加图片。"},
     [UI_TEXT_OUTSIDE_CHANGED] =
         {"このノートは外部で変更されました。編集中の本文はそのままです。",
          "This note was changed outside NeNe Folio. Your edits are untouched.",

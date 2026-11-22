@@ -88,7 +88,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/ui_text.c src/core/font_bundle_verdict.c src/core/product_version.c src/core/product_link.c)
 target_compile_definitions(nenefolio_core PRIVATE NENEFOLIO_PRODUCT_VERSION="${PROJECT_VERSION}")
 nenefolio_target(nenefolio_application application STATIC src/application/folio_state.c src/application/storage_state.c
-    src/application/image_export.c src/application/image_adoption.c)
+    src/application/image_export.c src/application/image_adoption.c src/application/image_adoption_notice.c)
 nenefolio_link(nenefolio_application nenefolio_core)
 
 nenefolio_target(folio_tests unit_tests EXECUTABLE
