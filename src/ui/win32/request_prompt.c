@@ -197,47 +197,110 @@ static int text_height(const struct request_prompt *_Nonnull prompt, HWND _Nulla
     return bounds.bottom;
 }
 
-/* 上から: 題の段、知らせ、（釦、その説明）× 3 を置いて、要る高さを返す。置けなければ 0。compact
- * なら 説明の行を畳む（隠して、高さを取らない）。 */
-static int place_rows(struct request_prompt *_Nonnull prompt, int width, bool compact)
+/* 釦の下の説明の行と、次の釦までの間。畳むと詰まる。 */
+static int hint_gap(const struct request_prompt *_Nonnull prompt, bool compact)
+{
+    return scaled(prompt, compact ? 4 : 12);
+}
+
+/* 知らせと説明の行を除いた、面の高さ（題の段、間、釦 3 つ）。 */
+static int frame_height(const struct request_prompt *_Nonnull prompt, bool compact)
+{
+    return scaled(prompt, ui_part_surface_title_height + 12) + scaled(prompt, 14) +
+           (int)choice_count * (scaled(prompt, 30 + 4) + hint_gap(prompt, compact)) +
+           scaled(prompt, 4);
+}
+
+/* 説明の行 3 つの高さの合計（測るだけで、動かさない）。 */
+static int hints_height(const struct request_prompt *_Nonnull prompt, int inner)
+{
+    int total = 0;
+    for (size_t at = 0; at < choice_count; ++at)
+        total += text_height(prompt, prompt->hints[at], inner);
+    return total;
+}
+
+/* 字 1 行の高さ。測れなければ 0。 */
+static int line_height(const struct request_prompt *_Nonnull prompt)
+{
+    TEXTMETRICW metrics = {0};
+    HDC device = GetDC(prompt->dialog);
+    if (device == nullptr)
+        return 0;
+    HGDIOBJ previous = SelectObject(device, prompt->font);
+    BOOL measured = GetTextMetricsW(device, &metrics);
+    SelectObject(device, previous);
+    ReleaseDC(prompt->dialog, device);
+    return measured ? (int)metrics.tmHeight : 0;
+}
+
+/* 知らせに使う高さを返し、説明の行を畳むかを *compact に入れる。測れなければ 0。
+ * 説明の行まで入れると room に収まらないときは畳む。畳んでも収まらないとき（長い名前で知らせが
+ * 何行にも折り返す）は、知らせの高さを詰める: 切れるのは知らせの終わりで、釦ではない。 */
+static int message_height(const struct request_prompt *_Nonnull prompt, int inner, int room,
+                          bool *_Nonnull compact)
+{
+    int wanted = text_height(prompt, prompt->message, inner);
+    if (wanted <= 0)
+        return 0;
+    *compact = frame_height(prompt, false) + wanted + hints_height(prompt, inner) > room;
+    int most = room - frame_height(prompt, true);
+    if (!*compact || wanted <= most)
+        return wanted;
+    int line = line_height(prompt);
+    if (line > 0 && most > line)
+        most -= most % line; /* 行の途中で切らない */
+    return most > 0 ? most : 1;
+}
+
+/* 見せる・隠すを、変わるときだけ切り替える（置き直しのたびに表示の通知を出さない）。 */
+static void show_hint(HWND _Nullable hint, bool visible)
+{
+    bool shown = (GetWindowLongPtrW(hint, GWL_STYLE) & WS_VISIBLE) != 0;
+    if (shown != visible)
+        ShowWindow(hint, visible ? SW_SHOWNA : SW_HIDE);
+}
+
+/* 上から: 題の段、知らせ（高さ message）、（釦、その説明）× 3 を置いて、面の高さを返す。compact
+ * なら説明の行を畳む（隠して、高さを取らない）。 */
+static int place_rows(struct request_prompt *_Nonnull prompt, int width, int message, bool compact)
 {
     int edge = scaled(prompt, 16);
     int inner = width - edge * 2;
     int top = scaled(prompt, ui_part_surface_title_height + 12);
-    int height = text_height(prompt, prompt->message, inner);
-    if (inner <= 0 || height <= 0)
-        return 0;
-    position(prompt->message, (RECT){edge, top, edge + inner, top + height});
-    top += height + scaled(prompt, 14);
+    position(prompt->message, (RECT){edge, top, edge + inner, top + message});
+    top += message + scaled(prompt, 14);
     for (size_t at = 0; at < choice_count; ++at)
     {
         position(prompt->buttons[at], (RECT){edge, top, edge + inner, top + scaled(prompt, 30)});
         top += scaled(prompt, 30 + 4);
-        height = compact ? 0 : text_height(prompt, prompt->hints[at], inner);
-        ShowWindow(prompt->hints[at], compact ? SW_HIDE : SW_SHOWNA);
+        int height = compact ? 0 : text_height(prompt, prompt->hints[at], inner);
+        show_hint(prompt->hints[at], !compact);
         position(prompt->hints[at], (RECT){edge, top, edge + inner, top + height});
-        top += height + scaled(prompt, compact ? 4 : 12);
+        top += height + hint_gap(prompt, compact);
     }
     return top + scaled(prompt, 4);
 }
 
-/* 幅は 440 までで、主窓の中に収める。説明の行まで入れると主窓に収まらない高さになるとき（小さい
- * 主窓・長い名前）は、説明の行を畳む: 3 つの釦は、いつも面の中に見える。 */
+/* 幅は 440 までで、主窓の中に収める。高さは message_height の決めたとおり: 主窓の中に、題の段と
+ * 釦 3 つの分の高さがある限り、3 つの釦は面の中に見える（主窓が画面の外へはみ出して、それだけの
+ * 高さも無いときは、面ごと切れる）。面の大きさが変わると古い枠の線が残るので、全体を描き直す。 */
 static bool lay_out(struct request_prompt *_Nonnull prompt, HWND _Nullable anchor)
 {
     RECT wanted =
         dialog_theme_popup_bounds(anchor, (SIZE){scaled(prompt, 440), scaled(prompt, 200)});
     int width = wanted.right - wanted.left;
+    int inner = width - scaled(prompt, 16) * 2;
     RECT room = dialog_theme_popup_bounds(anchor, (SIZE){width, scaled(prompt, 4000)});
-    int height = place_rows(prompt, width, false);
-    if (height > room.bottom - room.top)
-        height = place_rows(prompt, width, true);
-    if (height == 0)
+    bool compact = false;
+    int message = inner > 0 ? message_height(prompt, inner, room.bottom - room.top, &compact) : 0;
+    if (message == 0)
         return false;
-    SIZE size = {width, height};
+    SIZE size = {width, place_rows(prompt, width, message, compact)};
     position(prompt->dialog, dialog_theme_popup_bounds(anchor, size));
     position(prompt->close, ui_part_surface_rect((RECT){0, 0, size.cx, size.cy}, prompt->dpi,
                                                  UI_PART_SURFACE_CLOSE));
+    InvalidateRect(prompt->dialog, nullptr, TRUE);
     return true;
 }
 

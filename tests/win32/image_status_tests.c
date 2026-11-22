@@ -11807,6 +11807,9 @@ struct request_step
     /* The user was typing when the surface appeared: a letter, a space and Enter reach it at once.
      * They must not answer it. A second later Enter does (the real key, through the dialog). */
     bool typing;
+    /* While the surface is open the main window shrinks to its smallest and grows back: the
+     * explanations fold away and come back, and the choices stay inside the surface throughout. */
+    bool resizing;
     /* The surface is saved under this name beside the test, for looking at. Null: no picture. */
     const char *_Nullable picture;
 };
@@ -11819,9 +11822,12 @@ static struct
     size_t count;
     size_t answered;
     unsigned ticks;
-    unsigned typed; /* observer ticks since the keys of a typing step were posted; 0: not yet */
-    bool explained; /* the last surface showed the line under each choice */
-    LONG height;    /* the last surface's height */
+    unsigned typed;     /* observer ticks since the keys of a typing step were posted; 0: not yet */
+    bool explained;     /* the last surface showed the line under each choice */
+    unsigned stage;     /* how far a resizing step has come */
+    LONG opened_height; /* the surface's height when a resizing step first saw it */
+    RECT root_before;   /* the main window before a resizing step made it small */
+    LONG height;        /* the last surface's height */
     wchar_t message[512];
     wchar_t keep_hint[512];
 } request_dialog;
@@ -11910,8 +11916,46 @@ static void request_looked(HWND dialog)
     GetWindowRect(GetDlgItem(dialog, IDCANCEL), &decline_bounds);
     require(decline_bounds.bottom <= surface.bottom && save_bounds.top >= surface.top,
             "every choice is inside the surface");
-    request_dialog.explained = IsWindowVisible(GetWindow(keep, GW_HWNDNEXT)) != 0;
+    unsigned explanations = 0;
+    static const int choices[] = {IDOK, 3, IDCANCEL};
+    for (size_t at = 0; at < 3; ++at)
+        explanations +=
+            IsWindowVisible(GetWindow(GetDlgItem(dialog, choices[at]), GW_HWNDNEXT)) ? 1U : 0U;
+    require(explanations == 0 || explanations == 3, "the explanations show or fold together");
+    request_dialog.explained = explanations == 3;
+    RECT root_bounds;
+    GetWindowRect(GetAncestor(dialog, GA_ROOTOWNER), &root_bounds);
+    require(surface.top >= root_bounds.top && surface.bottom <= root_bounds.bottom,
+            "the surface is inside the main window");
     request_dialog.height = surface.bottom - surface.top;
+}
+
+/* One tick of a resizing step. True once the window is back at its size and the step may answer. */
+static bool request_resized(HWND dialog)
+{
+    HWND root = GetAncestor(dialog, GA_ROOTOWNER);
+    RECT *before = &request_dialog.root_before;
+    switch (request_dialog.stage++)
+    {
+    case 0:
+        require(request_dialog.explained, "the surface opens with its explanations");
+        request_dialog.opened_height = request_dialog.height;
+        GetWindowRect(root, before);
+        SetWindowPos(root, nullptr, 0, 0, before->right - before->left, 1,
+                     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        return false;
+    case 1:
+        require(!request_dialog.explained &&
+                    request_dialog.height * 4 < request_dialog.opened_height * 3,
+                "the open surface folds when the window shrinks");
+        SetWindowPos(root, nullptr, 0, 0, before->right - before->left,
+                     before->bottom - before->top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        return false;
+    default:
+        require(request_dialog.explained && request_dialog.height == request_dialog.opened_height,
+                "the surface is as it was when the window grows back");
+        return true;
+    }
 }
 
 static BOOL CALLBACK request_found(HWND dialog, LPARAM parameter)
@@ -11927,6 +11971,8 @@ static BOOL CALLBACK request_found(HWND dialog, LPARAM parameter)
         request_pixels(dialog, step.picture);
     if (step.typing && !request_typed(dialog))
         return FALSE; /* still inside the second in which keys are not taken */
+    if (step.resizing && !request_resized(dialog))
+        return FALSE; /* the window is at another size until the next tick */
     ++request_dialog.answered;
     if (step.typing)
         PostMessageW(GetFocus(), WM_KEYDOWN, VK_RETURN, 0);
@@ -11957,6 +12003,7 @@ static void request_expect(struct folio_window *_Nonnull window,
     request_dialog.answered = 0;
     request_dialog.ticks = 0;
     request_dialog.typed = 0;
+    request_dialog.stage = 0;
     request_dialog.message[0] = L'\0';
     request_dialog.keep_hint[0] = L'\0';
     for (size_t at = 0; at < count; ++at)
@@ -12005,6 +12052,15 @@ static void request_edit(struct folio_window *_Nonnull window,
     require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT, "the note is being edited");
 }
 
+/* A note whose name is 150 letters, and the request to open it. The note is made for the one
+ * step that needs a long message and is removed again; the request is only ever declined. */
+#define REQUEST_LONG_NAME                                                                          \
+    "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"                                           \
+    "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"                                           \
+    "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"
+static const char request_long[] =
+    "{\"version\":1,\"action\":\"open\",\"category\":\"schedule\",\"note\":\"" REQUEST_LONG_NAME
+    "\"}";
 static const char request_one[] =
     "{\"version\":1,\"action\":\"open\",\"category\":\"schedule\",\"note\":\"one\"}";
 static const char request_two[] =
@@ -12135,6 +12191,55 @@ static void request_forget(struct native_fixture *_Nonnull fixture, const wchar_
     note_ledger_destroy(ledger);
 }
 
+/* The surface where it does not fit: the smallest window, a very long name, and a window
+ * that changes its size while the surface is open. `explained_height` is the height of the
+ * surface with its explanations. */
+static void request_cramped(struct native_fixture *_Nonnull fixture,
+                            struct folio_window *_Nonnull window, LONG explained_height)
+{
+    /* The window at its smallest: the surface would not fit with the explanations, so they are
+     * folded away and the three choices stay inside it. */
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    RECT before;
+    GetWindowRect(root, &before);
+    SetWindowPos(root, nullptr, 0, 0, before.right - before.left, 1,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    pump(window);
+    static const struct request_step smallest = {.identity = IDCANCEL,
+                                                 .picture = "request-prompt-small.bmp"};
+    request_expect(window, fixture, &smallest, 1);
+    request_arrives(fixture, window, request_one);
+    request_settled(window, 1);
+    RECT smallest_root;
+    GetWindowRect(root, &smallest_root);
+    require(smallest_root.bottom - smallest_root.top < before.bottom - before.top,
+            "the window did get smaller");
+    require(!request_dialog.explained && request_dialog.height * 4 < explained_height * 3,
+            "in the smallest window the explanations are folded, the surface is lower by their "
+            "lines, and the choices all show");
+    /* A name so long that the message wraps over many lines: folding is not enough, so the
+     * message gives up its last lines and the choices still stay inside the surface. */
+    static const struct request_step crowded = {.identity = IDCANCEL,
+                                                .picture = "request-prompt-crowded.bmp"};
+    outside_write(fixture, REQUEST_LONG_NAME, "長い名前のノート。\n");
+    request_expect(window, fixture, &crowded, 1);
+    request_arrives(fixture, window, request_long);
+    request_settled(window, 1);
+    request_forget(fixture, L"" REQUEST_LONG_NAME L".md", REQUEST_LONG_NAME);
+    require(!request_dialog.explained && wcsstr(request_dialog.message, L"WWWWWWWW") != nullptr,
+            "a long name folds the explanations and the choices stay inside the surface");
+    SetWindowPos(root, nullptr, 0, 0, before.right - before.left, before.bottom - before.top,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    pump(window);
+    /* The surface stays open while the window shrinks and grows back. */
+    static const struct request_step resized = {.identity = IDCANCEL, .resizing = true};
+    request_expect(window, fixture, &resized, 1);
+    request_arrives(fixture, window, request_one);
+    request_settled(window, 1);
+    require(request_dialog.explained && request_dialog.stage == 3,
+            "the surface went through shrinking and growing before it was answered");
+}
+
 /* The surface in the other languages and themes, declined each time: pictures to look at, and the
  * check that it can be built and answered in each. The note stays as it is. */
 static void request_pictured(struct native_fixture *_Nonnull fixture,
@@ -12174,27 +12279,7 @@ static void request_pictured(struct native_fixture *_Nonnull fixture,
     require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
             "back to the language the other steps expect");
     require(request_dialog.explained, "with room to spare each choice has its line of explanation");
-    LONG explained_height = request_dialog.height;
-    /* The window at its smallest: the surface would not fit with the explanations, so they are
-     * folded away and the three choices stay inside it. */
-    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
-    RECT before;
-    GetWindowRect(root, &before);
-    SetWindowPos(root, nullptr, 0, 0, before.right - before.left, 1,
-                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-    pump(window);
-    static const struct request_step smallest = {.identity = IDCANCEL,
-                                                 .picture = "request-prompt-small.bmp"};
-    request_expect(window, fixture, &smallest, 1);
-    request_arrives(fixture, window, request_one);
-    request_settled(window, 1);
-    require(!request_dialog.explained && request_dialog.keep_hint[0] != L'\0' &&
-                request_dialog.height * 4 < explained_height * 3,
-            "in the smallest window the explanations are folded, the surface is lower by their "
-            "lines, and the choices all show");
-    SetWindowPos(root, nullptr, 0, 0, before.right - before.left, before.bottom - before.top,
-                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-    pump(window);
+    request_cramped(fixture, window, request_dialog.height);
 }
 
 static void request_prompt(struct native_fixture *_Nonnull fixture)
