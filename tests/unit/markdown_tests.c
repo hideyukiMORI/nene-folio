@@ -3,6 +3,7 @@
 #include "markdown_autolink.h"
 #include "markdown_character_reference.h"
 #include "markdown_containers.h"
+#include "markdown_destination.h"
 #include "markdown_inline_tokens.h"
 #include "markdown_line.h"
 #include "markdown_media.h"
@@ -2178,8 +2179,127 @@ static void verify_rule_spacing(void)
     expect_fragment("## Heading\n\nordinary", "\\sb200\\sa80", "\\sb240");
 }
 
+/* The destination of a link or an image, read on its own: what the part between the parentheses
+ * means. `expected` is the decoded destination, or null when the text is no destination. */
+static void expect_destination(const char *_Nonnull source, const char *_Nullable expected)
+{
+    struct markdown_span span = {.bytes = source, .length = strlen(source), .offset = 0};
+    struct markdown_view view = {.spans = &span, .count = 1, .length = span.length};
+    struct markdown_destination *_Nullable value = nullptr;
+    enum image_outcome outcome =
+        markdown_destination_create(view, (struct note_search_span){0, span.length}, &value);
+    if (expected == nullptr)
+    {
+        if (outcome != IMAGE_UNSUPPORTED || value != nullptr)
+            printf("destination accepted: [%s]\n", source);
+        require(outcome == IMAGE_UNSUPPORTED && value == nullptr, "text that is no destination");
+        return;
+    }
+    bool same = outcome == IMAGE_READY && value != nullptr &&
+                markdown_destination_length(value) == strlen(expected) &&
+                strcmp(markdown_destination_bytes(value), expected) == 0;
+    if (!same)
+        printf("destination [%s]: expected [%s], got [%s]\n", source, expected,
+               value != nullptr ? markdown_destination_bytes(value) : "(none)");
+    require(same, "the decoded destination");
+    markdown_destination_destroy(value);
+}
+
+static void verify_destination_shapes(void)
+{
+    expect_destination("images/a.png", "images/a.png");
+    expect_destination("  \t\r\nimages/a.png \n", "images/a.png");
+    expect_destination("<images/my photo.png>", "images/my photo.png");
+    expect_destination(" <a b> ", "a b");
+    expect_destination("<a\\>b>", "a>b");
+    expect_destination("<a b", nullptr);
+    expect_destination("<>", nullptr);
+    expect_destination("   ", nullptr);
+    expect_destination("a.png \"title\"", "a.png");
+    expect_destination("a.png 'title'", "a.png");
+    expect_destination("a.png (title)", "a.png");
+    expect_destination("a.png\t\"a (b) c\"  ", "a.png");
+    expect_destination("<a b> \"title\"", "a b");
+    expect_destination("a.png title", nullptr);
+    expect_destination("a.png \"title", nullptr);
+    expect_destination("a.png \"title'", nullptr);
+    expect_destination("a.png (title", nullptr);
+    expect_destination("a.png \"", nullptr);
+    expect_destination("<a b>\"title\"", nullptr);
+    expect_destination("<a b>x", nullptr);
+    /* What the reader does today (#1158): a backslash before a space keeps the destination
+     * going. CommonMark would end the destination at the space and find no title in `b`. */
+    expect_destination("a\\ b", "a\\ b");
+}
+
+static void verify_destination_decoding(void)
+{
+    expect_destination("a\\)b", "a)b");
+    expect_destination("a\\!b\\/c\\:d\\@e\\[f\\`g\\{h\\~i", "a!b/c:d@e[f`g{h~i");
+    expect_destination("a\\zb\\0c\\Zd",
+                       "a\\zb\\0c\\Zd"); /* letters and digits keep the backslash */
+    expect_destination("a\\", "a\\");
+    expect_destination("a&amp;b", "a&b");
+    expect_destination("&#x41;&#66;", "AB");
+    expect_destination("a&bogus;b&", "a&bogus;b&");
+    expect_destination("caf\xC3\xA9.png", "caf\xC3\xA9.png");
+    /* A span that ends inside a character reference: the reference is not read past the span. */
+    const char cut[] = "a&amp;";
+    struct markdown_span span = {.bytes = cut, .length = sizeof cut - 1, .offset = 0};
+    struct markdown_view view = {.spans = &span, .count = 1, .length = span.length};
+    struct markdown_destination *_Nullable value = nullptr;
+    require(markdown_destination_create(view, (struct note_search_span){0, 4}, &value) ==
+                    IMAGE_READY &&
+                value != nullptr && strcmp(markdown_destination_bytes(value), "a&am") == 0,
+            "a reference cut by the end of the span stays as it is written");
+    markdown_destination_destroy(value);
+    value = nullptr;
+    require(markdown_destination_create(view, (struct note_search_span){1, 1}, &value) ==
+                    IMAGE_UNSUPPORTED &&
+                markdown_destination_create(view, (struct note_search_span){0, 7}, &value) ==
+                    IMAGE_UNSUPPORTED &&
+                value == nullptr,
+            "an empty span and one past the text are no destination");
+    const char angled[] = " <a b> 'x'";
+    span = (struct markdown_span){.bytes = angled, .length = sizeof angled - 1, .offset = 0};
+    view = (struct markdown_view){.spans = &span, .count = 1, .length = span.length};
+    require(markdown_destination_create(view, (struct note_search_span){0, span.length}, &value) ==
+                    IMAGE_READY &&
+                value != nullptr && markdown_destination_span(value).start == 2 &&
+                markdown_destination_span(value).end == 5,
+            "the span of the destination is the part inside the angle brackets");
+    markdown_destination_destroy(value);
+}
+
+/* Every allocation fails once: the destination is either whole or absent. */
+static void verify_destination_allocations(void)
+{
+    const char source[] = "<images/a&amp;b.png> \"t\"";
+    struct markdown_span span = {.bytes = source, .length = sizeof source - 1, .offset = 0};
+    struct markdown_view view = {.spans = &span, .count = 1, .length = span.length};
+    size_t allocations = 0;
+    for (size_t nth = 0; nth <= allocations; ++nth)
+    {
+        struct markdown_destination *_Nullable value = nullptr;
+        allocation_probe_fail_at(nth);
+        enum image_outcome outcome =
+            markdown_destination_create(view, (struct note_search_span){0, span.length}, &value);
+        if (nth == 0)
+            allocations = allocation_probe_calls();
+        allocation_probe_fail_at(0);
+        require(nth == 0 ? outcome == IMAGE_READY && value != nullptr &&
+                               strcmp(markdown_destination_bytes(value), "images/a&b.png") == 0
+                         : outcome == IMAGE_OUT_OF_MEMORY && value == nullptr,
+                "a failed allocation leaves no partial destination");
+        markdown_destination_destroy(value);
+    }
+}
+
 void run_markdown_tests(void)
 {
+    verify_destination_shapes();
+    verify_destination_decoding();
+    verify_destination_allocations();
     verify_view_partitions();
     verify_numeric_emission();
     verify_emission_boundaries();

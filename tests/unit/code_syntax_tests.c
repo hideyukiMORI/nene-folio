@@ -155,20 +155,65 @@ static void continued_tokens(void)
     expect("sql", "\"some\"\"name\" 'x\ny'", "{\\cf8 \"some\"\"name\"} {\\cf8 'x}\n{\\cf8 y'}");
 }
 
+/* Every field of a palette takes part in the comparison: a field left out of it would let a theme
+ * change go by without the window being painted again. */
 static void colors(void)
 {
     struct theme_palette base = *folio_theme_palette(FOLIO_THEME_LIGHT);
     struct theme_palette changed = base;
-    require(theme_palette_equal(&base, &changed), "equal syntax palette");
-    struct rgb_color *roles[] = {&changed.rtf.code_keyword, &changed.rtf.code_string,
-                                 &changed.rtf.code_comment, &changed.rtf.code_number};
-    for (size_t at = 0; at < 4; ++at)
+    require(theme_palette_equal(&base, &changed), "equal palette");
+    struct rgb_color *roles[] = {
+        &changed.window,
+        &changed.pane,
+        &changed.status_background,
+        &changed.status_text,
+        &changed.header_text,
+        &changed.category_text,
+        &changed.note_text,
+        &changed.selected_background,
+        &changed.selected_text,
+        &changed.current_text,
+        &changed.editor_text,
+        &changed.chip_background,
+        &changed.chip_text,
+        &changed.border,
+        &changed.breadcrumb_background,
+        &changed.breadcrumb_text,
+        &changed.gutter_text,
+        &changed.dialog_surface,
+        &changed.dialog_border,
+        &changed.dialog_control,
+        &changed.dialog_secondary,
+        &changed.dialog_backdrop,
+        &changed.rtf.text,
+        &changed.rtf.heading,
+        &changed.rtf.muted,
+        &changed.rtf.link,
+        &changed.rtf.code_text,
+        &changed.rtf.code_background,
+        &changed.rtf.code_keyword,
+        &changed.rtf.code_string,
+        &changed.rtf.code_comment,
+        &changed.rtf.code_number,
+    };
+    require(sizeof roles / sizeof roles[0] ==
+                (sizeof(struct theme_palette) - sizeof(struct rtf_palette)) /
+                        sizeof(struct rgb_color) +
+                    sizeof(struct rtf_palette) / sizeof(struct rgb_color),
+            "the list names every color of the palette");
+    for (size_t at = 0; at < sizeof roles / sizeof roles[0]; ++at)
     {
-        *roles[at] = (struct rgb_color){0, 0, 0};
-        require(!theme_palette_equal(&base, &changed),
-                "syntax role participates in palette equality");
+        roles[at]->blue = (unsigned char)(roles[at]->blue ^ 1U);
+        require(!theme_palette_equal(&base, &changed) && !theme_palette_equal(&changed, &base),
+                "every color takes part in palette equality");
         changed = base;
     }
+    changed.dialog_backdrop_alpha = (unsigned char)(changed.dialog_backdrop_alpha ^ 1U);
+    require(!theme_palette_equal(&base, &changed), "the backdrop's opacity takes part");
+    changed = base;
+    changed.contrast = FOLIO_CONTRAST_HIGH;
+    require(base.contrast == FOLIO_CONTRAST_STANDARD && !theme_palette_equal(&base, &changed),
+            "the contrast takes part");
 }
 
 static void markdown_case(const char *_Nonnull source, const char *_Nonnull present,
