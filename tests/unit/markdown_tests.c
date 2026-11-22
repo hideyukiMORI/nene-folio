@@ -2227,9 +2227,12 @@ static void verify_destination_shapes(void)
     expect_destination("a.png \"", nullptr);
     expect_destination("<a b>\"title\"", nullptr);
     expect_destination("<a b>x", nullptr);
-    /* What the reader does today (#1158): a backslash before a space keeps the destination
-     * going. CommonMark would end the destination at the space and find no title in `b`. */
-    expect_destination("a\\ b", "a\\ b");
+    /* A backslash does not escape a space (#1158): the destination ends there, and what follows
+     * has to be a title. Inside angle brackets a space needs no escape at all. */
+    expect_destination("a\\ b", nullptr);
+    expect_destination("a\\ \"t\"", "a\\");
+    expect_destination("a\\\tb", nullptr);
+    expect_destination("<a\\ b>", "a\\ b");
 }
 
 static void verify_destination_decoding(void)
