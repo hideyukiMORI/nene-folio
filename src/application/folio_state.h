@@ -515,6 +515,26 @@ folio_state_take_open_request(struct folio_state *_Nonnull state,
  *   ドラッグ・取り込み・削除の途中）が開いているあいだは呼ばない。呼んだ後は結果によらず描き直す。
  * - 編集中の保存や、無題の下書きに名前を付ける手順は、これを呼ぶ**前**に済ませる（それらは一覧に
  *   ノートを足して番号をずらす）。依頼は名前で持ち、番号はここで引いてすぐ使う。 */
+/* #1152 / ADR0119: 待っている依頼を全部取り、形の正しいもののうち、いちばん新しい 1 つだけを out へ
+ * 渡す（古いものは捨てる。依頼のファイルは取ったときに消える）。面で答えを待っていたあいだに
+ * たまった依頼のため。pending は、まだ残りがありうるか（1 回に見る数には上限がある）。失敗しても、
+ * そこまでに見つけた依頼は out に残る。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_take_last_open_request(struct folio_state *_Nonnull state,
+                                   struct open_request *_Nullable *_Nonnull out,
+                                   bool *_Nonnull pending);
+/* #1152 / ADR0119: 編集中の本文を別の名前で残すときの名前（`1_いまの名前`。もうあれば
+ * `2_`…と、空いている いちばん小さい番号。大文字小文字を区別せずに比べる）を out
+ * へ足す。名前のあるノートを開いていなければ NOTHING_SELECTED、番号が尽きたら NAME_TAKEN。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_aside_name(const struct folio_state *_Nonnull state, struct text_buffer *_Nonnull out);
+/* #1152 / ADR0119: 編集中の本文を、同じカテゴリの新しいノート（folio_state_aside_name
+ * の名前）として
+ * 保存する。元のノートのファイルと履歴は書かない。成功すると、新しいノートを編集表示のまま選ぶ
+ * （folio_state_store_new と同じ）。名前のあるノートの編集表示でだけ（ほかは NOT_EDITING）。 */
+[[nodiscard]] enum folio_state_outcome folio_state_keep_aside(struct folio_state *_Nonnull state,
+                                                              const char16_t *_Nonnull units,
+                                                              size_t count);
 [[nodiscard]] enum folio_state_outcome
 folio_state_locate_open_request(struct folio_state *_Nonnull state,
                                 const struct open_request *_Nonnull request,

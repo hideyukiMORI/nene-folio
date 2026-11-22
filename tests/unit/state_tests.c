@@ -27,6 +27,7 @@
 #include "rtf_palette.h"
 #include "tag_catalog.h"
 #include "tag_update.h"
+#include "text_buffer.h"
 #include "ui_font.h"
 #include "unit_tests.h"
 #include "web_link_port.h"
@@ -2003,6 +2004,107 @@ static void verify_reload_document_editing(void)
 }
 
 /* #1070 / ADR0119 decision 6: a request file is taken, validated like a link, and handed over. */
+/* #1152: the requests that piled up while the surface was asking: only the newest is kept. */
+static void verify_take_last_open_request(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct open_request *request = nullptr;
+    bool pending = true;
+    require(folio_state_take_last_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
+                request == nullptr && !pending,
+            "no request file: nothing is kept");
+    adapter.request_bodies[0] =
+        "{\"version\":1,\"action\":\"open\",\"category\":\"B\",\"note\":\"one\",\"lines\":\"3\"}";
+    adapter.request_bodies[1] = "not json";
+    adapter.request_bodies[2] =
+        "{\"version\":1,\"action\":\"open\",\"category\":\"B\",\"note\":\"one\",\"lines\":\"7\"}";
+    adapter.request_bodies[3] = "[]";
+    adapter.request_count = 4;
+    struct open_request_lines lines = {0, 0};
+    require(folio_state_take_last_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
+                request != nullptr && !pending && adapter.requests_taken == 4 &&
+                open_request_lines(request, &lines) && lines.first == 7,
+            "every waiting file is taken and the newest valid request is the one kept");
+    adapter.request_outcome = REQUEST_OUT_OF_MEMORY;
+    require(folio_state_take_last_open_request(state, &request, &pending) ==
+                    FOLIO_STATE_OUT_OF_MEMORY &&
+                request != nullptr && open_request_lines(request, &lines) && lines.first == 7,
+            "a failure keeps what was found before it");
+    open_request_destroy(request);
+    request = nullptr;
+    adapter.request_outcome = REQUEST_NONE;
+    adapter.request_endless = true;
+    adapter.requests_taken = 0;
+    require(folio_state_take_last_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
+                request == nullptr && pending && adapter.requests_taken == 8 * 32,
+            "one call is bounded and says that more may wait");
+    folio_state_destroy(state);
+}
+
+/* #1152: the edited body is kept under `N_name` beside the note; the note's own file is not
+ * written. */
+static void verify_keep_aside(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Original\r\n";
+    struct folio_state *state = ready_state(&adapter);
+    struct text_buffer *name = nullptr;
+    require(text_buffer_create(&name) == TEXT_BUFFER_ACCEPTED && name != nullptr, "name buffer");
+    require(folio_state_aside_name(state, name) == FOLIO_STATE_NOTHING_SELECTED &&
+                folio_state_keep_aside(state, u"x", 1) == FOLIO_STATE_NOT_EDITING,
+            "no note is open: there is nothing to keep aside");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_keep_aside(state, u"x", 1) == FOLIO_STATE_NOT_EDITING &&
+                adapter.creates == 0,
+            "the reading view has no edited body to keep aside");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_aside_name(state, name) == FOLIO_STATE_READY &&
+                same_text(text_buffer_bytes(name), "1_one"),
+            "the first free name is 1_ before the note's own name");
+    size_t notes = folio_state_note_count(state);
+    require(folio_state_keep_aside(state, u"# Draft", 7) == FOLIO_STATE_READY &&
+                adapter.creates == 1 && adapter.archives == 0 && adapter.note_writes == 0 &&
+                same_text(adapter.written_body, "# Draft") &&
+                same_text(adapter.note_body, "# Original\r\n"),
+            "the edited body is written as a new note; the original file and history are not");
+    require(same_text(folio_state_pane_title(state).note, "1_one") &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                folio_state_document_category(state) == 0 &&
+                folio_state_note_count(state) == notes + 1,
+            "the kept note is the one open now, in the same category");
+    text_buffer_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_keep_aside_numbers(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "saved";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_keep_aside(state, u"a", 1) == FOLIO_STATE_READY,
+            "keep the first draft aside");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "back to a note of the same category");
+    struct text_buffer *name = nullptr;
+    require(text_buffer_create(&name) == TEXT_BUFFER_ACCEPTED && name != nullptr, "name buffer");
+    const char *current = folio_state_pane_title(state).note;
+    char expected[64];
+    (void)snprintf(expected, sizeof expected, "%s_%s", same_text(current, "one") ? "2" : "1",
+                   current);
+    require(folio_state_aside_name(state, name) == FOLIO_STATE_READY &&
+                same_text(text_buffer_bytes(name), expected),
+            "a number already used for this name is skipped; another note starts at 1 again");
+    adapter.create_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_keep_aside(state, u"b", 1) == FOLIO_STATE_NOTE_STORE_FAILED &&
+                same_text(folio_state_pane_title(state).note, current),
+            "a draft that cannot be written leaves the note that is open as it was");
+    text_buffer_destroy(name);
+    folio_state_destroy(state);
+}
+
 static void verify_take_open_request(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
@@ -2108,6 +2210,9 @@ static void verify_category_refresh(void)
     verify_document_stale();
     verify_reload_document();
     verify_take_open_request();
+    verify_take_last_open_request();
+    verify_keep_aside();
+    verify_keep_aside_numbers();
     verify_take_open_request_allocation();
     verify_reload_document_editing();
     verify_category_refresh_adds();
