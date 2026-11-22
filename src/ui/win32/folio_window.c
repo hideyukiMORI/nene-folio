@@ -6,8 +6,11 @@
 #include "accessible_surface_button.h"
 #include "accessible_view.h"
 #include "bounded_text.h"
+#include "dropped_files.h"
 #include "file_picker.h"
 #include "folio_open_link.h"
+#include "image_adoption.h"
+#include "image_adoption_notice.h"
 #include "open_place_kind.h"
 #include "open_request.h"
 #include "storage_path.h"
@@ -149,6 +152,11 @@ struct folio_window
     uint64_t outline_press_revision; /* ...in this load of the note */
     int outline_wheel;               /* wheel movement over the column not yet worth a row */
     enum folio_idle_work next_idle_work;
+    /* #1062 / ADR0120: 落とされた画像の取り込みが走っているあいだの一時の状態。 */
+    bool adopting;
+    bool adopting_enabled; /* 入力を止める前に、主窓が有効だったか */
+    size_t drop_position;  /* 落とした点の、本文の文字の位置 */
+    size_t drop_lost;      /* 落とされたうち、パスにできなかった数 */
     uint64_t image_ticket;
     uint64_t image_origin_revision;
     size_t image_index;
@@ -724,6 +732,7 @@ static enum folio_state_outcome menu_availability(const struct folio_window *_No
 static void menu_accessible(const struct folio_window *_Nonnull self, size_t index,
                             struct accessible_view *_Nonnull out);
 static void report_outcome(struct folio_window *_Nonnull self, enum folio_state_outcome outcome);
+static void files_dropped(struct folio_window *_Nonnull self, HDROP _Nonnull drop, size_t position);
 [[nodiscard]] static bool preview_theme(struct folio_window *_Nonnull self,
                                         enum folio_theme_choice choice);
 static bool refresh_band_layout(struct folio_window *_Nonnull self);
@@ -831,7 +840,8 @@ static bool session_input_message(UINT message)
 
 static bool session_blocks_message(const struct folio_window *_Nonnull self, UINT message)
 {
-    return (session_busy(self) || self->native_modal_depth > 0 ||
+    /* 画像の取り込みの途中（#1062）も、鍵と変換を本文へ通さない: 落とした位置を動かさない。 */
+    return (session_busy(self) || self->adopting || self->native_modal_depth > 0 ||
             self->close_phase != CLOSE_PHASE_IDLE) &&
            session_input_message(message);
 }
@@ -906,7 +916,7 @@ static bool shell_system_command(WPARAM command)
 static bool root_blocks_message(const struct folio_window *_Nonnull self, UINT message,
                                 WPARAM wparam)
 {
-    if (session_busy(self))
+    if (session_busy(self) || self->adopting)
         return session_input_message(message);
     if (self->native_modal_depth == 0 && self->close_phase == CLOSE_PHASE_IDLE)
         return false;
@@ -12583,11 +12593,21 @@ static LRESULT pane_filter(struct folio_window *_Nonnull self, const MSGFILTER *
 }
 
 /* RichEdit の鍵の通知。pasteも既存の終了/投入guardを通す。IME中のpasteはpaneで拒否する。 */
+/* 編集表示で、RichEdit のドロップ先が受けたファイル（#1062）。0 を返して、RichEdit
+ * には入れさせない。 */
+static LRESULT files_notice(struct folio_window *_Nonnull self, const ENDROPFILES *_Nonnull dropped)
+{
+    files_dropped(self, (HDROP)dropped->hDrop, dropped->cp < 0 ? 0 : (size_t)dropped->cp);
+    return 0;
+}
+
 static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     const NMHDR *_Nonnull header = (const NMHDR *)lparam;
     if (header->code == EN_LINK)
         return web_link_notice(self, (const ENLINK *)lparam);
+    if (header->code == EN_DROPFILES)
+        return files_notice(self, (const ENDROPFILES *)lparam);
     if ((session_busy(self) || pane_streaming(self)) && header->code == EN_MSGFILTER)
     {
         return 1;
@@ -15616,6 +15636,9 @@ static LRESULT on_child_request(struct folio_window *_Nonnull self, UINT message
     case folio_message_open_link:
         open_queued_link(self);
         return 0;
+    case folio_message_files_dropped:
+        files_dropped(self, (HDROP)lparam, (size_t)wparam);
+        return 0;
     case folio_message_resize_through:
         return resize_through(self, lparam);
     case folio_message_pane_zoomed:
@@ -16446,6 +16469,10 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     }
     free(window->queued_link);
     window->queued_link = nullptr;
+    /* 取り込みの途中で窓が無くなるとき: 開いたままの一連を残さない（次の窓が BUSY で断られる）。 */
+    if (window->adopting)
+        folio_state_close_image_adoption(window->state);
+    window->adopting = false;
     if (window->handle != nullptr)
     {
         discovery_motion_settle(window);
@@ -19824,8 +19851,146 @@ static bool minimap_idle_ready(const struct folio_window *_Nonnull self)
            !IsIconic(self->handle);
 }
 
+/* #1062 / ADR0120: 本文の欄へ落とされた画像の取り込み。取り込みそのもの（どれを写し、何を書くか）
+ * は application の一連で、ここは、始める・入力待ちの回ごとに 1 件進める・落とした位置へ入れる・
+ * 1 行を出す、だけを行う。走っているあいだは主窓への入力を止める（落とした位置を動かさない）。 */
+static void show_drop_line(struct folio_window *_Nonnull self, struct image_adoption_notice notice,
+                           bool announce)
+{
+    struct ui_text_request request = {.id = notice.id,
+                                      .language = folio_state_language(self->state),
+                                      .k = notice.k,
+                                      .n = notice.n,
+                                      .offset = notice.offset};
+    if (notice.id == UI_TEXT_EMPTY ||
+        ui_text_format(&request, self->result_line, sizeof self->result_line) !=
+            UI_TEXT_FORMAT_READY)
+        return;
+    if (announce)
+        show_result_line(self);
+    else
+        InvalidateRect(self->handle, nullptr, FALSE);
+}
+
+static bool drop_accepted_now(const struct folio_window *_Nonnull self)
+{
+    /* リンクで開く依頼と同じ断り（面・OSの面・終了の途中・変換の途中・ほかの処理の途中・主窓が
+     * 無効）に、検索の面も足す。 */
+    return self->pane != nullptr && !open_link_blocked(self) &&
+           self->command_surface == COMMAND_SURFACE_CLOSED;
+}
+
+static void begin_drop(struct folio_window *_Nonnull self, size_t position, size_t lost)
+{
+    self->adopting = true;
+    self->drop_position = position;
+    self->drop_lost = lost;
+    self->adopting_enabled = IsWindowEnabled(self->handle) != 0;
+    EnableWindow(self->handle, FALSE);
+    struct image_adoption_summary summary = folio_state_image_adoption_summary(self->state);
+    if (summary.pending > 1)
+        show_drop_line(self, image_adoption_notice_progress(&summary), true);
+}
+
+/* パスにできないものだけが落とされた: 取り込みは始まらないが、読めなかったことは言う。 */
+static void report_lost_drop(struct folio_window *_Nonnull self, size_t lost)
+{
+    struct image_adoption_summary summary = {.dropped = lost, .unreadable = lost, .finished = true};
+    if (lost != 0)
+        show_drop_line(self, image_adoption_notice_finished(&summary, IMAGE_ADOPTION_LANDED), true);
+}
+
+static void files_dropped(struct folio_window *_Nonnull self, HDROP _Nonnull drop, size_t position)
+{
+    struct dropped_files *_Nullable files = nullptr;
+    if (!drop_accepted_now(self))
+        return;
+    if (!dropped_files_create(drop, image_adoption_limit, &files) || files == nullptr)
+    {
+        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
+        return;
+    }
+    size_t lost = dropped_files_lost(files);
+    enum image_adoption_start start = folio_state_begin_image_adoption(
+        self->state, dropped_files_paths(files), dropped_files_count(files));
+    dropped_files_destroy(files);
+    switch (start)
+    {
+    case IMAGE_ADOPTION_STARTED:
+        begin_drop(self, position, lost);
+        break;
+    case IMAGE_ADOPTION_NOTHING:
+        report_lost_drop(self, lost);
+        break;
+    case IMAGE_ADOPTION_OUT_OF_MEMORY:
+        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
+        break;
+    case IMAGE_ADOPTION_VIEWING:
+    case IMAGE_ADOPTION_UNTITLED:
+    case IMAGE_ADOPTION_NO_NOTE:
+    case IMAGE_ADOPTION_BUSY:
+        show_drop_line(self, image_adoption_notice_refused(start), true);
+        break;
+    }
+}
+
+/* ためた Markdown を、落とした位置へ入れる（Undo は 1 回）。 */
+static enum image_adoption_landing write_dropped(struct folio_window *_Nonnull self)
+{
+    const char *_Nonnull text = folio_state_image_adoption_text(self->state);
+    struct utf16_text *_Nullable units = nullptr;
+    if (!folio_state_image_adoption_lands(self->state))
+        return IMAGE_ADOPTION_DISPLACED;
+    if (text[0] == '\0')
+        return IMAGE_ADOPTION_LANDED;
+    if (self->pane == nullptr ||
+        utf16_text_create(text, strlen(text), &units) != UTF16_TEXT_CONVERTED || units == nullptr)
+        return IMAGE_ADOPTION_UNWRITTEN;
+    bool inserted = note_pane_insert(self->pane, self->drop_position, utf16_text_units(units));
+    utf16_text_destroy(units);
+    return inserted ? IMAGE_ADOPTION_LANDED : IMAGE_ADOPTION_UNWRITTEN;
+}
+
+static void finish_drop(struct folio_window *_Nonnull self)
+{
+    struct image_adoption_summary summary = folio_state_image_adoption_summary(self->state);
+    summary.dropped += self->drop_lost;
+    summary.unreadable += self->drop_lost;
+    /* 入力を戻してから入れる: 入れたことの知らせ（EN_CHANGE）を、止めているあいだの入力として
+     * 捨てない。ここまで入力待ちの回の中なので、あいだに利用者の入力は入らない。 */
+    self->adopting = false;
+    EnableWindow(self->handle, self->adopting_enabled);
+    enum image_adoption_landing landing = write_dropped(self);
+    folio_state_close_image_adoption(self->state);
+    if (self->adopting_enabled && self->pane != nullptr)
+        restore_valid_focus(self, note_pane_handle(self->pane));
+    show_drop_line(self, image_adoption_notice_finished(&summary, landing), true);
+    (void)settle_save_state(self);
+}
+
+static void continue_drop(struct folio_window *_Nonnull self)
+{
+    folio_window_begin_dispatch(self);
+    switch (folio_state_continue_image_adoption(self->state))
+    {
+    case IMAGE_ADOPTION_PROGRESSED:
+    {
+        struct image_adoption_summary summary = folio_state_image_adoption_summary(self->state);
+        show_drop_line(self, image_adoption_notice_progress(&summary), false);
+        break;
+    }
+    case IMAGE_ADOPTION_FINISHED:
+    case IMAGE_ADOPTION_IDLE:
+        finish_drop(self);
+        break;
+    }
+    folio_window_end_dispatch(self);
+}
+
 bool folio_window_idle_work_ready(const struct folio_window *_Nonnull self)
 {
+    if (self->adopting)
+        return true;
     if (outside_refresh_ready(self))
         return true;
     if (discovery_surface(self))
@@ -19949,6 +20114,11 @@ static void continue_discovery(struct folio_window *_Nonnull self)
 
 void folio_window_continue_idle_work(struct folio_window *_Nonnull self)
 {
+    if (self->adopting)
+    {
+        continue_drop(self);
+        return;
+    }
     if (outside_refresh_ready(self))
         refresh_outside(self); /* once per return; the turn's own work follows as before */
     if (!folio_window_idle_work_ready(self))

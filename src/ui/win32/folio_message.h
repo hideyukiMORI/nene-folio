@@ -61,4 +61,7 @@ constexpr UINT folio_message_part_pressed = WM_APP + 24;
 /* #1071 / ADR0118: 主窓が持っている「開く」依頼のリンクを、メッセージの待ちの先頭で開く。受けた
  * 所（WM_COPYDATA の中・起動の直後）では開かない: 送り手を待たせず、ほかの処理の途中に入らない。 */
 constexpr UINT folio_message_open_link = WM_APP + 25;
+/* #1062 / ADR0120: 本文の欄へファイルが落とされた。wParam は落とした点の本文の文字の位置、
+ * lParam は HDROP（送った側が、戻ってから DragFinish する）。主窓が取り込みの意図へ渡す。 */
+constexpr UINT folio_message_files_dropped = WM_APP + 26;
 #endif
