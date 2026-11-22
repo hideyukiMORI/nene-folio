@@ -56,6 +56,9 @@ folio_state_tag_management_phase(const struct folio_state *_Nonnull state);
 #include "folio_theme_choice.h"
 #include "folio_untitled_policy.h"
 #include "history_row_view.h"
+#include "image_adoption_start.h"
+#include "image_adoption_step.h"
+#include "image_adoption_summary.h"
 #include "image_port.h"
 #include "index_ranked_note.h"
 #include "markdown_source_selection.h"
@@ -171,6 +174,31 @@ folio_state_poll_image(struct folio_state *_Nonnull state, uint64_t ticket,
 [[nodiscard]] enum image_phase folio_state_image_phase(const struct folio_state *_Nonnull state);
 [[nodiscard]] uint64_t folio_state_image_origin_revision(const struct folio_state *_Nonnull state);
 void folio_state_cancel_images(struct folio_state *_Nonnull state);
+/* #1062 / ADR0120: 落とされたファイルを、いま編集している名前のあるノートのカテゴリの images/ へ
+ * 取り込む一連。始める → 終わるまで 1 件ずつ進める（1 回の呼び出しで扱うファイルは 1 つまで）→
+ * 数と、入れる Markdown を読む → 閉じる。paths は写して持つ（先頭から image_adoption_limit 個）。
+ * 閲覧表示・無題・ノート無しは断り、何も写さない。始めたら、閉じるまで次は始められない（BUSY）。 */
+[[nodiscard]] enum image_adoption_start
+folio_state_begin_image_adoption(struct folio_state *_Nonnull state,
+                                 struct storage_path *_Nonnull const *_Nonnull paths, size_t count);
+/* 始めたときのノートを、いまも編集表示で開いていなければ、ファイルを扱わずに終える（FINISHED。
+ * summary の interrupted が真で、pending に扱わなかった数が残る）。ためた文を伸ばせなくなった
+ * ときも、残りを写さずに終える。 */
+[[nodiscard]] enum image_adoption_step
+folio_state_continue_image_adoption(struct folio_state *_Nonnull state);
+/* 始めていなければ、全部 0 で finished。 */
+[[nodiscard]] struct image_adoption_summary
+folio_state_image_adoption_summary(const struct folio_state *_Nonnull state);
+/* 取り込んだ画像の Markdown（1 つずつ改行で区切る。前後に改行は無い）。閉じるまで有効。 */
+[[nodiscard]] const char *_Nonnull folio_state_image_adoption_text(
+    const struct folio_state *_Nonnull state);
+/* ためた Markdown を、いまの本文へ入れてよいか: 始めたときのノートを、始めてからずっと編集表示で
+ * 開いていて、本文を読み直してもいない。進める途中で離れていたら、戻っても偽のまま（落とした
+ * 位置は前の本文のもの）。編集中の本文そのものは窓が持つので、呼ぶ側は、始めてから入れるまで
+ * 本文への入力を止めておくこと。 */
+[[nodiscard]] bool folio_state_image_adoption_lands(const struct folio_state *_Nonnull state);
+/* 始めたら、どの終わり方でも必ず閉じる（閉じるまで次は BUSY）。 */
+void folio_state_close_image_adoption(struct folio_state *_Nonnull state);
 
 [[nodiscard]] struct note_import_result
 folio_state_import_notes(struct folio_state *_Nonnull state,
