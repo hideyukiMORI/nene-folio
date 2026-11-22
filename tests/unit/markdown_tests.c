@@ -132,8 +132,43 @@ static void verify_heading_closers(void)
                 "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title\\b0\\cf1\\fs22\\par\n");
 }
 
+/* A line of one to six `#` and nothing else is an empty heading; a `#` run followed by a
+ * letter or a digit, or longer than six, is text (CommonMark 4.2, ADR 0121). */
+static void verify_hash_only_headings(void)
+{
+    expect_body("#", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
+    expect_body("##", "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 \\b0\\cf1\\fs22\\par\n");
+    expect_body("######", "\\pard\\s6\\sb160\\sa60\\b0\\cf2\\fs22 \\b0\\cf1\\fs22\\par\n");
+    expect_body("   ###", "\\pard\\s3\\sb200\\sa80\\b\\cf2\\fs28 \\b0\\cf1\\fs22\\par\n");
+    expect_body("#######", "\\pard\\sa80\\sl240\\slmult1\\cf1 #######\\par\n");
+    expect_body("#5 bolt", "\\pard\\sa80\\sl240\\slmult1\\cf1 #5 bolt\\par\n");
+    expect_body("#hashtag", "\\pard\\sa80\\sl240\\slmult1\\cf1 #hashtag\\par\n");
+    expect_body(
+        "text\n#\nmore",
+        "\\pard\\sa80\\sl240\\slmult1\\cf1 text\\par\n\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 "
+        "\\b0\\cf1\\fs22\\par\n\\pard\\sa80\\sl240\\slmult1\\cf1 more\\par\n");
+    /* From the independent review: line endings and trailing blanks, four spaces of indent,
+     * and what the line now ends: it is no setext heading's text, and it closes a quote and
+     * a list instead of continuing their paragraph. */
+    expect_body("#\n", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
+    expect_body("#\r\n", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
+    expect_body("#   ", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
+    expect_body("#\t", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
+    expect_body("    #", "\\pard\\sa80\\sl240\\slmult1\\cf1 #\\par\n");
+    expect_body("#\n===", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 "
+                          "\\b0\\cf1\\fs22\\par\n\\pard\\sa80\\sl240\\slmult1\\cf1 ===\\par\n");
+    expect_body("> text\n#",
+                "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 "
+                "text\\cf1\\par\n\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
+    expect_body(
+        "- item\n#",
+        "\\pard\\li440\\fi-220\\tx440\\sa40\\sl240\\slmult1\\cf1 {\\f0\\fs22\\cf1\\b0\\highlight0 "
+        "\\bullet\\tab }item\\par\n\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
+}
+
 static void verify_headings(void)
 {
+    verify_hash_only_headings();
     verify_heading_closers();
     expect_body("# Title", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 Title\\b0\\cf1\\fs22\\par\n");
     expect_body("## Sub", "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 Sub\\b0\\cf1\\fs22\\par\n");
@@ -143,7 +178,6 @@ static void verify_headings(void)
     expect_body("###### Six", "\\pard\\s6\\sb160\\sa60\\b0\\cf2\\fs22 Six\\b0\\cf1\\fs22\\par\n");
     expect_body("####### Seven", "\\pard\\sa80\\sl240\\slmult1\\cf1 ####### Seven\\par\n");
     expect_body("#NoSpace", "\\pard\\sa80\\sl240\\slmult1\\cf1 #NoSpace\\par\n");
-    expect_body("##", "\\pard\\sa80\\sl240\\slmult1\\cf1 ##\\par\n");
     expect_body("# *Em*", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 {\\i "
                           "Em}\\b0\\cf1\\fs22\\par\n");
 }
