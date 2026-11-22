@@ -19,6 +19,7 @@
 
 #include <limits.h>
 #include <richedit.h>
+#include <shellapi.h>
 #include <stdlib.h>
 #include <string.h>
 #include <tom.h>
@@ -660,8 +661,26 @@ static void open_text_menu(struct note_pane *_Nonnull pane, LPARAM position)
     SendMessageW(parent, folio_message_open_menu, 0, (LPARAM)&request);
 }
 
+/* #1062 / ADR0120: 落とされたファイルは、閲覧でも編集でもここで受けて主窓へ渡す（RichEdit には
+ * 渡さない）。位置は、落とした点の下の文字。取り込むかどうかは主窓と application が決める。 */
+static void files_dropped(struct note_pane *_Nonnull pane, HDROP _Nonnull drop)
+{
+    POINT point = {0};
+    (void)DragQueryPoint(drop, &point);
+    POINTL where = {point.x, point.y};
+    LRESULT at = SendMessageW(pane->handle, EM_CHARFROMPOS, 0, (LPARAM)&where);
+    SendMessageW(GetParent(pane->handle), folio_message_files_dropped, (WPARAM)(at < 0 ? 0 : at),
+                 (LPARAM)drop);
+    DragFinish(drop);
+}
+
 static bool pane_input(struct note_pane *_Nonnull pane, UINT message, WPARAM keys, LPARAM parameter)
 {
+    if (message == WM_DROPFILES)
+    {
+        files_dropped(pane, (HDROP)keys);
+        return true;
+    }
     if (message == WM_RBUTTONDOWN)
         place_for_menu(pane, parameter);
     if (message == WM_CONTEXTMENU)
@@ -1130,7 +1149,7 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
     DWORD style = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_MULTILINE | ES_READONLY |
                   ES_AUTOVSCROLL | ES_NOHIDESEL | WS_VSCROLL | ES_DISABLENOSCROLL;
     pane->handle =
-        CreateWindowExW(0, class_name, L"", style, 0, 0, 0, 0, parent,
+        CreateWindowExW(WS_EX_ACCEPTFILES, class_name, L"", style, 0, 0, 0, 0, parent,
                         (HMENU)(INT_PTR)note_pane_control_id, GetModuleHandleW(nullptr), nullptr);
     if (pane->handle == nullptr || !subclass_pane(pane) || !prepare_navigation(pane) ||
         !extend_background(pane) || !prepare_scroll(pane))
@@ -1157,7 +1176,7 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
     /* 鍵の通知を親の WM_NOTIFY へ上げる（Ctrl+S と Esc）。ENM_KEYEVENTS は消さない。
      * スクロールと本文の増減は番号の帯の契機なので足す（ADR 0026 の決定 4）。 */
     SendMessageW(pane->handle, EM_SETEVENTMASK, 0,
-                 ENM_KEYEVENTS | ENM_SCROLL | ENM_CHANGE | ENM_LINK);
+                 ENM_KEYEVENTS | ENM_SCROLL | ENM_CHANGE | ENM_LINK | ENM_DROPFILES);
     *out = pane;
     return NOTE_PANE_CREATED;
 }

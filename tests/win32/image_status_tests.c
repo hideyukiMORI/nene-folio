@@ -44,6 +44,7 @@
 #include "storage_state.h"
 #include "tag_catalog.h"
 #include "test_window_file.h"
+#include "text_buffer.h"
 #include "transfer_adapter.h"
 #include "ui_face.h"
 #include "ui_text.h"
@@ -55,6 +56,8 @@
 #include <commctrl.h>
 #include <commdlg.h>
 #include <richedit.h>
+#include <shellapi.h>
+#include <shlobj.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -534,7 +537,11 @@ static void cancel_image(struct image_adapter *_Nonnull adapter)
     ++adapter->ticket;
     adapter->phase = IMAGE_PHASE_IDLE;
 }
-/* Nothing is taken in by this controlled port: the cases that drop files use the real one. */
+/* Nothing is taken in by this controlled port, except in the drop case: there a dropped path that
+ * ends in .png is "copied" under its own file name and every other path is no image. No file is
+ * touched either way. */
+static bool image_drop_case;
+static size_t image_drop_calls;
 static enum image_adopt_outcome image_adopt(struct image_adapter *_Nonnull adapter,
                                             const char *_Nonnull category,
                                             const struct storage_path *_Nonnull source,
@@ -542,9 +549,18 @@ static enum image_adopt_outcome image_adopt(struct image_adapter *_Nonnull adapt
 {
     (void)adapter;
     (void)category;
-    (void)source;
-    (void)leaf;
-    return IMAGE_ADOPT_UNREADABLE;
+    if (!image_drop_case)
+        return IMAGE_ADOPT_UNREADABLE;
+    ++image_drop_calls;
+    const char *path = storage_path_text(source);
+    size_t length = strlen(path);
+    const char *name = path + length;
+    while (name > path && name[-1] != '\\' && name[-1] != '/')
+        --name;
+    if (length < 4 || strcmp(path + length - 4, ".png") != 0)
+        return IMAGE_ADOPT_NOT_IMAGE;
+    text_buffer_append_text(leaf, name);
+    return IMAGE_ADOPT_COPIED;
 }
 static enum image_outcome image_asset(struct image_adapter *_Nonnull adapter,
                                       const struct image_request *_Nonnull request,
@@ -3323,6 +3339,233 @@ static void paste_font_languages(struct folio_window *_Nonnull window,
     }
 }
 
+/* #1149 / ADR0120 step 5: files dropped onto the body. The messages are synthesized (WM_DROPFILES
+ * to the pane, EN_DROPFILES to the main window); a real drag from Explorer is checked by hand. */
+constexpr size_t drop_text_capacity = 512;
+static HDROP drop_handle(const wchar_t *_Nonnull const *_Nonnull paths, size_t count, POINT point)
+{
+    size_t units = 1;
+    for (size_t at = 0; at < count; ++at)
+        units += wcslen(paths[at]) + 1;
+    HGLOBAL memory = GlobalAlloc(GHND, sizeof(DROPFILES) + units * sizeof(wchar_t));
+    require(memory != nullptr, "drop handle memory");
+    DROPFILES *files = GlobalLock(memory);
+    require(files != nullptr, "drop handle lock");
+    files->pFiles = sizeof *files;
+    files->pt = point;
+    files->fWide = TRUE;
+    wchar_t *names = (wchar_t *)(files + 1);
+    for (size_t at = 0; at < count; ++at)
+    {
+        size_t length = wcslen(paths[at]) + 1;
+        memcpy(names, paths[at], length * sizeof(wchar_t));
+        names += length;
+    }
+    GlobalUnlock(memory);
+    return (HDROP)memory;
+}
+static size_t drop_body(struct folio_window *_Nonnull window, wchar_t *_Nonnull text)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    GETTEXTEX request = {
+        .cb = drop_text_capacity * sizeof(wchar_t), .flags = GT_RAWTEXT, .codepage = 1200};
+    LRESULT length = SendMessageW(body, EM_GETTEXTEX, (WPARAM)&request, (LPARAM)text);
+    require(length >= 0 && (size_t)length < drop_text_capacity - 1, "drop body read");
+    return (size_t)length;
+}
+/* The client point of the character at `position`, so the drop lands on a known place. */
+static POINT drop_point(struct folio_window *_Nonnull window, LONG position)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    POINTL where = {0};
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&where, position);
+    POINTL probe = {where.x + 1, where.y + 2};
+    require(SendMessageW(body, EM_CHARFROMPOS, 0, (LPARAM)&probe) == position,
+            "the drop point maps back to the character");
+    return (POINT){probe.x, probe.y};
+}
+static void drop_on_pane(struct folio_window *_Nonnull window,
+                         const wchar_t *_Nonnull const *_Nonnull paths, size_t count, LONG position)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    HDROP drop = drop_handle(paths, count, drop_point(window, position));
+    SendMessageW(body, WM_DROPFILES, (WPARAM)drop, 0); /* the pane frees the handle */
+}
+/* Runs the idle turns the way the message loop does, until the drop has finished. */
+static size_t drop_turns(struct folio_window *_Nonnull window)
+{
+    size_t turns = 0;
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    for (; turns < 200 && !IsWindowEnabled(root); ++turns)
+    {
+        require(folio_window_idle_work_ready(window), "a running drop keeps the idle turn");
+        folio_window_continue_idle_work(window);
+        pump(window);
+    }
+    require(IsWindowEnabled(root), "the window takes input again after the drop");
+    return turns;
+}
+static void expect_drop_notice(struct folio_window *_Nonnull window,
+                               const struct folio_state *_Nonnull state,
+                               struct ui_text_request request)
+{
+    char line[1024];
+    wchar_t wide[1024];
+    request.language = folio_state_language(state);
+    require(ui_text_format(&request, line, sizeof line) == UI_TEXT_FORMAT_READY &&
+                MultiByteToWideChar(CP_UTF8, 0, line, -1, wide, 1024) > 0,
+            "expected drop line");
+    expect_notice(window, wide);
+}
+static void expect_drop_text(struct folio_window *_Nonnull window, const wchar_t *_Nonnull before,
+                             size_t position, const wchar_t *_Nonnull inserted)
+{
+    wchar_t expected[drop_text_capacity];
+    wchar_t text[drop_text_capacity];
+    size_t length = drop_body(window, text);
+    require(wcslen(before) + wcslen(inserted) < drop_text_capacity, "expected text fits");
+    memcpy(expected, before, position * sizeof(wchar_t));
+    memcpy(expected + position, inserted, wcslen(inserted) * sizeof(wchar_t));
+    memcpy(expected + position + wcslen(inserted), before + position,
+           (wcslen(before) - position + 1) * sizeof(wchar_t));
+    require(length == wcslen(expected) && wcscmp(text, expected) == 0,
+            "the Markdown is written at the dropped place and nothing else changes");
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE caret = {0};
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&caret);
+    require(caret.cpMin == caret.cpMax && (size_t)caret.cpMin == position + wcslen(inserted),
+            "the caret sits after what was written");
+}
+/* An empty list of paths, for asking the state whether a drop could start. */
+static struct storage_path *_Nonnull const *_Nonnull nullptr_paths(void)
+{
+    static struct storage_path *_Nonnull const none[1];
+    return none;
+}
+static void drop_refused_untitled(struct native_fixture *_Nonnull fixture)
+{
+    static const wchar_t *const one[] = {L"C:\\drop\\a.png"};
+    require(folio_state_new_note(fixture->state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "an untitled draft");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "window on an untitled draft");
+    pump(window);
+    wchar_t before[drop_text_capacity];
+    wchar_t after[drop_text_capacity];
+    (void)drop_body(window, before);
+    drop_on_pane(window, one, 1, 0);
+    pump(window);
+    (void)drop_body(window, after);
+    require(image_drop_calls == 0 && wcscmp(before, after) == 0 &&
+                IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_WINDOW)),
+            "a drop onto an untitled draft copies nothing and writes nothing");
+    expect_drop_notice(window, fixture->state,
+                       (struct ui_text_request){.id = UI_TEXT_IMAGE_DROP_UNTITLED});
+    folio_window_destroy(window);
+}
+static void drop_written(struct folio_window *_Nonnull window,
+                         struct native_fixture *_Nonnull fixture)
+{
+    static const wchar_t *const mixed[] = {L"C:\\drop\\a.png", L"C:\\drop\\notes.txt",
+                                           L"C:\\drop\\b c.png"};
+    static const wchar_t *const one[] = {L"D:\\pictures\\photo.png"};
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    wchar_t before[drop_text_capacity];
+    wchar_t now[drop_text_capacity];
+    (void)drop_body(window, before);
+    drop_on_pane(window, mixed, 3, 5);
+    require(!IsWindowEnabled(root) && image_drop_calls == 0,
+            "the drop starts with input held and takes no file in the message itself");
+    (void)drop_body(window, now);
+    require(wcscmp(before, now) == 0, "nothing is written before the files are taken in");
+    require(drop_turns(window) == 3 && image_drop_calls == 3, "one file per idle turn");
+    expect_drop_text(window, before, 5, L"![a](images/a.png)\r![b c](<images/b c.png>)");
+    require(SendMessageW(body, EM_GETMODIFY, 0, 0) != 0 && GetFocus() == body,
+            "the note reads as changed and the body has the keyboard again");
+    expect_drop_notice(
+        window, fixture->state,
+        (struct ui_text_request){.id = UI_TEXT_IMAGE_DROP_SOME_NOT_IMAGE, .n = 2, .k = 1});
+    require(folio_state_image_adoption_summary(fixture->state).dropped == 0 &&
+                folio_state_begin_image_adoption(fixture->state, nullptr_paths(), 0) ==
+                    IMAGE_ADOPTION_NOTHING,
+            "the finished drop is closed: the next one is not refused as busy");
+    history_undo(window);
+    (void)drop_body(window, now);
+    require(wcscmp(before, now) == 0, "one Undo takes the written Markdown out again");
+    drop_on_pane(window, one, 1, 0);
+    require(drop_turns(window) == 1 && image_drop_calls == 4, "a single file takes one turn");
+    expect_drop_text(window, before, 0, L"![photo](images/photo.png)");
+    expect_drop_notice(window, fixture->state,
+                       (struct ui_text_request){.id = UI_TEXT_IMAGE_DROP_TAKEN, .n = 1});
+    history_undo(window);
+}
+/* The edit control's own drop target reports files with EN_DROPFILES; the position comes with it.
+ */
+static void drop_notified(struct folio_window *_Nonnull window,
+                          struct native_fixture *_Nonnull fixture)
+{
+    static const wchar_t *const one[] = {L"C:\\drop\\from-target.png"};
+    static const wchar_t *const none[] = {L"C:\\drop\\readme.md"};
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    wchar_t before[drop_text_capacity];
+    wchar_t now[drop_text_capacity];
+    (void)drop_body(window, before);
+    HDROP drop = drop_handle(one, 1, (POINT){0, 0});
+    ENDROPFILES notice = {
+        .nmhdr = {.hwndFrom = body, .idFrom = (UINT_PTR)GetDlgCtrlID(body), .code = EN_DROPFILES},
+        .hDrop = drop,
+        .cp = 7,
+        .fProtected = FALSE};
+    require(SendMessageW(root, WM_NOTIFY, notice.nmhdr.idFrom, (LPARAM)&notice) == 0,
+            "the edit control is told not to take the files itself");
+    GlobalFree(drop); /* with the notification the handle stays the sender's */
+    require(drop_turns(window) == 1, "the notified drop runs the same way");
+    expect_drop_text(window, before, 7, L"![from-target](images/from-target.png)");
+    history_undo(window);
+    drop_on_pane(window, none, 1, 3);
+    require(drop_turns(window) == 1, "a drop with nothing to take still finishes");
+    (void)drop_body(window, now);
+    require(wcscmp(before, now) == 0, "nothing is written when nothing was taken in");
+    expect_drop_notice(window, fixture->state,
+                       (struct ui_text_request){.id = UI_TEXT_IMAGE_DROP_NONE_NOT_IMAGE, .k = 1});
+}
+static void run_image_drop_case(struct native_fixture *_Nonnull fixture)
+{
+    static const wchar_t *const one[] = {L"C:\\drop\\a.png"};
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the note the files are dropped onto");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real drop window");
+    pump(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require((GetWindowLongPtrW(body, GWL_EXSTYLE) & WS_EX_ACCEPTFILES) != 0,
+            "the body accepts dropped files in the reading view too");
+    wchar_t before[drop_text_capacity];
+    wchar_t after[drop_text_capacity];
+    (void)drop_body(window, before);
+    drop_on_pane(window, one, 1, 2);
+    pump(window);
+    (void)drop_body(window, after);
+    require(image_drop_calls == 0 && wcscmp(before, after) == 0 &&
+                IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_WINDOW)),
+            "a drop onto the reading view copies nothing and writes nothing");
+    expect_drop_notice(window, fixture->state,
+                       (struct ui_text_request){.id = UI_TEXT_IMAGE_DROP_VIEWING});
+    action(window, ACCESSIBLE_EDIT);
+    drop_written(window, fixture);
+    drop_notified(window, fixture);
+    folio_window_destroy(window);
+    image_drop_calls = 0;
+    drop_refused_untitled(fixture);
+}
+
 static void run_paste_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -4865,6 +5108,11 @@ static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
     if (paste_case)
     {
         run_paste_case(fixture);
+        return;
+    }
+    if (image_drop_case)
+    {
+        run_image_drop_case(fixture);
         return;
     }
     if (palette_case)
@@ -15189,6 +15437,7 @@ static void select_tags_fixture(const char *_Nonnull selector)
 static void select_clipboard_fixture(const char *_Nonnull selector)
 {
     paste_case = strcmp(selector, "--paste") == 0;
+    image_drop_case = strcmp(selector, "--image-drop") == 0;
     search_key_visual_case = strcmp(selector, "--search-key-visual") == 0;
     text_menu_case = strcmp(selector, "--text-menu") == 0;
     window_place_case = strcmp(selector, "--window-place") == 0;

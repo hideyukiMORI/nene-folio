@@ -141,7 +141,7 @@ nenefolio_system_link(nenefolio_adapters icu)
 nenefolio_system_link(nenefolio_adapters gdi32)
 
 nenefolio_target(nenefolio_window ui_win32 STATIC
-    src/ui/win32/storage_prompt.c src/ui/win32/folder_picker.c src/ui/win32/file_picker.c
+    src/ui/win32/storage_prompt.c src/ui/win32/folder_picker.c src/ui/win32/file_picker.c src/ui/win32/dropped_files.c
     src/ui/win32/note_pane_links.c src/ui/win32/note_pane_headings.c src/ui/win32/note_pane_code_button.c src/ui/win32/note_pane_images.c src/ui/win32/note_minimap.c src/ui/win32/note_outline.c src/ui/win32/note_pane_sample.c
     src/ui/win32/note_pane_geometry.c
     src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
@@ -376,6 +376,7 @@ add_test(NAME note_mode_native COMMAND image_status_tests --mode-save)
 add_test(NAME discard_native COMMAND image_status_tests --discard)
 add_test(NAME palette_native COMMAND image_status_tests --palette)
 add_test(NAME paste_native COMMAND image_status_tests --paste)
+add_test(NAME image_drop_native COMMAND image_status_tests --image-drop)
 add_test(NAME code_copy_native COMMAND image_status_tests --code-copy)
 add_test(NAME code_copy_keys_native COMMAND image_status_tests --code-copy-keys)
 add_test(NAME code_copy_scroll_native COMMAND image_status_tests --code-copy-scroll)
@@ -395,6 +396,7 @@ add_test(NAME layout_edit_native COMMAND image_status_tests --layout)
 set_tests_properties(layout_edit_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(editor_format_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(paste_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
+set_tests_properties(image_drop_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(code_copy_native code_copy_keys_native code_copy_scroll_native
     code_copy_scroll_96_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(palette_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
