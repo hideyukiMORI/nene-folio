@@ -147,14 +147,17 @@ static void verify_hash_only_headings(void)
         "text\n#\nmore",
         "\\pard\\sa80\\sl240\\slmult1\\cf1 text\\par\n\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 "
         "\\b0\\cf1\\fs22\\par\n\\pard\\sa80\\sl240\\slmult1\\cf1 more\\par\n");
-    /* From the independent review: line endings and trailing blanks, four spaces of indent,
-     * and what the line now ends: it is no setext heading's text, and it closes a quote and
-     * a list instead of continuing their paragraph. */
+    /* From the independent review: line endings and trailing blanks, four spaces of indent
+     * (indented code since #1192, CommonMark 4.4; a paragraph before), and what the line now
+     * ends: it is no setext heading's text, and it closes a quote and a list instead of
+     * continuing their paragraph. */
     expect_body("#\n", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
     expect_body("#\r\n", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
     expect_body("#   ", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
     expect_body("#\t", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 \\b0\\cf1\\fs22\\par\n");
-    expect_body("    #", "\\pard\\sa80\\sl240\\slmult1\\cf1 #\\par\n");
+    expect_body("    #",
+                "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa0\\sl240\\slmult1 "
+                "#\\sa120\\par\n}");
     expect_body("#\n===", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 "
                           "\\b0\\cf1\\fs22\\par\n\\pard\\sa80\\sl240\\slmult1\\cf1 ===\\par\n");
     expect_body("> text\n#",
@@ -2406,8 +2409,189 @@ static void verify_destination_allocations(void)
     }
 }
 
+/* #1192: indented code (CommonMark 0.31.2, 4.4). It looks like a fence with no language and has
+ * no header line: no label, no colours, no Copy. */
+#define CODE_TOP "\\pard\\li180\\ri180\\sb120\\sa0\\sl240\\slmult1 "
+#define CODE_END "\\sa120\\par\n}"
+#define PLAIN "\\pard\\sa80\\sl240\\slmult1\\cf1 "
+#define ITEM_MARK(mark)                                                                            \
+    "\\pard\\li440\\fi-220\\tx440\\sa40\\sl240\\slmult1\\cf1 "                                     \
+    "{\\f0\\fs22\\cf1\\b0\\highlight0 " mark "\\tab }"
+#define ITEM_CODE_TOP "\\pard\\li620\\ri180\\sb120\\sa0\\sl240\\slmult1 "
+#define ITEM_CODE_LINE "\\pard\\li620\\ri180\\sb0\\sa0\\sl240\\slmult1 "
+#define QUOTE_CODE_TOP "\\pard\\li660\\ri180\\sb120\\sa0\\sl240\\slmult1 "
+#define QUOTE_CODE_LINE "\\pard\\li660\\ri180\\sb0\\sa0\\sl240\\slmult1 "
+
+/* The specification's examples 107 to 118, in their order. */
+static void verify_indented_code_examples(void)
+{
+    expect_body("    a simple\n      indented code block",
+                CODE_OPEN CODE_TOP "a simple\\par\n" CODE_LINE "  indented code block" CODE_END);
+    /* 108, 109: in a list item the four columns count from the item's body, so these are the
+     * item's second paragraph and a nested list. */
+    expect_body(
+        "  - foo\n\n    bar",
+        ITEM_MARK("\\bullet") "foo\\par\n\\pard\\li440\\sa40\\sl240\\slmult1\\cf1 bar\\par\n");
+    expect_body("1.  foo\n\n    - bar",
+                ITEM_MARK("1.") "foo\\par\n"
+                                "\\pard\\li880\\fi-220\\tx880\\sa40\\sl240\\slmult1\\cf1 "
+                                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }bar\\par\n");
+    expect_body("    <a/>\n    *hi*\n\n    - one",
+                CODE_OPEN CODE_TOP "<a/>\\par\n" CODE_LINE "*hi*\\par\n" CODE_LINE
+                                   "\\par\n" CODE_LINE "- one" CODE_END);
+    expect_body("    chunk1\n\n    chunk2\n  \n \n \n    chunk3", CODE_OPEN CODE_TOP
+                "chunk1\\par\n" CODE_LINE "\\par\n" CODE_LINE "chunk2\\par\n" CODE_LINE
+                "\\par\n" CODE_LINE "\\par\n" CODE_LINE "\\par\n" CODE_LINE "chunk3" CODE_END);
+    expect_body("    chunk1\n      \n      chunk2", CODE_OPEN CODE_TOP
+                "chunk1\\par\n" CODE_LINE "  \\par\n" CODE_LINE "  chunk2" CODE_END);
+    expect_body("Foo\n    bar", PLAIN "Foo bar\\par\n");
+    expect_body("    foo\nbar", CODE_OPEN CODE_TOP "foo" CODE_END PLAIN "bar\\par\n");
+    static const char gap[] = "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n";
+    char expected[1024];
+    int written = snprintf(expected, sizeof expected, "%s%s%s%s%s%s%s",
+                           "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 Heading\\b0\\cf1\\fs22\\par\n",
+                           CODE_OPEN CODE_TOP "foo" CODE_END,
+                           "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 Heading\\b0\\cf1\\fs22\\par\n",
+                           CODE_OPEN CODE_TOP "foo" CODE_END, gap,
+                           "{\\pard\\sb0\\sa0\\sl-20\\slmult0\\fs2\\highlight3\\par}\n", gap);
+    require(written > 0 && (size_t)written < sizeof expected, "example 115 fits");
+    expect_body("# Heading\n    foo\nHeading\n------\n    foo\n----", expected);
+    expect_body("        foo\n    bar",
+                CODE_OPEN CODE_TOP "    foo\\par\n" CODE_LINE "bar" CODE_END);
+    expect_body("\n    \n    foo\n    \n", CODE_OPEN CODE_TOP "foo" CODE_END);
+    expect_body("    foo  ", CODE_OPEN CODE_TOP "foo  " CODE_END);
+}
+
+/* In a list item and in a quote, the columns count from the body; the code's left edge is the
+ * container's. A marker that waits is written on a line of its own, as before a fence. */
+static void verify_indented_code_containers(void)
+{
+    expect_body("- a\n\n      code\n\n      more\n  b",
+                ITEM_MARK("\\bullet") "a\\par\n" CODE_OPEN ITEM_CODE_TOP
+                                      "code\\par\n" ITEM_CODE_LINE "\\par\n" ITEM_CODE_LINE
+                                      "more" CODE_END
+                                      "\\pard\\li440\\sa40\\sl240\\slmult1\\cf1 b\\par\n");
+    /* Five columns after the marker: the body starts one column after it (CommonMark 5.2). */
+    expect_body("-     code\n- next",
+                "\\pard\\li440\\fi-220\\tx440\\sb0\\sa0\\sl240\\slmult1 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }\\par\n" CODE_OPEN ITEM_CODE_TOP
+                "code" CODE_END ITEM_MARK("\\bullet") "next\\par\n");
+    /* An example of 5.2: code, the item's paragraph, code again. */
+    expect_body("1.     indented code\n\n   paragraph\n\n       more code",
+                "\\pard\\li440\\fi-220\\tx440\\sb0\\sa0\\sl240\\slmult1 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 1.\\tab }\\par\n" CODE_OPEN ITEM_CODE_TOP
+                "indented code" CODE_END
+                "\\pard\\li440\\sa40\\sl240\\slmult1\\cf1 paragraph\\par\n" CODE_OPEN ITEM_CODE_TOP
+                "more code" CODE_END);
+    /* A line under an item's paragraph is more of the paragraph however far it is indented. */
+    expect_body("- a\n      b", ITEM_MARK("\\bullet") "a b\\par\n");
+    expect_body(">     code\n>\n>     more\n> text", CODE_OPEN QUOTE_CODE_TOP
+                "code\\par\n" QUOTE_CODE_LINE "\\par\n" QUOTE_CODE_LINE "more" CODE_END
+                "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 text\\cf1\\par\n");
+    /* An example of 5.1: code has no lazy continuation; the second line is a block of its own. */
+    expect_body(">     foo\n    bar",
+                CODE_OPEN QUOTE_CODE_TOP "foo" CODE_END CODE_OPEN CODE_TOP "bar" CODE_END);
+    /* A blank line that is not the quote's ends the code with the quote. */
+    expect_body(">     a\n\n>     b",
+                CODE_OPEN QUOTE_CODE_TOP "a" CODE_END CODE_OPEN QUOTE_CODE_TOP "b" CODE_END);
+}
+
+/* The content is as written: nothing in it starts a block or is read as inline syntax. */
+static void verify_indented_code_content(void)
+{
+    expect_body(
+        "    # h\n    - x\n    > q\n    ```\n    ---\n    | a |\n    | - |", CODE_OPEN CODE_TOP
+        "# h\\par\n" CODE_LINE "- x\\par\n" CODE_LINE "> q\\par\n" CODE_LINE "```\\par\n" CODE_LINE
+        "---\\par\n" CODE_LINE "| a |\\par\n" CODE_LINE "| - |" CODE_END);
+    expect_body(
+        "    *e* **b** `c` \\* &amp; [l](https://example.com/) <https://example.com/>",
+        CODE_OPEN CODE_TOP
+        "*e* **b** `c` \\\\* &amp; [l](https://example.com/) <https://example.com/>" CODE_END);
+    /* A definition is indented three columns at most: this one is code, and defines nothing. */
+    expect_body("    [a]: https://example.com/\n\n[a]",
+                CODE_OPEN CODE_TOP "[a]: https://example.com/" CODE_END PLAIN "[a]\\par\n");
+    /* Not yet as CommonMark has it (#1192, ADR 0121): a definition right after the code, with no
+     * blank line between, is not read as one. The scan for definitions does not follow lists and
+     * quotes, and telling code from a paragraph's indented line needs that. With a blank line
+     * between, it is a definition. */
+    expect_body("    code\n[a]: /u\n\n[a]",
+                CODE_OPEN CODE_TOP "code" CODE_END PLAIN "[a]: /u\\par\n" PLAIN "[a]\\par\n");
+    expect_body("    code\n\n[a]: /u\n\n[a]",
+                CODE_OPEN CODE_TOP "code" CODE_END PLAIN "{\\cf4\\ul a\\ul0}\\par\n");
+    /* From the independent review: the paragraph of a list item, then a footnote's definition.
+     * The lines stay where they are written; nothing moves into the footnote. */
+    expect_body("- a\n\n    b\n[^n]: note\n\n    more text",
+                "\\pard\\li440\\fi-220\\tx440\\sa40\\sl240\\slmult1\\cf1 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }a\\par\n"
+                "\\pard\\li440\\sa40\\sl240\\slmult1\\cf1 b [^n]: note\\par\n"
+                "\\pard\\li440\\sa40\\sl240\\slmult1\\cf1 more text\\par\n");
+    /* Code ends where another block begins, with no blank line between. */
+    expect_body("    code\n# h", CODE_OPEN CODE_TOP
+                "code" CODE_END "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 h\\b0\\cf1\\fs22\\par\n");
+    /* One to three columns of indent end the code as well as none does. */
+    expect_body("    code\n   three", CODE_OPEN CODE_TOP "code" CODE_END PLAIN "three\\par\n");
+    expect_body("    code\n one", CODE_OPEN CODE_TOP "code" CODE_END PLAIN "one\\par\n");
+    /* A quote's code does not go on past the quote: the blank line of the quote is not kept for
+     * a code line that is outside it. Two blocks, each with its own left edge. */
+    expect_fragment(">     a\n>\n    b",
+                    "\\li660\\ri180\\sb120\\sa0\\sl240\\slmult1 a\\sa120\\par\n"
+                    "}{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa0\\sl240\\slmult1 "
+                    "b\\sa120\\par\n",
+                    "");
+    /* Under a paragraph the indented line is more of the paragraph, and the next line too. */
+    expect_body("text\n    more\n[a]: /u\n\n[a]",
+                PLAIN "text more [a]: /u\\par\n" PLAIN "[a]\\par\n");
+    /* #878 comes first: right after a footnote, indented lines are the footnote's. */
+    expect_fragment("a[^x]\n\n[^x]: first\n    second\n\n    third", "first second\\line third",
+                    "\\highlight6");
+    /* A term's description is indented three columns at most (#971); under a term the line is
+     * more of the term's paragraph, and after a blank line it is code. */
+    expect_body("term\n    : text", PLAIN "term : text\\par\n");
+    expect_body("term\n\n    : text", PLAIN "term\\par\n" CODE_OPEN CODE_TOP ": text" CODE_END);
+}
+
+/* Tabs stop at every fourth column; line endings; the end of the note; the blocks around. */
+static void verify_indented_code_edges(void)
+{
+    expect_body("\tcode\n  \tsecond\n\t\tthird\n     fourth",
+                CODE_OPEN CODE_TOP "code\\par\n" CODE_LINE "second\\par\n" CODE_LINE
+                                   "\tthird\\par\n" CODE_LINE " fourth" CODE_END);
+    /* Examples 5 to 7: a tab that is partly the container's leaves its other columns as spaces. */
+    expect_body("- foo\n\n\t\tbar",
+                ITEM_MARK("\\bullet") "foo\\par\n" CODE_OPEN ITEM_CODE_TOP "  bar" CODE_END);
+    expect_body(">\t\tfoo", CODE_OPEN QUOTE_CODE_TOP "  foo" CODE_END);
+    expect_body("-\t\tfoo",
+                "\\pard\\li440\\fi-220\\tx440\\sb0\\sa0\\sl240\\slmult1 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }\\par\n" CODE_OPEN ITEM_CODE_TOP
+                "  foo" CODE_END);
+    expect_body("    a\r\n\r\n    b\r\nc\r\n", CODE_OPEN CODE_TOP
+                "a\\par\n" CODE_LINE "\\par\n" CODE_LINE "b" CODE_END PLAIN "c\\par\n");
+    expect_body("    a\r\r    b\r",
+                CODE_OPEN CODE_TOP "a\\par\n" CODE_LINE "\\par\n" CODE_LINE "b" CODE_END);
+    expect_body("    code", CODE_OPEN CODE_TOP "code" CODE_END);
+    expect_body("    code\n", CODE_OPEN CODE_TOP "code" CODE_END);
+    expect_body("    code\n\n\n", CODE_OPEN CODE_TOP "code" CODE_END);
+    /* The blank lines after the code are not in it; three columns are no code. */
+    expect_body("    code\n\n\n   text", CODE_OPEN CODE_TOP "code" CODE_END PLAIN "text\\par\n");
+    expect_body("   text", PLAIN "text\\par\n");
+    /* No copy slot is taken: the fence after the indented code is still the note's first. */
+    expect_body("    a\n\n```\nb\n```",
+                CODE_OPEN CODE_TOP "a" CODE_END CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN
+                                   "0" CODE_COPY_CLOSE "\\par\n" CODE_FIRST "b" CODE_END);
+    /* A fence is opened three columns in at most, and closed the same: inside one, an indented
+     * line is its content and keeps its indent; an indented fence line is code. */
+    expect_body("```\n    a\n    ```\n```", CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN
+                "0" CODE_COPY_CLOSE "\\par\n" CODE_FIRST "    a\\par\n" CODE_LINE
+                "    ```" CODE_END);
+    expect_body("    ```\n    a", CODE_OPEN CODE_TOP "```\\par\n" CODE_LINE "a" CODE_END);
+}
+
 void run_markdown_tests(void)
 {
+    verify_indented_code_examples();
+    verify_indented_code_containers();
+    verify_indented_code_content();
+    verify_indented_code_edges();
     verify_destination_shapes();
     verify_destination_decoding();
     verify_destination_allocations();

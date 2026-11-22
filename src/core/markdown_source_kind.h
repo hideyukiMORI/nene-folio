@@ -6,7 +6,7 @@ enum markdown_source_kind : unsigned char
     MARKDOWN_SOURCE_PARAGRAPH,   /* a paragraph or a list item's text */
     MARKDOWN_SOURCE_HEADING,     /* ATX or setext */
     MARKDOWN_SOURCE_CODE_HEADER, /* a fence's opening line (its language label and Copy) */
-    MARKDOWN_SOURCE_CODE_LINE,   /* one line of a fenced code block */
+    MARKDOWN_SOURCE_CODE_LINE,   /* one line of a fenced or an indented code block */
     MARKDOWN_SOURCE_CODE_END,    /* the closing fence; it adds no paragraph */
     MARKDOWN_SOURCE_DIAGRAM,     /* a mermaid fence, drawn as one image */
     MARKDOWN_SOURCE_RULE,        /* a thematic break */

@@ -53,6 +53,11 @@ struct markdown_blocks
     size_t fence_indent;
     size_t code_indent;
     enum markdown_code_state code_state;
+    /* #1192: the open code is an indented one (CommonMark 4.4): no fence closes it, a line
+     * indented less does. `code_until` is the start of the line known to continue it, so the
+     * blank lines before that one are its content without looking ahead again. */
+    bool indented;
+    size_t code_until;
     struct code_syntax *_Nullable syntax;
     bool diagram;
     size_t diagram_slot;
@@ -63,8 +68,8 @@ struct markdown_blocks
     struct markdown_line delimiter;
     /* #1008 / ADR0116: where each block came from, or none when not asked for. */
     struct markdown_source_map *_Nullable map;
-    size_t group;                     /* the fence or table being written; groups count from 1 */
-    bool map_failed;                  /* an entry could not be kept; the render fails at its end */
+    size_t group;    /* the code block or table being written; groups count from 1 */
+    bool map_failed; /* an entry could not be kept; the render fails at its end */
     const char *_Nullable setext_end; /* the end of the underline of the heading being closed */
 };
 
@@ -398,6 +403,7 @@ static bool close_code(struct markdown_blocks *_Nonnull parser)
         text_buffer_append_text(parser->out, "\\sa120\\par\n");
     text_buffer_append_text(parser->out, "}");
     parser->code_state = MARKDOWN_CODE_STATE_OUTSIDE;
+    parser->indented = false;
     code_syntax_destroy(parser->syntax);
     parser->syntax = nullptr;
     if (parser->copyable &&
@@ -588,6 +594,15 @@ static bool begin_copy(struct markdown_blocks *_Nonnull parser)
     return begun != IMAGE_OUT_OF_MEMORY;
 }
 
+/* The code's left edge is its containers' (a list item's or a quote's body). */
+static bool place_code(struct markdown_blocks *_Nonnull parser)
+{
+    parser->code_indent = markdown_containers_indent(parser->containers);
+    if (parser->code_indent > SIZE_MAX - 180)
+        parser->outcome = MARKDOWN_RTF_INVALID_INPUT;
+    return parser->code_indent <= SIZE_MAX - 180;
+}
+
 /* #1008: a fence opens a group; a mermaid fence is one diagram, any other a code block. */
 static void record_fence(struct markdown_blocks *_Nonnull parser, struct markdown_line line,
                          bool mermaid)
@@ -610,12 +625,8 @@ static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown
     parser->code_state = MARKDOWN_CODE_STATE_EMPTY;
     parser->fence_length = length;
     parser->fence_indent = line.indent;
-    parser->code_indent = markdown_containers_indent(parser->containers);
-    if (parser->code_indent > SIZE_MAX - 180)
-    {
-        parser->outcome = MARKDOWN_RTF_INVALID_INPUT;
+    if (!place_code(parser))
         return false;
-    }
     if (mermaid)
     {
         parser->diagram = true;
@@ -641,6 +652,74 @@ static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown
     text_buffer_append_text(parser->out, "{\\f1\\fs20\\cf5\\highlight6");
     code_header(parser, word);
     return true;
+}
+
+/* #1192 / CommonMark 4.4: a line indented four columns or more, where no paragraph is open,
+ * starts an indented code block (in a list item or a quote the columns count from its body).
+ * A line the link definitions took (a footnote's continuation, #878) never comes here. */
+static bool indented_starts(const struct markdown_blocks *_Nonnull parser,
+                            struct markdown_line line)
+{
+    return parser->span_count == 0 && line.indent >= 4;
+}
+
+/* The block looks like a fence with no language, without the header line: it has no label, no
+ * colours and no Copy (so no copy slot is taken). Its lines are one group of the source map; a
+ * list marker that waits is written on a line of its own, as before a fence, and belongs to the
+ * first code line. */
+static bool start_indented(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
+{
+    parser->after_description = false;
+    ++parser->group;
+    if (markdown_containers_pending(parser->containers) != 0)
+        record(parser, MARKDOWN_SOURCE_CODE_LINE, line_source(line), line.bytes + line.content);
+    outer_markers(parser, 0);
+    parser->fence_indent = 4;
+    if (!place_code(parser))
+        return false;
+    parser->outcome = code_syntax_create(CODE_LANGUAGE_PLAIN, parser->out, &parser->syntax);
+    if (parser->outcome != MARKDOWN_RTF_CONVERTED)
+        return false;
+    parser->indented = true;
+    parser->code_until = 0;
+    parser->code_state = MARKDOWN_CODE_STATE_EMPTY;
+    text_buffer_append_text(parser->out, "{\\f1\\fs20\\cf5\\highlight6");
+    return code_line(parser, line);
+}
+
+/* Blank lines are part of an indented code block only when another of its lines follows them
+ * (the block has no blank lines at its end). `at` is the blank line's start. */
+static bool indented_resumes(struct markdown_blocks *_Nonnull parser, size_t at)
+{
+    if (at < parser->code_until)
+        return true;
+    size_t cursor = parser->next;
+    while (cursor < parser->length)
+    {
+        struct markdown_line line = markdown_line_read(parser->source, parser->length, cursor);
+        if (markdown_containers_match(parser->containers, &line) !=
+            MARKDOWN_CONTAINER_MATCH_MATCHED)
+            return false;
+        if (!markdown_line_blank(line))
+        {
+            parser->code_until = line.indent >= 4 ? cursor : 0;
+            return line.indent >= 4;
+        }
+        cursor = line.next;
+    }
+    return false;
+}
+
+/* Whether the line (its containers matched) ends the open indented code block: a line indented
+ * less than four columns, or blank lines that no code line follows. A fence is never ended here.
+ */
+static bool indented_ends(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
+{
+    if (!parser->indented)
+        return false;
+    if (!markdown_line_blank(line))
+        return line.indent < 4;
+    return !indented_resumes(parser, (size_t)(line.bytes - parser->source));
 }
 
 static void task_marker(struct markdown_blocks *_Nonnull parser,
@@ -914,6 +993,8 @@ static bool render_line(struct markdown_blocks *_Nonnull parser, struct markdown
     bool accepted = true;
     if (skipped_line(parser, raw, line, &accepted))
         return accepted;
+    if (indented_starts(parser, line))
+        return start_indented(parser, line);
     if (definition_starts(parser, line))
         return definition_line(parser, line);
     size_t setext = markdown_line_setext(line);
@@ -935,6 +1016,8 @@ static bool render_line(struct markdown_blocks *_Nonnull parser, struct markdown
     return special_line(parser, line);
 }
 
+/* One line of the open code. A line of an indented code block never closes a fence: it is blank
+ * or indented four columns or more. */
 static bool render_fenced_line(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
 {
     if (fence_closes(parser, line))
@@ -955,7 +1038,8 @@ static bool render_next(struct markdown_blocks *_Nonnull parser, size_t *_Nonnul
     if (parser->code_state != MARKDOWN_CODE_STATE_OUTSIDE)
     {
         if (markdown_containers_match(parser->containers, &line) ==
-            MARKDOWN_CONTAINER_MATCH_MATCHED)
+                MARKDOWN_CONTAINER_MATCH_MATCHED &&
+            !indented_ends(parser, line))
             return render_fenced_line(parser, line);
         if (!close_code(parser))
             return false;
