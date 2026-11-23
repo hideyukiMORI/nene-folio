@@ -212,6 +212,26 @@ static void code_blocks(struct note_pane *_Nonnull pane)
             "inline code is not a shaded block");
 }
 
+/* #1205: between two code blocks with nothing shown between them there is a thin row that is
+ * not shaded: a fence, indented code, a fence. */
+static void adjacent_code_blocks(struct note_pane *_Nonnull pane)
+{
+    load(pane, PANE_MODE_VIEW, "```c\nint a;\n```\n\n    b\n\n```\nd\n```\n");
+    int count = (int)SendMessageW(note_pane_handle(pane), EM_GETLINECOUNT, 0, 0);
+    require(count >= 7, "two header lines, three code lines and two rows between");
+    for (int line = 0; line < 7; ++line)
+    {
+        struct note_pane_sample sample;
+        require(note_pane_samples(pane, &line, 1, &sample), "adjacent code native sample");
+        bool row = line == 2 || line == 4;
+        if (row != (sample.background > 0xFFFFFF) || row != (sample.points <= 2))
+            printf("adjacent code line %d: background %06lX points %.1f\n", line,
+                   (unsigned long)sample.background, (double)sample.points);
+        require(row == (sample.background > 0xFFFFFF) && row == (sample.points <= 2),
+                "the row between adjacent code blocks is thin and not shaded; code lines are");
+    }
+}
+
 static void boundaries(struct note_pane *_Nonnull pane)
 {
     int lines[17] = {0};
@@ -341,8 +361,8 @@ static void code_label_boundaries(struct note_pane *_Nonnull pane)
     require(wcscmp(actual, L"Before\r\nPyThOn\x2003HYPERLINK "
                            L"\"nenefolio-code:"
                            L"0\"\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0"
-                           L"\xA0\r\nreturn 42"
-                           L"\r\nmystery\r\nHYPERLINK "
+                           L"\xA0\r\nreturn 42\r\n" /* #1205: a row between code blocks */
+                           L"\r\nmystery\r\n\r\nHYPERLINK "
                            L"\"nenefolio-code:"
                            L"1\"\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0"
                            L"\xA0\r\nplain\r\nTail") == 0,
@@ -475,7 +495,7 @@ static void code_copy_action(struct note_pane *_Nonnull pane)
                L"コピー 前文\r\nc\x2003HYPERLINK "
                L"\"nenefolio-code:"
                L"0\"\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0\xA0\r\nint "
-               L"a;\r\n"
+               L"a;\r\n\r\n" /* #1205: a row between code blocks */
                L"HYPERLINK "
                L"\"nenefolio-code:"
                L"1\"\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0\xA0\r\n引用"
@@ -1573,6 +1593,7 @@ static void source_map_marks(struct note_pane *_Nonnull pane)
         "[r]: https://example.com\n\n[^m]: 二番\n[^n]: 脚注\n\n    続き\n",
         "表で終わる\n\n| x |\n| - |\n| 1 |\n",
         "コードで終わる\n\n```\nlast\n```",
+        "```c\nint a;\n```\n\n```\nb\n```\n\n> ```\n> c\n> ```", /* #1205: rows between */
         "見出しで終わる\n\n## 最後",
         "- [ ] 作業\n- [x] 済み\n\n1. 一\n2. 二\n\n用語\n: 説明\n\n| 表 |\n| -- |\n| a |\n",
         "Title\n=====\n\nalpha\n\n-\n\nbeta\n\n> ```\n> quoted code\n> ```\n\n- item\n\n  | t |\n  "
@@ -1627,6 +1648,7 @@ int main(void)
     view_structure(pane);
     wrapped_list(pane);
     code_blocks(pane);
+    adjacent_code_blocks(pane);
     code_syntax(pane);
     code_label_boundaries(pane);
     code_label_wrap(pane);
