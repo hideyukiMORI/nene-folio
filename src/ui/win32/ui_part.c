@@ -176,7 +176,10 @@ static void draw_hover(HDC device, const struct folio_palette *_Nonnull palette,
     bool framed = part->style == UI_PART_STYLE_COMMAND || part->style == UI_PART_STYLE_CHIP;
     if (framed && !part->grouped)
     {
-        InflateRect(&body, -1, -1);
+        /* 枠の内側。点いた札の高コントラストの枠は 2px なので、その内側（ADR0122 の決定 5）。 */
+        bool thick = chip_lit(part) && palette->contrast == FOLIO_CONTRAST_HIGH;
+        int inset = thick ? ui_part_focus_width(part->dpi) : 1;
+        InflateRect(&body, -inset, -inset);
     }
     frame(device, body, 1, palette->hover_line);
 }

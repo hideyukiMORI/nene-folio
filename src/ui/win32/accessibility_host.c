@@ -504,8 +504,9 @@ static void refresh_outline(struct accessibility_host *_Nonnull host)
 
 static void refresh_visibility(struct accessibility_host *_Nonnull host)
 {
+    /* 解除（#1199）は、左の欄の固定の子で、条件が効いているあいだだけある。 */
     const enum accessible_kind kinds[] = {ACCESSIBLE_DRAWER, ACCESSIBLE_PANE_TOOLS, ACCESSIBLE_FIND,
-                                          ACCESSIBLE_OUTLINE};
+                                          ACCESSIBLE_OUTLINE, ACCESSIBLE_FILTER_CLEAR};
     unsigned visibility = 0;
     for (size_t index = 0; index < sizeof kinds / sizeof kinds[0]; ++index)
     {

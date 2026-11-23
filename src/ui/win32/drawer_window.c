@@ -40,7 +40,12 @@ struct drawer_window
     UINT accessible_dpi;
     int accessible_height;
     int accessible_band; /* 配置を作ったときの固定帯の高さ（札の行で動く・#1199） */
-    int painted_band;    /* 最後に描いた固定帯の高さ。変わったら主窓へ知らせる */
+    /* 最後に描いた札の行の配置。変わったら主窓へ知らせる（高さが同じでも札は動く） */
+    struct drawer_filter_band painted_band;
+    /* 「× 解除」を押した点。解除が消えると同じ場所に「＋」の当たりが来るので、ポインタが
+     * 動くまで、その点での次の押下を受けない（星の連続押下と同じ守り・ADR0091）。 */
+    bool header_blocked;
+    POINT header_block_point;
     struct folio_palette palette;
     HFONT _Nullable category_font;
     HFONT _Nullable note_font;
@@ -522,6 +527,13 @@ static struct drawer_filter_band filter_band(const struct drawer_window *_Nonnul
     return band;
 }
 
+static bool same_band(const struct drawer_filter_band *_Nonnull left,
+                      const struct drawer_filter_band *_Nonnull right)
+{
+    return left->bottom == right->bottom && EqualRect(&left->favorites, &right->favorites) &&
+           EqualRect(&left->tags, &right->tags) && EqualRect(&left->clear, &right->clear);
+}
+
 static int band_height(const struct drawer_window *_Nonnull self)
 {
     return filter_band(self).bottom +
@@ -980,9 +992,10 @@ static void paint(struct drawer_window *_Nonnull self)
         DeleteDC(memory);
     }
     EndPaint(self->handle, &painting);
-    /* 固定帯の高さが変わったら、主窓に説明（tooltip）の矩形と focus を合わせ直させる（#1199）。 */
-    int band = band_height(self);
-    if (band != self->painted_band)
+    /* 札の行の配置が変わったら、主窓に説明（tooltip）の矩形と focus を合わせ直させる（#1199）。
+     * 高さが同じでも、札が点くと幅が変わって隣の札が動く。 */
+    struct drawer_filter_band band = filter_band(self);
+    if (!same_band(&band, &self->painted_band))
     {
         self->painted_band = band;
         PostMessageW(GetParent(self->handle), folio_message_drawer_band, 0, 0);
@@ -1253,8 +1266,24 @@ static enum drawer_header_button header_at(const struct drawer_window *_Nonnull 
     return DRAWER_HEADER_NONE;
 }
 
+/* 解除を押した点から動いていないあいだは、帯の押下を受けない。 */
+static bool header_press_blocked(struct drawer_window *_Nonnull self, POINT point)
+{
+    if (self->header_blocked && point.x == self->header_block_point.x &&
+        point.y == self->header_block_point.y)
+    {
+        return true;
+    }
+    self->header_blocked = false;
+    return false;
+}
+
 static bool press_header(struct drawer_window *_Nonnull self, POINT point)
 {
+    if (header_press_blocked(self, point))
+    {
+        return true; /* 押下を消費する。行へも渡さない */
+    }
     enum drawer_header_button pressed = header_at(self, point);
     if (pressed == DRAWER_HEADER_NONE)
     {
@@ -1554,6 +1583,8 @@ static void release(struct drawer_window *_Nonnull self, POINT point)
     if (PtInRect(&button, point))
     {
         self->header_hover = DRAWER_HEADER_NONE;
+        self->header_blocked = pressed == DRAWER_HEADER_CLEAR;
+        self->header_block_point = point;
         run_header(self, pressed);
     }
 }

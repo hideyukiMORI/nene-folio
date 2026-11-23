@@ -10416,13 +10416,27 @@ static void set_note_scope(struct folio_window *_Nonnull self, enum note_scope s
 }
 
 /* 解除の行が消えたあとに、focus を残さない。お気に入りの札へ移す（#1199）。 */
-static void settle_filter_focus(struct folio_window *_Nonnull self)
+static bool settle_filter_focus(struct folio_window *_Nonnull self)
 {
-    if (self->keyboard_target == ACCESSIBLE_FILTER_CLEAR &&
-        !folio_state_conditions_active(self->state))
+    if (self->keyboard_target != ACCESSIBLE_FILTER_CLEAR ||
+        folio_state_conditions_active(self->state))
     {
-        self->keyboard_target = ACCESSIBLE_FILTER_FAVORITES;
+        return false;
     }
+    self->keyboard_target = ACCESSIBLE_FILTER_FAVORITES;
+    return true;
+}
+
+/* 左の欄の札の行の配置が変わった（左の欄が描いた後に知らせる）。説明の矩形を写し直し、
+ * 消えた解除に focus が残っていたら移して、輪を移した先に描く。 */
+static void drawer_band_changed(struct folio_window *_Nonnull self)
+{
+    if (settle_filter_focus(self))
+    {
+        redraw_drawer(self);
+    }
+    refresh_tooltip_rects(self);
+    accessibility_host_schedule(self->accessibility);
 }
 
 /* 絞り込みの札の「× 解除」。お気に入りとタグの条件を外し、検索語は残す（ADR0122）。 */
@@ -10433,7 +10447,7 @@ static void clear_conditions(struct folio_window *_Nonnull self)
     {
         report_outcome(self, outcome);
     }
-    settle_filter_focus(self);
+    (void)settle_filter_focus(self);
     settle_empty_drawer_focus(self);
     redraw_drawer(self);
     accessibility_host_schedule(self->accessibility);
@@ -20531,9 +20545,7 @@ static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT
     case folio_message_part_pressed:
         return self->pressed_part == (enum accessible_kind)wparam && self->pressed_inside;
     case folio_message_drawer_band:
-        settle_filter_focus(self);
-        refresh_tooltip_rects(self);
-        accessibility_host_schedule(self->accessibility);
+        drawer_band_changed(self);
         return 0;
     case folio_message_index_focus:
         show_focus_cues(self, false); /* drawer のポインタ操作だけが送る */
