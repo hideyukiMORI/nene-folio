@@ -9104,9 +9104,165 @@ static void run_favorites_visual(struct native_fixture *_Nonnull fixture)
     favorite_visual_matrix(fixture);
 }
 
+/* #1215: how far left of the count's right edge the leftmost drawn pixel is, looking no further
+ * than `reach` pixels. The count is right-aligned 8 DIP before the "new category" button. */
+static int header_count_reach(struct folio_window *_Nonnull window, int reach)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    RECT client;
+    GetClientRect(drawer, &client);
+    HDC source = GetDC(drawer), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(drawer, dc, PW_CLIENTONLY), "render the real drawer for the count");
+    struct accessible_item button = {.kind = ACCESSIBLE_NEW_CATEGORY};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &button, &view) == S_OK,
+            "measure the new category button");
+    MapWindowPoints(nullptr, drawer, (POINT *)&view.bounds, 2);
+    int right = view.bounds.left - MulDiv(8, (int)GetDpiForWindow(drawer), 96);
+    COLORREF ground = GetPixel(dc, right + 2, view.bounds.top + 2);
+    int found = 0;
+    for (int back = 1; back <= reach; ++back)
+        if (line_ink(dc,
+                     (RECT){right - back, view.bounds.top, right - back + 1, view.bounds.bottom},
+                     ground) != 0)
+            found = back;
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(drawer, source);
+    return found;
+}
+
+/* One font of the heading row: the face, its size in DIP and its weight. */
+struct header_font
+{
+    const wchar_t *_Nonnull face;
+    int size;
+    int weight;
+};
+
+static int header_text_width(HWND drawer, const wchar_t *_Nonnull text, struct header_font font)
+{
+    HDC dc = GetDC(drawer);
+    HFONT handle =
+        CreateFontW(-MulDiv(font.size, (int)GetDpiForWindow(drawer), 96), 0, 0, 0, font.weight,
+                    FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                    CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, font.face);
+    HGDIOBJ old = SelectObject(dc, handle);
+    SIZE size = {0};
+    require(GetTextExtentPoint32W(dc, text, (int)wcslen(text), &size) != 0, "measure header text");
+    SelectObject(dc, old);
+    DeleteObject(handle);
+    ReleaseDC(drawer, dc);
+    return size.cx;
+}
+
+/* What the heading row should show: the unit in the language's face, a 6 DIP gap, then the
+ * numbers in Consolas. title is the heading's own text, which limits the room. */
+struct header_count
+{
+    enum folio_language language;
+    const wchar_t *_Nonnull title;
+    const wchar_t *_Nonnull unit;
+    const wchar_t *_Nonnull number;
+};
+
+/* The room the product gives the count: from 8 DIP right of the heading (which itself ends at
+ * most 80 DIP before the button) to 8 DIP left of the button. */
+static int header_count_room(struct folio_window *_Nonnull window, struct header_count expected)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    int dpi = (int)GetDpiForWindow(drawer);
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(expected.language, face);
+    struct accessible_item button = {.kind = ACCESSIBLE_NEW_CATEGORY};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &button, &view) == S_OK, "find the button");
+    MapWindowPoints(nullptr, drawer, (POINT *)&view.bounds, 2);
+    int left = MulDiv(16, dpi, 96);
+    int title = header_text_width(drawer, expected.title, (struct header_font){face, 12, FW_BOLD});
+    int limit = view.bounds.left - MulDiv(80, dpi, 96) - left;
+    return view.bounds.left - MulDiv(8, dpi, 96) -
+           (left + (title < limit ? title : limit) + MulDiv(8, dpi, 96));
+}
+
+/* The row shows the numbers, and the unit exactly when unit + gap + numbers fit the room. The
+ * leftmost drawn pixel sits one line width left of the right edge, and the 10 DIP beyond that
+ * are empty (a longer line would leave ink there). Returns whether the unit was expected. */
+static bool expect_header_count(struct folio_window *_Nonnull window, struct header_count expected,
+                                const char *_Nonnull what)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    int dpi = (int)GetDpiForWindow(drawer);
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(expected.language, face);
+    int number = header_text_width(drawer, expected.number,
+                                   (struct header_font){L"Consolas", 11, FW_NORMAL});
+    int unit = header_text_width(drawer, expected.unit, (struct header_font){face, 11, FW_NORMAL});
+    int full = unit + MulDiv(6, dpi, 96) + number;
+    int room = header_count_room(window, expected);
+    bool with_unit = full <= room;
+    int width = with_unit ? full : number;
+    int reach = header_count_reach(window, width + MulDiv(14, dpi, 96));
+    printf("header-count %s: room=%d full=%d number=%d unit=%d drawn=%d\n", what, room, full,
+           number, (int)with_unit, reach);
+    require(reach >= width - MulDiv(4, dpi, 96) && reach <= width + MulDiv(4, dpi, 96), what);
+    return with_unit;
+}
+
+/* #1215: the count says what it counts ("ノート 2"), also while a filter is on ("ノート 0 / 2").
+ * Where the unit does not fit, only the numbers are drawn. The narrow English cases follow the
+ * same rule with the measured room, whichever way it falls at this DPI. */
+static void header_count_units(struct native_fixture *_Nonnull fixture)
+{
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "count fixture");
+    pump(window);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    struct header_count line = {FOLIO_LANGUAGE_JA, L"カテゴリ", L"ノート", L"2"};
+    require(expect_header_count(window, line, "the count carries its unit"),
+            "the default drawer has room for the unit");
+    invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
+    pump(window);
+    line.number = L"0 / 2";
+    require(expect_header_count(window, line, "the filtered count carries its unit"),
+            "the default drawer has room for the unit of a filtered count");
+    invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
+    pump(window);
+    folio_window_destroy(window);
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_EN) == FOLIO_STATE_READY,
+            "English for the narrow count");
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "narrow count fixture");
+    pump(window);
+    struct accessible_request width = {.item = {.kind = ACCESSIBLE_SPLITTER},
+                                       .action = ACCESSIBLE_ACTION_SET_RANGE,
+                                       .range_value = 200};
+    require(folio_window_accessible_action(window, &width) == S_OK, "minimum drawer width");
+    pump(window);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    line = (struct header_count){FOLIO_LANGUAGE_EN, L"Categories", L"Notes", L"2"};
+    (void)expect_header_count(window, line, "the narrow English count follows the room");
+    invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
+    pump(window);
+    line.number = L"0 / 2";
+    (void)expect_header_count(window, line, "the narrow filtered English count follows the room");
+    invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
+    pump(window);
+    folio_window_destroy(window);
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "back to Japanese");
+}
+
 static void run_favorites_ui(struct native_fixture *_Nonnull fixture)
 {
     prepare_favorites(fixture);
+    header_count_units(fixture);
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,

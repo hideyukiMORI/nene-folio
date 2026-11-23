@@ -41,6 +41,7 @@ struct drawer_window
     HFONT _Nullable category_font;
     HFONT _Nullable note_font;
     HFONT _Nullable mono_font;
+    HFONT _Nullable unit_font; /* 見出しの行の数の単位（言語ごとの face・細字） */
     bool favorite_pressed;
     struct note_ref favorite_target;
     uint64_t favorite_revision;
@@ -87,6 +88,7 @@ constexpr int base_filter_inset = 16; /* 欄の左右の余白（窓の縁 16・
 constexpr int base_filter_margin = 4; /* 欄の上下に空ける間 */
 /* 「一致 / 総数」の 1 行が要る大きさ（20 桁 2 つ ＋ 区切り ＋ 終端で足りる）。 */
 constexpr size_t filter_count_capacity = 48;
+constexpr int base_unit_gap = 6; /* 見出しの行の、数の単位と数の間 */
 constexpr int base_row_height = 30;
 constexpr int base_category_height = 34;
 constexpr int base_category_gap = 6;
@@ -140,6 +142,7 @@ static void release_fonts(struct drawer_window *_Nonnull self)
     release_font(&self->category_font);
     release_font(&self->note_font);
     release_font(&self->mono_font);
+    release_font(&self->unit_font);
 }
 
 /* 文字の書体は言語ごとの face（ADR 0032 の決定 4）。番号の等幅は Consolas のまま。
@@ -152,6 +155,7 @@ static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
     self->category_font = create_font(dpi, base_category_font, FW_BOLD, face);
     self->note_font = create_font(dpi, base_note_font, FW_NORMAL, face);
     self->mono_font = create_font(dpi, base_mono_font, FW_NORMAL, mono_face);
+    self->unit_font = create_font(dpi, base_mono_font, FW_NORMAL, face);
 }
 
 /* 固定の検索欄・カテゴリ帯。行配置/clip/hit/scrollはこの高さを共用する。 */
@@ -327,25 +331,28 @@ static int format_count(size_t value, wchar_t *_Nonnull out)
     return written;
 }
 
-/* 頭の帯の右の数。ふだんはノートの総数、**絞り込みが効いているあいだは「一致 / 総数」**
- * （ADR 0024 の 2026-09-22 の補正 7）。数は application の一致集合から取り、UI は数えない。 */
-static void draw_header_count(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
+/* いま選んである書体での、1 行の幅。 */
+static int utf8_width(HDC device, const char *_Nonnull text)
 {
-    if (folio_state_index_filter_pending(self->state))
+    char16_t units[draw_unit_limit];
+    int count = wide_units(text, units);
+    RECT bounds = {0, 0, 0, 0};
+    if (count != 0)
     {
-        draw_utf8(device,
-                  ui_text_line(UI_TEXT_STATUS_FILTER_PREPARING, folio_state_language(self->state)),
-                  bounds, DT_RIGHT);
-        return;
+        DrawTextW(device, units, count, &bounds, DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
     }
+    return bounds.right;
+}
+
+/* 数だけの 1 行（「17」「2 / 17」）。ふだんはノートの総数、**絞り込みが効いているあいだは
+ * 「一致 / 総数」**（ADR 0024 の 2026-09-22 の補正 7）。数は application の一致集合から取り、
+ * UI は数えない。作れなければ 0 を返す。 */
+static int count_units(const struct drawer_window *_Nonnull self, char16_t *_Nonnull out)
+{
     size_t total = folio_state_note_count(self->state);
     if (!folio_state_filtering(self->state))
     {
-        wchar_t count[24];
-        int written = format_count(total, count);
-        DrawTextW(device, count, written, &bounds,
-                  DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
-        return;
+        return format_count(total, (wchar_t *)out);
     }
     char line[filter_count_capacity];
     struct ui_text_request request = {.id = UI_TEXT_STATUS_FILTER_COUNT,
@@ -354,9 +361,43 @@ static void draw_header_count(const struct drawer_window *_Nonnull self, HDC dev
                                       .n = total};
     if (ui_text_format(&request, line, filter_count_capacity) != UI_TEXT_FORMAT_READY)
     {
+        return 0;
+    }
+    return wide_units(line, out);
+}
+
+/* 頭の帯の右の数。数は等幅の書体で右に寄せ、その左に、何の数かを言う単位（「ノート」）を
+ * 言語ごとの書体で置く。単位が幅に入らないときは、数だけを描く（ADR0122）。呼び出し側は
+ * 等幅の書体を選んでおく。 */
+static void draw_header_count(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
+{
+    enum folio_language language = folio_state_language(self->state);
+    if (folio_state_index_filter_pending(self->state))
+    {
+        draw_utf8(device, ui_text_line(UI_TEXT_STATUS_FILTER_PREPARING, language), bounds,
+                  DT_RIGHT);
         return;
     }
-    draw_utf8(device, line, bounds, DT_RIGHT);
+    char16_t number[draw_unit_limit];
+    int count = count_units(self, number);
+    if (count == 0)
+    {
+        return;
+    }
+    RECT measured = {0, 0, 0, 0};
+    DrawTextW(device, (const wchar_t *)number, count, &measured,
+              DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
+    const char *unit = ui_text_line(UI_TEXT_STATUS_NOTE_UNIT, language);
+    RECT label = bounds;
+    label.right -= measured.right + scale(base_unit_gap, GetDpiForWindow(self->handle));
+    SelectObject(device, self->unit_font);
+    if (utf8_width(device, unit) <= label.right - label.left)
+    {
+        draw_utf8(device, unit, label, DT_RIGHT);
+    }
+    SelectObject(device, self->mono_font);
+    DrawTextW(device, (const wchar_t *)number, count, &bounds,
+              DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
 }
 
 /* 欄そのものは主窓の子で、ドロワーの DC からは欄の矩形が除かれている。EDIT は箱の中で上下左右を
@@ -444,10 +485,13 @@ static void draw_category_band(const struct drawer_window *_Nonnull self, HDC de
                   button.left - scale(80, dpi), band_height(self)};
     SelectObject(device, self->category_font);
     SetTextColor(device, self->palette.category_text);
-    draw_utf8(device, ui_text_line(UI_TEXT_TITLE_CATEGORIES, folio_state_language(self->state)),
-              label, 0);
-    RECT count = {label.right + scale(8, dpi), label.top, button.left - scale(8, dpi),
-                  label.bottom};
+    const char *title = ui_text_line(UI_TEXT_TITLE_CATEGORIES, folio_state_language(self->state));
+    draw_utf8(device, title, label, 0);
+    /* 数に使える幅は、見出しの字の右から「＋」の左まで（どちらも 8 空ける）。見出しの字の
+     * 幅で決めるので、短い見出しの言語では単位つきの数が入りやすい（ADR0122）。 */
+    int title_right = label.left + utf8_width(device, title);
+    RECT count = {(title_right < label.right ? title_right : label.right) + scale(8, dpi),
+                  label.top, button.left - scale(8, dpi), label.bottom};
     SelectObject(device, self->mono_font);
     SetTextColor(device, self->palette.note_text);
     draw_header_count(self, device, count);
