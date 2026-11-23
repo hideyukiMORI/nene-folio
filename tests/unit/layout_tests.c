@@ -1,4 +1,5 @@
 #include "category_ledger.h"
+#include "chip_flow.h"
 #include "drawer_layout.h"
 #include "note_ledger.h"
 #include "unit_tests.h"
@@ -528,8 +529,134 @@ static void verify_wide_hit_intervals(void)
     drawer_layout_destroy(layout);
 }
 
+/* #1199 / ADR0122: 絞り込みの札の並び。札の高さ 21、札の間 5、行の間 5、「+N」30、開く札 60。 */
+static struct chip_flow_input flow_input(const int *_Nonnull widths, size_t count, int available)
+{
+    struct chip_flow_input input = {.widths = widths,
+                                    .count = count,
+                                    .opener_width = 60,
+                                    .more_width = 30,
+                                    .available = available,
+                                    .height = 21,
+                                    .gap = 5,
+                                    .row_gap = 5,
+                                    .rows = 2};
+    return input;
+}
+
+static void require_place(struct chip_flow_place place, struct chip_flow_place expected,
+                          const char *_Nonnull description)
+{
+    require(place.left == expected.left && place.top == expected.top &&
+                place.width == expected.width,
+            description);
+}
+
+static void verify_chip_flow_rows(void)
+{
+    struct chip_flow_place places[5];
+    const int two[] = {100, 50};
+    struct chip_flow_input input = flow_input(two, 2, 300);
+    struct chip_flow_result result = chip_flow_arrange(&input, places);
+    require(result.shown == 2 && result.hidden == 0 && result.rows == 1,
+            "chips that fit stay in one row and nothing is folded");
+    require_place(places[0], (struct chip_flow_place){0, 0, 100}, "the first chip starts the row");
+    require_place(places[1], (struct chip_flow_place){105, 0, 50}, "the next chip follows a gap");
+    require_place(result.opener, (struct chip_flow_place){160, 0, 60}, "the opener ends the row");
+
+    input.available = 220;
+    result = chip_flow_arrange(&input, places);
+    require(result.rows == 1 && result.opener.left == 160,
+            "a row that is exactly full still holds the opener");
+    input.available = 219;
+    result = chip_flow_arrange(&input, places);
+    require(result.shown == 2 && result.hidden == 0 && result.rows == 2,
+            "one pixel short sends the opener to the second row without folding");
+    require_place(result.opener, (struct chip_flow_place){0, 26, 60},
+                  "the second row starts at the left, one height and one row gap down");
+}
+
+static void verify_chip_flow_fold(void)
+{
+    struct chip_flow_place places[5];
+    const int four[] = {100, 80, 80, 80};
+    struct chip_flow_input input = flow_input(four, 4, 200);
+    struct chip_flow_result result = chip_flow_arrange(&input, places);
+    require(result.shown == 3 && result.hidden == 1 && result.rows == 2,
+            "a third row is not used: the last chip is folded");
+    require_place(places[2], (struct chip_flow_place){0, 26, 80}, "the third chip wraps");
+    require_place(result.more, (struct chip_flow_place){85, 26, 30}, "the count follows it");
+    require_place(result.opener, (struct chip_flow_place){120, 26, 60}, "the opener comes last");
+
+    const int five[] = {100, 80, 80, 80, 80};
+    input = flow_input(five, 5, 200);
+    result = chip_flow_arrange(&input, places);
+    require(result.shown == 3 && result.hidden == 2 && result.rows == 2,
+            "a chip is also folded when only the opener would spill over");
+
+    input.rows = 1;
+    input.available = 180;
+    const int wide[] = {150, 80};
+    input.widths = wide;
+    input.count = 2;
+    result = chip_flow_arrange(&input, places);
+    require(result.shown == 1 && result.hidden == 1 && result.rows == 2,
+            "the first chip and the opener are placed even past the allowed rows");
+    require_place(result.more, (struct chip_flow_place){0, 26, 30}, "the count wraps");
+    require_place(result.opener, (struct chip_flow_place){35, 26, 60}, "the opener follows it");
+}
+
+static void verify_chip_flow_edges(void)
+{
+    struct chip_flow_place places[32];
+    const int one[] = {100};
+    struct chip_flow_input input = flow_input(one, 1, 200);
+    struct chip_flow_result result = chip_flow_arrange(&input, places);
+    require(result.shown == 1 && result.hidden == 0 && result.rows == 1 &&
+                result.opener.left == 105,
+            "a single chip is followed by the opener");
+
+    const int broad[] = {300};
+    input = flow_input(broad, 1, 200);
+    result = chip_flow_arrange(&input, places);
+    require_place(places[0], (struct chip_flow_place){0, 0, 200},
+                  "a chip wider than the row is cut to the row");
+    require_place(result.opener, (struct chip_flow_place){0, 26, 60},
+                  "and the opener takes the next row");
+
+    input = flow_input(one, 0, 200);
+    result = chip_flow_arrange(&input, places);
+    require(result.shown == 0 && result.hidden == 0 && result.rows == 1 && result.opener.left == 0,
+            "with no chips the opener starts the row");
+
+    input = flow_input(one, 1, -5);
+    result = chip_flow_arrange(&input, places);
+    require(places[0].width == 0 && result.opener.width == 0 && result.opener.left == 0,
+            "a row with no room gives empty places, never a negative width");
+
+    int many[32];
+    for (size_t index = 0; index < 32; ++index)
+    {
+        many[index] = 40;
+    }
+    input = flow_input(many, 32, 208);
+    result = chip_flow_arrange(&input, places);
+    require(result.shown + result.hidden == 32 && result.hidden > 0 && result.rows == 2,
+            "thirty-two chips fold into two rows");
+    for (size_t index = 0; index < result.shown; ++index)
+    {
+        require(places[index].left >= 0 && places[index].left + places[index].width <= 208,
+                "every shown chip stays inside the row");
+    }
+    require(result.more.top == 26 && result.opener.left + result.opener.width <= 208,
+            "the count and the opener close the second row");
+}
+
 void run_layout_tests(void)
 {
+    verify_chip_flow_rows();
+    verify_chip_flow_fold();
+    verify_chip_flow_edges();
     verify_rows();
     verify_empty();
     verify_drops();
