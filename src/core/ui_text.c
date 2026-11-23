@@ -1232,6 +1232,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                         "{n}  （无法读取）"},
     [UI_TEXT_APP_LOGO] = {"NENE FOLIO", "NENE FOLIO", "NENE FOLIO"},
     [UI_TEXT_TITLE_CATEGORIES] = {"カテゴリ", "Categories", "分类"},
+    /* 見出しの行の説明と、読み上げの数の要素の名前（#1199・ADR0122）。絞り込み中も全体の数。 */
+    [UI_TEXT_INDEX_COUNTS] = {"カテゴリ {k} ・ ノート {n}", "Categories {k} · Notes {n}",
+                              "分类 {k} ・ 笔记 {n}"},
     [UI_TEXT_PROMPT_PENDING_EXPLANATION] =
         {"「再試行」で同じ名前変更を続けます。「閉じる」は取り消しではありません。",
          "Retry continues the same rename. Close does not cancel it.",

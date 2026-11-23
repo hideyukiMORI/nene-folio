@@ -365,6 +365,7 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_MENU] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_TAG_EDIT] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_TAG_FILTER] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_INDEX_COUNT] = UIA_TextControlTypeId,
     [ACCESSIBLE_SAVE] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_HELP] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_FIND] = UIA_ButtonControlTypeId,

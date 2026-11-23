@@ -1867,6 +1867,14 @@ static RECT accessible_fixed_rect(const struct drawer_window *_Nonnull self,
     {
         return new_category_rect(self);
     }
+    if (kind == ACCESSIBLE_INDEX_COUNT)
+    {
+        /* 見出しの字の左端から、数の右端（「＋」の左 8）まで。カテゴリの段の高さ。 */
+        UINT dpi = GetDpiForWindow(self->handle);
+        return (RECT){scale(base_header_indent, dpi),
+                      band_height(self) - scale(base_category_band_height, dpi),
+                      new_category_rect(self).left - scale(8, dpi), band_height(self)};
+    }
     RECT client;
     GetClientRect(self->handle, &client);
     if (kind == ACCESSIBLE_TREE)
