@@ -1,7 +1,8 @@
 /* 言語ごとの UI の書体の face 名（ADR 0032 の決定 4・ADR 0036 の決定 4）。
  * ui（ドロワー・名前入力面・RichEdit の既定書式）と core（markdown_rtf の fonttbl）が
  * 同じ表から引く。face 名は文言ではないので ui_text には置かない（C-018）。
- * 主窓の自前描画（パンくず・札・状態行・番号帯・EDIT）、ヘルプのキーの字、左の欄の番号・数は、
+ * 主窓の自前描画（パンくず・札・状態行・番号帯・EDIT）、ヘルプのキーの字、左の欄の番号・数、
+ * ノートの中のコード（RTF の fonttbl の 1・#1223）は、
  * 等幅の face（ui_font_mono_*・#1217）で描く。表は 2 つで、同梱の face は ui_font.c、OS の退避の
  * face は ui_font_fallback.c （#42 で差し替えた。CNF-009 が表ごとに網羅を守る）。 */
 #ifndef NENEFOLIO_UI_FONT_H

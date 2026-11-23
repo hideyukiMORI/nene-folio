@@ -22,10 +22,12 @@ struct markdown_rtf
 /* フォント 0 が本文、1 がコード。色は 1 本文・2 見出し・3 薄字・4 リンク（インラインコードも）・
  * 5 コード文字・6 コード地・7 keyword・8 string・9 comment・10 number。単位は半ポイント。 */
 static const char document_header_open[] = "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil ";
-/* コードの書体（fonttbl の 1）は、同梱の等幅の face（#1223）。\fmodern は、その face が無い
- * ときに RichEdit が等幅の系統から代わりを選ぶための手がかり。大きさ（\fs20）は Consolas の
- * ときのまま: コードは折り返す文で、幅を決め打ちした所が無く、中の日本語の大きさも変えない。 */
-static const char document_header_code[] = ";}{\\f1\\fmodern ";
+/* コードの書体（fonttbl の 1）は、同梱の等幅の face（#1223）。実在は確かめずに名前を書く
+ * （本文の 0 と同じ）。\fmodern と \fprq1（字の送りが一定）は、その face が登録できなかった
+ * ときに、代わりが等幅の系統から選ばれるようにするための手がかり（選ばれる書体は未確認）。
+ * 大きさ（\fs20）は Consolas のときのまま: コードは折り返す文で、幅を決め打ちした所が無く、
+ * 中の日本語の大きさも変えない。 */
+static const char document_header_code[] = ";}{\\f1\\fmodern\\fprq1 ";
 static const char document_header_close[] = ";}}";
 /* #975 / ADR0114: RichEdit keeps a paragraph whose style is named "heading N" as its built-in
  * heading style, which the pane reads back per paragraph. No text is added for it. */
