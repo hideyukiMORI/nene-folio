@@ -175,6 +175,8 @@ struct folio_window
     /* 検索欄にいるあいだだけ使う Enter / Shift+Enter（ADR 0023 の決定 4） */
     HACCEL _Nullable search_keys;
     HFONT _Nullable mono_font;
+    /* 言葉（釦の名前など）を描く、言語ごとの同梱の書体（#1222）。番号・日時・キーは mono_font。 */
+    HFONT _Nullable word_font;
     struct command_help_fonts help_fonts;
     HFONT _Nullable gutter_font; /* mono_fontと本文倍率から作る行番号の派生資源（ADR0067）。 */
     HWND _Nullable command_layer;
@@ -645,6 +647,8 @@ constexpr int base_pane_right = 56;
 constexpr int base_pane_top = 16;
 constexpr int base_pane_bottom = 32;
 constexpr int base_mono_font = 11;
+/* 言葉の書体の大きさ。左の欄の数の単位と同じ 11（#1222）。 */
+constexpr int base_word_font = 11;
 constexpr int base_tracking = 1;
 /* SetTextCharacterExtra が失敗したときの戻り値（wingdi.h に名前が無い）。 */
 constexpr int tracking_unavailable = 0x8000000;
@@ -1411,6 +1415,28 @@ static void refresh_help_fonts(struct folio_window *_Nonnull self, UINT dpi)
     self->help_fonts = command_help_fonts_create(folio_state_language(self->state), dpi);
 }
 
+/* 言葉の書体は、言語ごとの face（同梱 → その言語の退避 → 日本語の退避。ui_face_for）。
+ * DPI と言語のどちらが変わっても作り直す（#1222）。 */
+static void refresh_word_font(struct folio_window *_Nonnull self, UINT dpi)
+{
+    if (self->word_font != nullptr)
+    {
+        DeleteObject(self->word_font);
+    }
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(folio_state_language(self->state), face);
+    self->word_font = CreateFontW(-scale(base_word_font, dpi), 0, 0, 0, FW_NORMAL, FALSE, FALSE,
+                                  FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                  CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, face);
+    self->part_metrics.valid = false;
+}
+
+/* 言葉を描く書体。作れなかったときは等幅で描く（前の形）。 */
+static HFONT _Nullable word_font(const struct folio_window *_Nonnull self)
+{
+    return self->word_font != nullptr ? self->word_font : self->mono_font;
+}
+
 static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
 {
     if (self->native_metrics != nullptr)
@@ -1452,6 +1478,7 @@ static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
     }
     /* 帯の幅の材料はここで 1 回だけ測る。DPI の変更でもこの関数が走るので測り直る（補正 7）。 */
     refresh_gutter_font(self, dpi);
+    refresh_word_font(self, dpi);
     refresh_part_metrics(self, dpi);
     refresh_tooltip_style(self);
 }
@@ -3469,7 +3496,7 @@ static RECT layout_chooser_rect(const struct folio_window *_Nonnull self)
     return layout_metrics_for(self).chooser ? layout_slot_rect(self) : (RECT){0};
 }
 
-/* 字の幅は描画と同じ等幅の書体と字間で測る。測れなければ 0。 */
+/* 字の幅は描画と同じ言葉の書体と字間で測る。測れなければ 0。 */
 static int measure_part_text_uncached(const struct folio_window *_Nonnull self, enum ui_text text)
 {
     HDC device = GetDC(self->handle);
@@ -3477,7 +3504,7 @@ static int measure_part_text_uncached(const struct folio_window *_Nonnull self, 
     {
         return 0;
     }
-    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     SetTextCharacterExtra(device, scale(base_tracking, GetDpiForWindow(self->handle)));
     int width = measure_utf8(device, ui_text_line(text, folio_state_language(self->state)));
     SetTextCharacterExtra(device, 0);
@@ -3497,12 +3524,12 @@ static void refresh_part_metrics(struct folio_window *_Nonnull self, UINT dpi)
     enum folio_language language = folio_state_language(self->state);
     int tracking = scale(base_tracking, dpi);
     const struct ui_part_metrics *_Nonnull current = &self->part_metrics;
-    if (current->valid && current->font == self->mono_font && current->dpi == dpi &&
+    if (current->valid && current->font == word_font(self) && current->dpi == dpi &&
         current->language == language && current->tracking == tracking)
         return;
     struct ui_part_metrics metrics = {
-        .font = self->mono_font, .dpi = dpi, .language = language, .tracking = tracking};
-    if (self->mono_font == nullptr)
+        .font = word_font(self), .dpi = dpi, .language = language, .tracking = tracking};
+    if (word_font(self) == nullptr)
     {
         self->part_metrics.valid = false;
         return;
@@ -3525,7 +3552,7 @@ static int measure_part_text(const struct folio_window *_Nonnull self, enum ui_t
 {
     const struct ui_part_metrics *_Nonnull metrics = &self->part_metrics;
     UINT dpi = GetDpiForWindow(self->handle);
-    bool current = metrics->valid && metrics->font == self->mono_font && metrics->dpi == dpi &&
+    bool current = metrics->valid && metrics->font == word_font(self) && metrics->dpi == dpi &&
                    metrics->tracking == scale(base_tracking, dpi) &&
                    metrics->language == folio_state_language(self->state);
     if (current)
@@ -3914,8 +3941,11 @@ static void draw_part_label(const struct folio_window *_Nonnull self, HDC device
                      ? DT_CENTER
                      : DT_LEFT;
     SetTextColor(device, ink.text);
+    /* 釦の名前は言葉の書体で描く。測る側（measure_part_text_uncached）と同じ書体（#1222）。 */
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     draw_units(device, ui_text_line(part_display_text(kind), folio_state_language(self->state)),
                ink.label, align | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+    SelectObject(device, previous);
 }
 
 static void draw_choice_item(const struct folio_window *_Nonnull self, HDC device,
@@ -6548,7 +6578,9 @@ static void draw_common_header(const struct folio_window *_Nonnull self, HDC dev
     RECT logo = regions_for(self).header;
     logo.left = new_note_rect(self).right + scale(base_brand_gap, dpi);
     logo.right = group.left - scale(8, dpi);
+    /* 「表示」は言葉の書体、「NENE FOLIO」は等幅（#1222）。 */
     const char *heading = ui_text_line(UI_TEXT_LAYOUT_GROUP, folio_state_language(self->state));
+    SelectObject(device, word_font(self));
     int heading_width = measure_utf8(device, heading);
     if (logo.right - logo.left >= heading_width + scale(128, dpi))
     {
@@ -6558,6 +6590,7 @@ static void draw_common_header(const struct folio_window *_Nonnull self, HDC dev
         draw_units(device, heading, label, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
         logo.right = label.left - scale(16, dpi);
     }
+    SelectObject(device, self->mono_font);
     const char *text = ui_text_line(UI_TEXT_APP_LOGO, folio_state_language(self->state));
     if (measure_utf8(device, text) <= logo.right - logo.left)
     {
@@ -9426,6 +9459,7 @@ static void apply_language(struct folio_window *_Nonnull self, enum folio_langua
         report_outcome(self, outcome);
         return;
     }
+    refresh_word_font(self, GetDpiForWindow(self->handle));
     refresh_part_metrics(self, GetDpiForWindow(self->handle));
     if (settings_surface(self))
     {
@@ -14947,6 +14981,11 @@ static void window_destroyed(struct folio_window *_Nonnull self)
         DeleteObject(self->mono_font);
         self->mono_font = nullptr;
     }
+    if (self->word_font != nullptr)
+    {
+        DeleteObject(self->word_font);
+        self->word_font = nullptr;
+    }
     if (self->gutter_font != nullptr)
     {
         DeleteObject(self->gutter_font);
@@ -16644,6 +16683,10 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     if (window->mono_font != nullptr)
     {
         DeleteObject(window->mono_font);
+    }
+    if (window->word_font != nullptr)
+    {
+        DeleteObject(window->word_font);
     }
     if (window->gutter_font != nullptr)
         DeleteObject(window->gutter_font);
