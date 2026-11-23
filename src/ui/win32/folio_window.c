@@ -6337,7 +6337,31 @@ static RECT pane_notice_rect(const struct folio_window *_Nonnull self, RECT clie
                   client.right - scale(16, dpi), client.bottom};
 }
 
-static void help_hint(enum folio_language language, enum ui_text id, char *_Nonnull out)
+/* 下の帯で、文に差し込む値（日時・キーの名前）の前後に付ける印。印の中は等幅、外は言葉の書体で
+ * 描く（#1222）。翻訳の文を区切りの記号で切り分けない（ADR 0060 の 2026-11-01 の補正）。どちらも
+ * 文言にも値にも現れない制御文字で、描くときに取り除く。説明と読み上げの文には付けない。 */
+constexpr char status_value_open = '\x01';
+constexpr char status_value_close = '\x02';
+
+/* value を印で囲んで out へ写す。空の値と、収まらない値は、印を付けずに元の値を返す。 */
+static const char *_Nonnull status_value(const char *_Nonnull value, char *_Nonnull out,
+                                         bool marked)
+{
+    size_t length = strlen(value);
+    if (!marked || length == 0 || length + 3 > draw_unit_limit)
+    {
+        return value;
+    }
+    out[0] = status_value_open;
+    memcpy(out + 1, value, length);
+    out[length + 1] = status_value_close;
+    out[length + 2] = '\0';
+    return out;
+}
+
+/* marked のときは、キーの名前に印を付ける（描く側だけが使う）。 */
+static void help_hint(enum folio_language language, enum ui_text id, char *_Nonnull out,
+                      bool marked)
 {
     const char *palette = "";
     for (size_t at = 0; at < folio_shortcut_count(); ++at)
@@ -6347,23 +6371,29 @@ static void help_hint(enum folio_language language, enum ui_text id, char *_Nonn
             folio_shortcut_command(binding) == FOLIO_COMMAND_HELP)
             palette = folio_shortcut_label(binding, language);
     }
-    struct ui_text_request request = {.id = id,
-                                      .language = language,
-                                      .from =
-                                          folio_shortcut_command_hint(FOLIO_COMMAND_HELP, language),
-                                      .to = palette};
+    char help[draw_unit_limit];
+    char commands[draw_unit_limit];
+    struct ui_text_request request = {
+        .id = id,
+        .language = language,
+        .from =
+            status_value(folio_shortcut_command_hint(FOLIO_COMMAND_HELP, language), help, marked),
+        .to = status_value(palette, commands, marked)};
     if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
         out[0] = '\0';
 }
 
+/* marked のときは、日時に印を付ける（描く側だけが使う）。 */
 static void status_note_text(const struct folio_window *_Nonnull self, enum ui_text id,
-                             char *_Nonnull out)
+                             char *_Nonnull out, bool marked)
 {
     struct note_times_view times = folio_state_note_times(self->state);
+    char updated[draw_unit_limit];
+    char created[draw_unit_limit];
     struct ui_text_request request = {.id = id,
                                       .language = folio_state_language(self->state),
-                                      .from = times.updated,
-                                      .to = times.created};
+                                      .from = status_value(times.updated, updated, marked),
+                                      .to = status_value(times.created, created, marked)};
     switch (times.state)
     {
     case NOTE_TIMES_NONE:
@@ -6397,8 +6427,8 @@ static void status_text(const struct folio_window *_Nonnull self, char *_Nonnull
     }
     char note[draw_unit_limit];
     char keys[draw_unit_limit];
-    status_note_text(self, UI_TEXT_STATUS_NOTE_TIMES, note);
-    help_hint(language, UI_TEXT_STATUS_KEYS, keys);
+    status_note_text(self, UI_TEXT_STATUS_NOTE_TIMES, note, false);
+    help_hint(language, UI_TEXT_STATUS_KEYS, keys, false);
     if (note[0] == '\0')
     {
         (void)bounded_text_copy(out, draw_unit_limit, keys);
@@ -6410,31 +6440,99 @@ static void status_text(const struct folio_window *_Nonnull self, char *_Nonnull
         out[0] = '\0';
 }
 
+/* 印の付いた 1 行の、同じ書体で描く並びの終わり。印・行の終わり・空白とそれ以外の境目で切る。 */
+static size_t status_run_end(const char *_Nonnull text, size_t at)
+{
+    bool space = text[at] == ' ';
+    while (text[at] != '\0' && text[at] != status_value_open && text[at] != status_value_close &&
+           (text[at] == ' ') == space)
+    {
+        ++at;
+    }
+    return at;
+}
+
+/* 並びを 1 つ、いまの書体で測る。place があれば、その左端から width だけ右へ寄せて描く。 */
+static int status_run(HDC device, const char *_Nonnull run, const RECT *_Nullable place, int width)
+{
+    if (place != nullptr && place->left + width < place->right)
+    {
+        draw_utf8(device, run,
+                  (RECT){place->left + width, place->top, place->right, place->bottom});
+    }
+    return measure_utf8(device, run);
+}
+
+/* 並びの終わりが印なら、その次の字から。印が「開く」なら、次の並びは差し込んだ値。 */
+static size_t status_next(const char *_Nonnull text, size_t end, bool *_Nonnull value)
+{
+    if (text[end] != status_value_open && text[end] != status_value_close)
+    {
+        return end;
+    }
+    *value = text[end] == status_value_open;
+    return end + 1;
+}
+
+/* 空白の並びを等幅で描くか。値の隣の空白と、2 つ以上続く空白（「·」の前後の区切り）は等幅で、
+ * 値の字の送りと同じ幅で空ける。言葉と言葉の間の 1 つの空白（英語の "Unsaved changes"）は、
+ * 言葉の書体のまま。beside は、この並びのすぐ前が値だったか。 */
+static bool status_space_wide(const char *_Nonnull text, size_t at, size_t end, bool beside)
+{
+    return text[at] == ' ' && (end - at >= 2 || beside || text[end] == status_value_open);
+}
+
+/* 印の付いた 1 行を、左から順に測る・描く。印の中（差し込んだ値）と、値の隣・区切りの空白は等幅、
+ * それ以外（言葉）は言葉の書体。place が nullptr なら測るだけ。返すのは行の幅。DC の書体は
+ * 等幅に戻す。 */
+static int status_line(const struct folio_window *_Nonnull self, HDC device,
+                       const char *_Nonnull text, const RECT *_Nullable place)
+{
+    int width = 0;
+    bool value = false;
+    bool beside = false;
+    for (size_t at = 0; text[at] != '\0';)
+    {
+        size_t end = status_run_end(text, at);
+        char run[draw_unit_limit];
+        memcpy(run, text + at, end - at);
+        run[end - at] = '\0';
+        bool mono = value || status_space_wide(text, at, end, beside);
+        SelectObject(device, mono ? self->mono_font : word_font(self));
+        width += status_run(device, run, place, width);
+        beside = text[end] == status_value_close;
+        at = status_next(text, end, &value);
+    }
+    SelectObject(device, self->mono_font);
+    return width;
+}
+
 static void draw_status_information(const struct folio_window *_Nonnull self, HDC device,
                                     RECT bounds)
 {
+    enum folio_language language = folio_state_language(self->state);
     char note[draw_unit_limit];
     char keys[draw_unit_limit];
-    status_note_text(self, UI_TEXT_STATUS_NOTE_TIMES, note);
-    help_hint(folio_state_language(self->state), UI_TEXT_STATUS_KEYS, keys);
+    status_note_text(self, UI_TEXT_STATUS_NOTE_TIMES, note, true);
+    help_hint(language, UI_TEXT_STATUS_KEYS, keys, true);
     int gap = scale(24, GetDpiForWindow(self->handle));
     int width = bounds.right - bounds.left;
-    int key_width = measure_utf8(device, keys);
-    if (measure_utf8(device, note) + key_width + gap > width)
-        status_note_text(self, UI_TEXT_STATUS_NOTE_UPDATED, note);
-    if (measure_utf8(device, note) + key_width + gap > width)
+    int key_width = status_line(self, device, keys, nullptr);
+    if (status_line(self, device, note, nullptr) + key_width + gap > width)
+        status_note_text(self, UI_TEXT_STATUS_NOTE_UPDATED, note, true);
+    if (status_line(self, device, note, nullptr) + key_width + gap > width)
     {
-        help_hint(folio_state_language(self->state), UI_TEXT_STATUS_HELP, keys);
-        key_width = measure_utf8(device, keys);
+        help_hint(language, UI_TEXT_STATUS_HELP, keys, true);
+        key_width = status_line(self, device, keys, nullptr);
     }
     RECT key_rect = bounds;
     key_rect.left = bounds.right - key_width;
     if (key_rect.left < bounds.left)
         key_rect.left = bounds.left;
-    draw_utf8(device, keys, key_rect);
+    (void)status_line(self, device, keys, &key_rect);
     bounds.right = key_rect.left - gap;
     if (bounds.right > bounds.left)
-        draw_utf8(device, note, bounds);
+        (void)status_line(self, device, note, &bounds);
 }
 
 static void draw_status_notice(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
@@ -6453,11 +6551,14 @@ static void draw_status_notice(const struct folio_window *_Nonnull self, HDC dev
         fill_settings_rect(device, track, self->palette.status_background);
         bounds.right -= scale(90, GetDpiForWindow(self->handle));
     }
+    /* 知らせと結果の 1 行は言葉なので、言葉の書体で描く（#1222）。 */
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     draw_utf8(device,
               self->notice == PANE_NOTICE_COMMAND_RESULT
                   ? self->result_line
                   : ui_text_line(line, folio_state_language(self->state)),
               bounds);
+    SelectObject(device, previous);
 }
 
 static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC device, RECT client)
@@ -12506,7 +12607,7 @@ static bool part_labeled(const struct folio_window *_Nonnull self, enum accessib
 
 static void help_tooltip(enum folio_language language, char *_Nonnull out)
 {
-    help_hint(language, UI_TEXT_TOOLTIP_HELP_KEYS, out);
+    help_hint(language, UI_TEXT_TOOLTIP_HELP_KEYS, out, false);
 }
 
 static void splitter_tooltip(const struct folio_window *_Nonnull self, char *_Nonnull out)
