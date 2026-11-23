@@ -11019,6 +11019,12 @@ static bool drawer_part_pressed(const struct folio_window *_Nonnull self, WPARAM
 static enum accessible_kind drawer_pointer_target(struct folio_window *_Nonnull self, WPARAM wparam,
                                                   LPARAM lparam)
 {
+    if (self->pressed_by_key)
+    {
+        /* Space で押している札と、ポインタが focus を置く札は、種類が同じでも別の札でありうる。
+         * 離したときに別のタグを外さないよう、キーの押下はここで取り消す。 */
+        cancel_part_press(self);
+    }
     if ((enum accessible_kind)wparam == ACCESSIBLE_FILTER_TAG)
     {
         self->filter_tag_cursor = (size_t)lparam;
@@ -14646,7 +14652,7 @@ static TOOLINFOW drawer_tool(const struct folio_window *_Nonnull self, enum acce
 
 /* タグごとの札の tool。名前は読み上げと同じ。置かれていない番号の矩形は空で、出ない。 */
 static TOOLINFOW drawer_tag_tool(const struct folio_window *_Nonnull self, size_t slot,
-                                 char16_t *_Nonnull text)
+                                 size_t shown, char16_t *_Nonnull text)
 {
     TOOLINFOW tool = {.cbSize = tooltip_info_size,
                       .uFlags = TTF_SUBCLASS,
@@ -14654,9 +14660,13 @@ static TOOLINFOW drawer_tag_tool(const struct folio_window *_Nonnull self, size_
                           self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer),
                       .uId = drawer_tag_tool_base + slot,
                       .lpszText = (wchar_t *)text};
+    text[0] = u'\0';
+    if (slot >= shown)
+    {
+        return tool; /* 置かれていない番号。配置を作らずに、空の矩形のまま返す */
+    }
     char line[draw_unit_limit];
     filter_tag_name(self, slot, line);
-    text[0] = u'\0';
     (void)wide_units(line, text);
     struct accessible_item item = filter_tag_item(self, slot);
     drawer_tool_place(self, &item, &tool);
@@ -14674,7 +14684,7 @@ static bool create_drawer_tooltips(const struct folio_window *_Nonnull self)
     }
     for (size_t slot = 0; slot < note_tags_max_count; ++slot)
     {
-        TOOLINFOW tool = drawer_tag_tool(self, slot, text);
+        TOOLINFOW tool = drawer_tag_tool(self, slot, 0, text);
         if (!SendMessageW(self->tooltip, TTM_ADDTOOLW, 0, (LPARAM)&tool))
             return false;
     }
@@ -14693,9 +14703,11 @@ static void refresh_drawer_tooltips(const struct folio_window *_Nonnull self)
             SendMessageW(self->tooltip, TTM_UPDATETIPTEXTW, 0, (LPARAM)&tool);
         }
     }
+    size_t hidden = 0;
+    size_t shown = filter_tags_shown(self, &hidden);
     for (size_t slot = 0; slot < note_tags_max_count; ++slot)
     {
-        TOOLINFOW tool = drawer_tag_tool(self, slot, text);
+        TOOLINFOW tool = drawer_tag_tool(self, slot, shown, text);
         if (tool.hwnd != nullptr)
         {
             SendMessageW(self->tooltip, TTM_NEWTOOLRECTW, 0, (LPARAM)&tool);

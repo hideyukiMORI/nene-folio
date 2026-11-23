@@ -9697,6 +9697,15 @@ static void filter_tag_walk(struct folio_window *_Nonnull window,
                     S_OK &&
                 next.kind == ACCESSIBLE_FILTER_FAVORITES,
             "the first tag chip steps back to the favorites chip");
+    at = (struct accessible_item){.kind = ACCESSIBLE_FILTER_GROUP};
+    struct accessible_item edge = {0};
+    require(folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_FIRST, &next) ==
+                    S_OK &&
+                next.kind == ACCESSIBLE_FILTER_FAVORITES &&
+                folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_LAST, &edge) ==
+                    S_OK &&
+                edge.kind == ACCESSIBLE_TAG_FILTER,
+            "the group's first child is the favorites chip and its last the opener");
     struct accessible_view view = {0};
     struct accessible_item stale = tag_chip(fixture, 0);
     stale.revision -= 1;
@@ -9760,8 +9769,62 @@ static void filter_tag_keyboard(struct folio_window *_Nonnull window,
         tag_condition_count(fixture) == 0 && !folio_state_conditions_active(fixture->state) &&
             filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_FAVORITES}),
         "Space removes the last tag and the focus moves to the favorites chip");
+    discovery_seed_tags(fixture);
+    filter_settle(window, fixture);
+    struct accessible_request first = {.item = tag_chip(fixture, 0),
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &first) == S_OK &&
+                filter_focus_is(window, tag_chip(fixture, 0)),
+            "UIA focuses the first tag chip");
+    favorite_key(window, VK_RETURN);
+    filter_settle(window, fixture);
+    (void)tag_chip_view(window, fixture, 0, &left);
+    require(tag_condition_count(fixture) == 1 && wcsstr(left.name, L"blue") != nullptr &&
+                left.focused && filter_focus_is(window, tag_chip(fixture, 0)),
+            "Enter on the first chip removes it and the focus stays where the next chip came");
+    favorite_key(window, VK_RETURN);
+    filter_settle(window, fixture);
+    require(tag_condition_count(fixture) == 0, "Enter removes the chip that came");
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
     pump(window);
+}
+
+/* The tooltip tool of a tag chip's number has no rectangle while no chip is placed there. */
+static bool tag_tooltip_empty(struct folio_window *_Nonnull window, size_t slot)
+{
+    HWND tooltip = status_tooltip(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    wchar_t text[1024] = {0};
+    TOOLINFOW tool = {.cbSize = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM),
+                      .hwnd = folio_window_accessible_window(window, ACCESSIBLE_DRAWER),
+                      .uId = 0x200 + slot,
+                      .lpszText = text};
+    return SendMessageW(tooltip, TTM_GETTOOLINFOW, 0, (LPARAM)&tool) && IsRectEmpty(&tool.rect);
+}
+
+/* #1247: the condition changes between the press and the release: the chip pressed is of the
+ * earlier condition, so the release removes nothing. */
+static void filter_tag_stale_press(struct folio_window *_Nonnull window,
+                                   struct native_fixture *_Nonnull fixture)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    discovery_seed_tags(fixture);
+    filter_settle(window, fixture);
+    struct accessible_view view = {0};
+    RECT first = tag_chip_view(window, fixture, 0, &view);
+    LPARAM position = MAKELPARAM(first.left + 4, (first.top + first.bottom) / 2);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, position);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
+    uint64_t pressed = folio_state_tag_filter_revision(fixture->state);
+    discovery_seed_tags(fixture); /* the same two tags, a new revision */
+    require(folio_state_tag_filter_revision(fixture->state) != pressed,
+            "seeding the tags again is a new revision of the condition");
+    SendMessageW(drawer, WM_LBUTTONUP, 0, position);
+    filter_settle(window, fixture);
+    require(tag_condition_count(fixture) == 2 && GetCapture() != drawer,
+            "a release after the condition changed removes nothing");
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(1, 1));
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    filter_settle(window, fixture);
 }
 
 /* #1247: a press anywhere on a tag chip removes that tag. The next chip slides under the
@@ -9787,15 +9850,21 @@ static void filter_tag_pointer(struct folio_window *_Nonnull window,
                 GetCapture() != drawer,
             "a press on the chip's mark removes that tag; a second press at the same point "
             "removes nothing");
+    require(tag_tooltip_empty(window, 1) && !tag_tooltip_empty(window, 0),
+            "the removed chip's tooltip has no rectangle; the chip that is left keeps its own");
     RECT second = tag_chip_view(window, fixture, 0, &view);
-    position = MAKELPARAM(second.left + 4, (second.top + second.bottom) / 2);
+    POINT same = {first.right - 6, (first.top + first.bottom) / 2};
+    require(PtInRect(&second, same), "the chip that is left came under the pressed point");
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(same.x - 1, same.y));
     SendMessageW(drawer, WM_MOUSEMOVE, 0, position);
     SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
     SendMessageW(drawer, WM_LBUTTONUP, 0, position);
     SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
     filter_settle(window, fixture);
-    require(tag_condition_count(fixture) == 0 && !folio_state_conditions_active(fixture->state),
-            "after the pointer moves, a press on the chip's label removes the last tag");
+    require(tag_condition_count(fixture) == 0 && !folio_state_conditions_active(fixture->state) &&
+                tag_tooltip_empty(window, 0),
+            "after the pointer moved and came back, a press at the same point removes the last "
+            "tag");
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
     pump(window);
 }
@@ -10076,6 +10145,7 @@ static void filter_chip_row(struct folio_window *_Nonnull window,
     discovery_seed_tags(fixture);
     filter_settle(window, fixture);
     filter_tag_keyboard(window, fixture);
+    filter_tag_stale_press(window, fixture);
     filter_tag_pointer(window, fixture);
     filter_tag_fold(window, fixture);
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));

@@ -44,6 +44,7 @@ struct drawer_window
     int accessible_band; /* 配置を作ったときの固定帯の高さ（札の行で動く・#1199） */
     /* 最後に描いた札の行の配置。変わったら主窓へ知らせる（高さが同じでも札は動く） */
     struct drawer_filter_band painted_band;
+    uint64_t painted_revision; /* そのときのタグの条件の改訂。同じ幅の別のタグでも知らせる */
     /* 「× 解除」を押した点。解除が消えると同じ場所に「＋」の当たりが来るので、ポインタが
      * 動くまで、その点での次の押下を受けない（星の連続押下と同じ守り・ADR0091）。 */
     bool header_blocked;
@@ -720,7 +721,8 @@ static void draw_more_chip(const struct drawer_window *_Nonnull self, HDC device
     more_chip_text(self, hidden, text);
     SelectObject(device, self->chip_lit_font);
     SetTextColor(device, ink.text);
-    draw_utf8(device, text, label, 0);
+    /* 幅は、いちばん広い数で取ってある。畳んだ数の桁が少ないときに片寄らないよう、中央に描く。 */
+    draw_utf8(device, text, label, DT_CENTER);
 }
 
 /* タグの面を開く札。 */
@@ -1132,9 +1134,11 @@ static void paint(struct drawer_window *_Nonnull self)
     /* 札の行の配置が変わったら、主窓に説明（tooltip）の矩形と focus を合わせ直させる（#1199）。
      * 高さが同じでも、札が点くと幅が変わって隣の札が動く。 */
     struct drawer_filter_band band = filter_band(self);
-    if (!same_band(&band, &self->painted_band))
+    uint64_t revision = folio_state_tag_filter_revision(self->state);
+    if (!same_band(&band, &self->painted_band) || revision != self->painted_revision)
     {
         self->painted_band = band;
+        self->painted_revision = revision;
         PostMessageW(GetParent(self->handle), folio_message_drawer_band, 0, 0);
     }
 }
@@ -1412,6 +1416,7 @@ static RECT header_hit_rect(const struct drawer_window *_Nonnull self, struct dr
 static struct drawer_header_hit header_hit_at(const struct drawer_window *_Nonnull self,
                                               POINT point)
 {
+    /* 配置は 1 回だけ作る（作るたびに札の字の幅を測る）。 */
     struct drawer_filter_band band = filter_band(self);
     for (size_t slot = 0; slot < band.shown; ++slot)
     {
@@ -1419,15 +1424,16 @@ static struct drawer_header_hit header_hit_at(const struct drawer_window *_Nonnu
             return (struct drawer_header_hit){DRAWER_HEADER_TAG, slot};
     }
     const enum drawer_header_button buttons[] = {DRAWER_HEADER_FAVORITES, DRAWER_HEADER_MORE,
-                                                 DRAWER_HEADER_TAG_FILTER, DRAWER_HEADER_CLEAR,
-                                                 DRAWER_HEADER_NEW_CATEGORY};
+                                                 DRAWER_HEADER_TAG_FILTER, DRAWER_HEADER_CLEAR};
+    const RECT bounds[] = {band.favorites, band.more, band.tags, band.clear};
     for (size_t at = 0; at < sizeof buttons / sizeof buttons[0]; ++at)
     {
-        RECT bounds = header_button_rect(self, buttons[at]);
-        if (PtInRect(&bounds, point))
+        if (PtInRect(&bounds[at], point))
             return (struct drawer_header_hit){buttons[at], 0};
     }
-    return (struct drawer_header_hit){DRAWER_HEADER_NONE, 0};
+    RECT add = new_category_rect(self);
+    return (struct drawer_header_hit){
+        PtInRect(&add, point) ? DRAWER_HEADER_NEW_CATEGORY : DRAWER_HEADER_NONE, 0};
 }
 
 static enum drawer_header_button header_at(const struct drawer_window *_Nonnull self, POINT point)
@@ -1574,6 +1580,11 @@ static void press(struct drawer_window *_Nonnull self, POINT point)
 /* 帯のボタンの hover と、押したまま外へ出たときの見た目（ADR0060 の決定 3・4）。 */
 static void track_header(struct drawer_window *_Nonnull self, POINT point)
 {
+    if (point.x != self->header_block_point.x || point.y != self->header_block_point.y)
+    {
+        /* 押した点から動いたら、続けて押すのを止める守りを外す（戻ってきて押せる・#1247）。 */
+        self->header_blocked = false;
+    }
     struct drawer_header_hit over = header_hit_at(self, point);
     struct drawer_header_hit pressed = {self->header_pressed, self->header_pressed_slot};
     struct drawer_header_hit hover = {self->header_hover, self->header_hover_slot};
@@ -2267,8 +2278,13 @@ static void accessible_scroll_view(struct drawer_window *_Nonnull self,
 static bool accessible_tag_rect(const struct drawer_window *_Nonnull self,
                                 const struct accessible_item *_Nonnull item, RECT *_Nonnull out)
 {
+    if (item->revision != folio_state_tag_filter_revision(self->state) ||
+        item->slot >= tag_condition_count(self))
+    {
+        return false; /* 配置を作る（字の幅を測る）前に分かる */
+    }
     struct drawer_filter_band band = filter_band(self);
-    if (item->revision != folio_state_tag_filter_revision(self->state) || item->slot >= band.shown)
+    if (item->slot >= band.shown)
     {
         return false;
     }

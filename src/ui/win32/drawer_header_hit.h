@@ -1,5 +1,5 @@
 /* 固定帯の当たり。タグごとの札は、釦の種類に番号を足して 1 つを指す（#1247）。
- * 全メンバーが独立に妥当（C-003）。 */
+ * slot は、button が DRAWER_HEADER_TAG のときだけ読む（ほかは 0 を入れる）。 */
 #ifndef NENEFOLIO_DRAWER_HEADER_HIT_H
 #define NENEFOLIO_DRAWER_HEADER_HIT_H
 
