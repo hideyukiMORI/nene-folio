@@ -30,7 +30,7 @@
     "44090000b793b8fce98c622c0000000049454e44ae426082} "
 
 static const char header[] =
-    "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Noto Sans JP;}{\\f1\\fmodern Consolas;}}"
+    "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Noto Sans JP;}{\\f1\\fmodern\\fprq1 IBM Plex Mono;}}"
     "{\\colortbl;\\red36\\green19\\blue24;\\red44\\green0\\blue30;\\red106\\green96\\blue92;"
     "\\red178\\green60\\blue18;\\red237\\green225\\blue232;\\red44\\green0\\blue30;"
     "\\red198\\green152\\blue236;\\red164\\green217\\blue163;"
@@ -360,8 +360,7 @@ static void verify_text_buffer(void)
     text_buffer_destroy(nullptr);
 }
 
-/* fonttbl の \\f0 は引数で受けた face で、コードの \\f1 は Consolas のまま（ADR 0032 の決定 5）。
- */
+/* fonttbl の \\f0 は引数で受けた face で、コードの \\f1 は同梱の等幅の face（#1223）。 */
 static void expect_face(enum folio_language language)
 {
     const char *face = ui_font_face(language);
@@ -373,8 +372,8 @@ static void expect_face(enum folio_language language)
                 MARKDOWN_RTF_CONVERTED,
             "the empty document is built with the face");
     require(strstr(markdown_rtf_text(rtf), wanted) != nullptr, "the face is in the fonttbl");
-    require(strstr(markdown_rtf_text(rtf), "{\\f1\\fmodern Consolas;}") != nullptr,
-            "the code font stays Consolas");
+    require(strstr(markdown_rtf_text(rtf), "{\\f1\\fmodern\\fprq1 IBM Plex Mono;}") != nullptr,
+            "the code font is the bundled monospace face");
     markdown_rtf_destroy(rtf);
 }
 

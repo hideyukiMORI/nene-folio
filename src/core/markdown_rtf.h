@@ -24,7 +24,8 @@ struct markdown_source_map;
     const struct markdown_rtf *_Nonnull rtf);
 
 /* face は本文のフォント名（ui_font_face が答える ASCII。`{` `}` `\` `;` を含まない）で、
- * fonttbl の 0 に入る（ADR 0032 の決定 5）。コードの 1 は Consolas のまま。 */
+ * fonttbl の 0 に入る（ADR 0032 の決定 5）。コードの 1 は 同梱の等幅の
+ * face（ui_font_mono_face・#1223）。 */
 /* 閲覧の文書は face に加えて、コードブロックのコピー操作の文言の言語を受ける（ADR0098）。
  * 配色は実効の theme_palette から受ける。色表は rtf の役割の10色だけで、コピー操作の札は
  * 言語ラベルの対を反転して使う（地が code_comment の 9、文字が code_background の 6）。

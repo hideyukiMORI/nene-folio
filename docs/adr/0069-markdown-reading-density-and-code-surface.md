@@ -85,3 +85,7 @@ API根拠: [EM_SETEDITSTYLE](https://learn.microsoft.com/en-us/windows/win32/con
 [ADR0070](0070-markdown-syntax-and-native-tables.md)でblock/inline/tableの内部処理を分割する。
 本ADRの寸法とコード面はblock処理へ移し、値の所有経路は一つに保つ。
 Markdownの表は実際の表構造を持たせるが、コード面には引き続きtableを使わない。
+
+## 2026-11-23 の補正（#1223 / ADR 0036 の 2026-11-23 の補正・決定本文は書き換えない）
+
+決定の表の「Consolas 10pt」のうち、書体は同梱の IBM Plex Mono になった（大きさ 10pt は変えていない）。理由と経緯は ADR 0036 の補正の 4。
