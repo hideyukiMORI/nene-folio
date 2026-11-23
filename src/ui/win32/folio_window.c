@@ -2633,7 +2633,7 @@ static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice
 }
 
 /* 常設の欄はドロワーの頭の帯に重ねる。寸法はドロワーが答える（ADR 0024 の決定 6）。
- * 右端は「×」のぶんだけ常に空ける。出るのは絞り込み中だけだが、余白を出し入れすると
+ * 右端は「×」のぶんだけ常に空ける。出るのは欄に字があるときだけだが、余白を出し入れすると
  * 打っている途中で本文が動くので、いつも同じ幅にしておく（補正 6）。 */
 
 static void arrange_filter_input(struct folio_window *_Nonnull self)
@@ -14049,6 +14049,22 @@ static bool filter_clear_at(const struct folio_window *_Nonnull self, HWND windo
     return filter_term_present(window) && PtInRect(&bounds, point);
 }
 
+/* 「×」が出入りするのは、欄に字が入ったときと空になったときだけ。打つたびに欄を消して描き直すと
+ * ちらつくので、変わった 1 回だけ欄ごと描き直す（補正 6・#1246）。欄の字が変わる道（打鍵・貼り
+ * 付け・変換中・プログラムからの書き換え）は、絞り込みの門（変換中・保存中は絞り直さない）を
+ * 通らないものがあるので、欄がメッセージを処理し終えるたびに、ここ 1 か所で比べる。 */
+static void sync_filter_mark(struct folio_window *_Nonnull self, HWND window)
+{
+    /* 字数は元の EDIT へ直に聞く。欄へ送ると、その処理の終わりでまたここへ来て終わらない。 */
+    bool marked = self->filter_original != nullptr &&
+                  CallWindowProcW(self->filter_original, window, WM_GETTEXTLENGTH, 0, 0) != 0;
+    if (marked != self->filter_marked)
+    {
+        self->filter_marked = marked;
+        InvalidateRect(window, nullptr, TRUE);
+    }
+}
+
 static bool filter_clear_pressed(struct folio_window *_Nonnull self, HWND window, LPARAM lparam)
 {
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
@@ -14176,6 +14192,7 @@ static LRESULT CALLBACK filter_input_message(HWND window, UINT message, WPARAM w
                                                            folio_state_language(self->state)));
         paint_filter_clear(self, window);
     }
+    sync_filter_mark(self, window);
     return result;
 }
 
@@ -14183,14 +14200,6 @@ static LRESULT CALLBACK filter_input_message(HWND window, UINT message, WPARAM w
 static void refresh_index_filter(struct folio_window *_Nonnull self)
 {
     settle_empty_drawer_focus(self);
-    /* 「×」が出入りするのは、欄に字が入ったときと空になったときだけ。打つたびに欄を消して
-     * 描き直すとちらつくので、変わった 1 回だけ欄ごと描き直す（補正 6・#1246）。 */
-    bool marked = self->filter_input != nullptr && filter_term_present(self->filter_input);
-    if (marked != self->filter_marked)
-    {
-        self->filter_marked = marked;
-        InvalidateRect(self->filter_input, nullptr, TRUE);
-    }
     if (self->drawer != nullptr)
     {
         drawer_window_reveal_cursor(self->drawer);

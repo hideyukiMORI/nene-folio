@@ -9435,21 +9435,64 @@ static void header_count_units(struct native_fixture *_Nonnull fixture)
 }
 
 /* #1246: the search field's clear mark empties the term, so it is there only while the field
- * has text. The favorites scope alone used to draw it over the empty field's shortcut hint. */
-static uint64_t filter_mark_pixels(HWND input, COLORREF *_Nonnull centre, COLORREF *_Nonnull ground)
+ * has text. The favorites scope alone used to draw it over the empty field's shortcut hint.
+ * The field paints the mark straight to its window DC after WM_PAINT, so PrintWindow does not
+ * see it: the pixels are read from the window. */
+constexpr int filter_mark_limit = 64;
+
+struct filter_mark
+{
+    COLORREF pixels[filter_mark_limit * filter_mark_limit];
+    int size;
+    int strokes; /* pixels that differ from the field's ground while a short term is shown */
+};
+
+static RECT filter_mark_rect(HWND input)
 {
     RECT client;
     GetClientRect(input, &client);
     int size = MulDiv(20, (int)GetDpiForWindow(input), 96);
     size = size < client.bottom ? size : client.bottom;
     int middle = client.bottom / 2;
-    RECT mark = {client.right - size, middle - size / 2, client.right, middle - size / 2 + size};
+    return (RECT){client.right - size, middle - size / 2, client.right, middle - size / 2 + size};
+}
+
+/* The reference: with a one-letter term nothing but the mark is inside its box. */
+static void filter_mark_learn(HWND input, struct filter_mark *_Nonnull mark)
+{
+    RECT box = filter_mark_rect(input);
+    mark->size = box.right - box.left;
+    require(mark->size > 0 && mark->size <= filter_mark_limit, "the clear mark's box fits");
     HDC dc = GetDC(input);
-    uint64_t hash = favorite_pixel_hash(dc, mark);
-    *centre = GetPixel(dc, (mark.left + mark.right) / 2, (mark.top + mark.bottom) / 2);
-    *ground = GetPixel(dc, mark.left + 1, mark.top + 1);
+    COLORREF ground = GetPixel(dc, box.left, box.top);
+    mark->strokes = 0;
+    for (int y = 0; y < mark->size; ++y)
+        for (int x = 0; x < mark->size; ++x)
+        {
+            COLORREF pixel = GetPixel(dc, box.left + x, box.top + y);
+            mark->pixels[y * filter_mark_limit + x] = pixel;
+            mark->strokes += pixel != ground && pixel != CLR_INVALID;
+        }
     ReleaseDC(input, dc);
-    return hash;
+    for (int at = 0; at < mark->size * mark->size; ++at)
+        if (mark->pixels[(at / mark->size) * filter_mark_limit + at % mark->size] == ground)
+            mark->pixels[(at / mark->size) * filter_mark_limit + at % mark->size] = CLR_INVALID;
+}
+
+/* How many of the learned stroke pixels are on the window now. */
+static int filter_mark_shown(HWND input, const struct filter_mark *_Nonnull mark)
+{
+    RECT box = filter_mark_rect(input);
+    HDC dc = GetDC(input);
+    int shown = 0;
+    for (int y = 0; y < mark->size; ++y)
+        for (int x = 0; x < mark->size; ++x)
+        {
+            COLORREF stroke = mark->pixels[y * filter_mark_limit + x];
+            shown += stroke != CLR_INVALID && GetPixel(dc, box.left + x, box.top + y) == stroke;
+        }
+    ReleaseDC(input, dc);
+    return shown;
 }
 
 static void filter_mark_settle(struct folio_window *_Nonnull window,
@@ -9462,6 +9505,15 @@ static void filter_mark_settle(struct folio_window *_Nonnull window,
     UpdateWindow(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
 }
 
+/* Typed input: the EDIT repaints only its text for a keystroke, so the field itself has to
+ * erase and repaint when the mark comes and goes. */
+static void filter_mark_type(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture, wchar_t unit)
+{
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_FILTER), WM_CHAR, unit, 0);
+    filter_mark_settle(window, fixture);
+}
+
 static void filter_mark_needs_a_term(struct native_fixture *_Nonnull fixture)
 {
     struct folio_window *window = nullptr;
@@ -9469,42 +9521,44 @@ static void filter_mark_needs_a_term(struct native_fixture *_Nonnull fixture)
                 FOLIO_WINDOW_CREATED,
             "filter mark fixture");
     HWND input = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
-    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    SetFocus(input);
     filter_mark_settle(window, fixture);
-    COLORREF centre = 0, ground = 0;
-    uint64_t empty = filter_mark_pixels(input, &centre, &ground);
+    static struct filter_mark mark;
+    filter_mark_type(window, fixture, L'a');
+    filter_mark_learn(input, &mark);
+    require(GetWindowTextLengthW(input) == 1 && mark.strokes > 8,
+            "a typed term shows the clear mark");
+    filter_mark_type(window, fixture, L'\b');
+    int bare = filter_mark_shown(input, &mark);
+    require(GetWindowTextLengthW(input) == 0 && 2 * bare < mark.strokes,
+            "deleting the typed term erases the mark");
     invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
     filter_mark_settle(window, fixture);
+    int scoped = filter_mark_shown(input, &mark);
     require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES &&
-                folio_state_filtering(fixture->state) &&
-                filter_mark_pixels(input, &centre, &ground) == empty,
+                folio_state_filtering(fixture->state) && 2 * scoped < mark.strokes,
             "the favorites scope alone leaves the empty search field without a clear mark");
-    require(SetWindowTextW(input, L"a"), "type a term under the favorites scope");
-    filter_mark_settle(window, fixture);
-    uint64_t marked = filter_mark_pixels(input, &centre, &ground);
-    require(marked != empty && centre != ground, "a term shows the clear mark");
-    require(SetWindowTextW(input, L""), "empty the term under the favorites scope");
-    filter_mark_settle(window, fixture);
+    filter_mark_type(window, fixture, L'a');
+    require(filter_mark_shown(input, &mark) == mark.strokes,
+            "a term typed under the favorites scope shows the whole mark");
+    filter_mark_type(window, fixture, L'\b');
     require(folio_state_filtering(fixture->state) &&
-                filter_mark_pixels(input, &centre, &ground) == empty,
-            "emptying the term erases the mark while the favorites scope stays");
-    require(SetWindowTextW(input, L"a"), "type the term again");
-    filter_mark_settle(window, fixture);
-    RECT client;
-    GetClientRect(input, &client);
-    LPARAM at = MAKELPARAM(client.right - 4, client.bottom / 2);
+                2 * filter_mark_shown(input, &mark) < mark.strokes,
+            "deleting the term erases the mark while the favorites scope stays");
+    filter_mark_type(window, fixture, L'a');
+    RECT box = filter_mark_rect(input);
+    LPARAM at = MAKELPARAM((box.left + box.right) / 2, (box.top + box.bottom) / 2);
     SendMessageW(input, WM_LBUTTONDOWN, MK_LBUTTON, at);
     SendMessageW(input, WM_LBUTTONUP, 0, at);
     filter_mark_settle(window, fixture);
     require(GetWindowTextLengthW(input) == 0 &&
                 folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES &&
-                filter_mark_pixels(input, &centre, &ground) == empty,
+                2 * filter_mark_shown(input, &mark) < mark.strokes,
             "a press on the mark empties the term, keeps the scope and removes the mark");
     invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
     filter_mark_settle(window, fixture);
     require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL, "back to every note");
-    printf("filter-mark empty=%llx marked=%llx\n", (unsigned long long)empty,
-           (unsigned long long)marked);
+    printf("filter-mark strokes=%d bare=%d scoped=%d\n", mark.strokes, bare, scoped);
     folio_window_destroy(window);
 }
 
