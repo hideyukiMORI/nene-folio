@@ -79,5 +79,9 @@ folio_window_accessible_surface_revision(const struct folio_window *_Nonnull sel
 /* #975: changes whenever the headings column's rows stop meaning what they meant. */
 [[nodiscard]] uint64_t
 folio_window_accessible_outline_revision(const struct folio_window *_Nonnull self);
+/* 絞り込みの札の行のタグの札の並び（条件の改訂・置かれた数・「+N」の有無）を 1 つの値で返す。
+ * 変わったら、host が前の札を捨てて、群の子の変化を知らせる（#1247）。 */
+[[nodiscard]] uint64_t
+folio_window_accessible_filter_revision(const struct folio_window *_Nonnull self);
 
 #endif

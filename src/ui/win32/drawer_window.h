@@ -47,6 +47,9 @@ void drawer_window_refont(struct drawer_window *_Nonnull drawer);
 /* テーマが変わったときに色を取り直す（ADR 0031 の決定 6）。
  * 値の正本は folio_palette で、ここは写しを更新して全面を無効にするだけ。 */
 void drawer_window_recolor(struct drawer_window *_Nonnull drawer);
+/* 絞り込みの札の行に置かれたタグの札の数を返し、「+N」に畳んだ数を hidden に書く（#1247）。 */
+[[nodiscard]] size_t drawer_window_filter_tags(const struct drawer_window *_Nonnull self,
+                                               size_t *_Nonnull hidden);
 void drawer_window_destroy(struct drawer_window *_Nullable drawer);
 
 [[nodiscard]] HRESULT drawer_window_accessible_read(struct drawer_window *_Nonnull self,

@@ -784,7 +784,10 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FILTER_CLEAR] = "× 解除",
     [UI_TEXT_FILTER_CLEAR_NAME] = "絞り込みを解除",
     [UI_TEXT_FILTER_TAGS] = "# タグ",
-    [UI_TEXT_FILTER_TAGS_COUNT] = "# タグ {n}",
+    [UI_TEXT_FILTER_TAG_LABEL] = "# {name}",
+    [UI_TEXT_FILTER_TAG_REMOVE] = "タグ {name} を外す",
+    [UI_TEXT_FILTER_MORE] = "+{n}",
+    [UI_TEXT_FILTER_MORE_NAME] = "ほか {n} 個のタグ",
     [UI_TEXT_EMPTY_FAVORITES] = "お気に入りはありません。\nノートの星で追加できます。",
     [UI_TEXT_EMPTY_FAVORITES_FILTER] =
         "一致するお気に入りはありません。\n検索語を変えるか「すべて」に戻します。",

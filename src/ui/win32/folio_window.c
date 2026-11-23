@@ -131,6 +131,8 @@ struct folio_window
     struct storage_state *_Nonnull storage;
     struct accessibility_host *_Nullable accessibility;
     enum accessible_kind keyboard_target;
+    /* keyboard_target がタグの札（ACCESSIBLE_FILTER_TAG）のときの、札の番号（#1247）。 */
+    size_t filter_tag_cursor;
     bool menu_active;
     struct menu_request menu;
     /* #1012: whether the body menu's source items can run, measured once when it opens. */
@@ -451,11 +453,16 @@ static const struct
                          UI_TEXT_TOOLTIP_OPERATIONS, ACCESSIBLE_MAIN_PANE},
     [ACCESSIBLE_TAG_EDIT] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_COMMAND_EDIT_TAGS, true, UI_TEXT_EMPTY,
                              ACCESSIBLE_MAIN_PANE},
-    /* 絞り込みの札の行（#1199・ADR0122）。群の子は、列挙で連続する 2 つの札。 */
+    /* 絞り込みの札の行（#1199・ADR0122）。群の子は、列挙で連続する 4 つ: お気に入りの札、
+     * タグごとの札（番号で数が変わる・#1247）、畳んだ分の「+N」、開く札。 */
     [ACCESSIBLE_FILTER_GROUP] = {ACCESSIBLE_DRAWER, UI_TEXT_FILTER_GROUP, false, UI_TEXT_EMPTY,
                                  ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_FILTER_FAVORITES] = {ACCESSIBLE_FILTER_GROUP, UI_TEXT_TITLE_FAVORITES, true,
                                      UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
+    [ACCESSIBLE_FILTER_TAG] = {ACCESSIBLE_FILTER_GROUP, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY,
+                               ACCESSIBLE_MAIN_NONE},
+    [ACCESSIBLE_FILTER_MORE] = {ACCESSIBLE_FILTER_GROUP, UI_TEXT_COMMAND_FILTER_TAGS, true,
+                                UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_TAG_FILTER] = {ACCESSIBLE_FILTER_GROUP, UI_TEXT_COMMAND_FILTER_TAGS, true,
                                UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_FILTER_CLEAR] = {ACCESSIBLE_DRAWER, UI_TEXT_FILTER_CLEAR_NAME, true, UI_TEXT_EMPTY,
@@ -10415,15 +10422,47 @@ static void set_note_scope(struct folio_window *_Nonnull self, enum note_scope s
     accessibility_host_schedule(self->accessibility);
 }
 
-/* 解除の行が消えたあとに、focus を残さない。お気に入りの札へ移す（#1199）。 */
+/* タグの札 1 つ。番号と、タグの条件の改訂で指す（見出しの列と同じ方式・#1247）。 */
+static struct accessible_item filter_tag_item(const struct folio_window *_Nonnull self, size_t slot)
+{
+    return (struct accessible_item){.kind = ACCESSIBLE_FILTER_TAG,
+                                    .slot = slot,
+                                    .revision = folio_state_tag_filter_revision(self->state)};
+}
+
+/* 札の行に置かれたタグの札の数。畳んだ数を hidden に書く。 */
+static size_t filter_tags_shown(const struct folio_window *_Nonnull self, size_t *_Nonnull hidden)
+{
+    *hidden = 0;
+    return self->drawer == nullptr ? 0 : drawer_window_filter_tags(self->drawer, hidden);
+}
+
+/* 消えた部品に focus を残さない（#1199・#1247）。解除の行や「+N」が消えたら、お気に入りの札へ。
+ * タグの札が減ったら、同じ場所に来た札（無ければ最後の札、札が無ければお気に入りの札）へ。 */
 static bool settle_filter_focus(struct folio_window *_Nonnull self)
 {
-    if (self->keyboard_target != ACCESSIBLE_FILTER_CLEAR ||
-        folio_state_conditions_active(self->state))
+    size_t hidden = 0;
+    size_t shown = filter_tags_shown(self, &hidden);
+    enum accessible_kind target = self->keyboard_target;
+    if (target == ACCESSIBLE_FILTER_TAG && self->filter_tag_cursor >= shown)
+    {
+        if (shown > 0)
+        {
+            self->filter_tag_cursor = shown - 1;
+            return true;
+        }
+        target = ACCESSIBLE_FILTER_FAVORITES;
+    }
+    if ((target == ACCESSIBLE_FILTER_CLEAR && !folio_state_conditions_active(self->state)) ||
+        (target == ACCESSIBLE_FILTER_MORE && hidden == 0))
+    {
+        target = ACCESSIBLE_FILTER_FAVORITES;
+    }
+    if (target == self->keyboard_target)
     {
         return false;
     }
-    self->keyboard_target = ACCESSIBLE_FILTER_FAVORITES;
+    self->keyboard_target = target;
     return true;
 }
 
@@ -10943,6 +10982,48 @@ static enum folio_state_outcome toggle_filter_tag(struct folio_window *_Nonnull 
     note_tags_destroy(next);
     note_tags_destroy(empty);
     return outcome;
+}
+
+/* タグの札（#1247）: その番号のタグを条件から外す。タグの面がタグを外すときと同じ 1 本の道。
+ * 前の条件の札（改訂が違う）は、何も外さない。 */
+static HRESULT filter_tag_remove(struct folio_window *_Nonnull self, struct accessible_item item)
+{
+    const struct note_tags *_Nullable tags = folio_state_tag_filter(self->state);
+    if (tags == nullptr || item.revision != folio_state_tag_filter_revision(self->state) ||
+        item.slot >= note_tags_count(tags))
+    {
+        return accessibility_node_invalid;
+    }
+    enum folio_state_outcome outcome = toggle_filter_tag(self, note_tags_at(tags, item.slot));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        report_outcome(self, outcome);
+    }
+    (void)settle_filter_focus(self);
+    settle_empty_drawer_focus(self);
+    redraw_drawer(self);
+    accessibility_host_schedule(self->accessibility);
+    return S_OK;
+}
+
+/* 左の欄が、Space で押している札を尋ねる。タグの札は番号も合うときだけ。 */
+static bool drawer_part_pressed(const struct folio_window *_Nonnull self, WPARAM wparam,
+                                LPARAM lparam)
+{
+    enum accessible_kind kind = (enum accessible_kind)wparam;
+    return self->pressed_part == kind && self->pressed_inside &&
+           (kind != ACCESSIBLE_FILTER_TAG || (size_t)lparam == self->filter_tag_cursor);
+}
+
+/* 左の欄のポインタ操作が focus を置く先。タグの札は番号も覚える。 */
+static enum accessible_kind drawer_pointer_target(struct folio_window *_Nonnull self, WPARAM wparam,
+                                                  LPARAM lparam)
+{
+    if ((enum accessible_kind)wparam == ACCESSIBLE_FILTER_TAG)
+    {
+        self->filter_tag_cursor = (size_t)lparam;
+    }
+    return wparam == 0 ? ACCESSIBLE_TREE : (enum accessible_kind)wparam;
 }
 
 static void tag_toggle_row(struct folio_window *_Nonnull self)
@@ -12057,6 +12138,10 @@ static void activate_part(struct folio_window *_Nonnull self, enum accessible_ki
 {
     set_hover(self, ACCESSIBLE_WINDOW); /* 面・モーダル・メニューの後に枠を残さない */
     struct accessible_request request = {.item = {.kind = kind}, .action = part_action(self, kind)};
+    if (kind == ACCESSIBLE_FILTER_TAG)
+    {
+        request.item = filter_tag_item(self, self->filter_tag_cursor);
+    }
     (void)folio_window_accessible_action(self, &request);
     accessibility_host_schedule(self->accessibility);
 }
@@ -14440,8 +14525,66 @@ static void refresh_tooltip_style(const struct folio_window *_Nonnull self)
 /* ドロワーの固定操作のtool。名前はUIAと同じ表から引き、矩形はドロワーのclient
  * 座標。 文言を固定で渡すので、言語と配置が変わるたびに描き直しの経路から写し直す。 */
 static const enum accessible_kind drawer_tools[] = {
-    ACCESSIBLE_FILTER_FAVORITES, ACCESSIBLE_TAG_FILTER, ACCESSIBLE_FILTER_CLEAR,
-    ACCESSIBLE_INDEX_COUNT, ACCESSIBLE_NEW_CATEGORY};
+    ACCESSIBLE_FILTER_FAVORITES, ACCESSIBLE_FILTER_MORE, ACCESSIBLE_TAG_FILTER,
+    ACCESSIBLE_FILTER_CLEAR,     ACCESSIBLE_INDEX_COUNT, ACCESSIBLE_NEW_CATEGORY};
+/* タグごとの札の tool の id（札の番号を足す・#1247）。種類の値とは重ならない所に置く。 */
+constexpr UINT_PTR drawer_tag_tool_base = 0x200;
+
+/* タグの札の名前と説明「タグ {名前} を外す」。番号が条件の外なら空。 */
+static void filter_tag_name(const struct folio_window *_Nonnull self, size_t slot,
+                            char *_Nonnull out)
+{
+    const struct note_tags *_Nullable tags = folio_state_tag_filter(self->state);
+    out[0] = '\0';
+    if (tags == nullptr || slot >= note_tags_count(tags))
+    {
+        return;
+    }
+    struct ui_text_request request = {.id = UI_TEXT_FILTER_TAG_REMOVE,
+                                      .language = folio_state_language(self->state),
+                                      .name = note_tag_bytes(note_tags_at(tags, slot))};
+    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+    {
+        out[0] = '\0';
+    }
+}
+
+/* 「+N」の名前「ほか {n} 個のタグ」。 */
+static void filter_more_name(const struct folio_window *_Nonnull self, char *_Nonnull out)
+{
+    size_t hidden = 0;
+    (void)filter_tags_shown(self, &hidden);
+    struct ui_text_request request = {
+        .id = UI_TEXT_FILTER_MORE_NAME, .language = folio_state_language(self->state), .n = hidden};
+    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+    {
+        out[0] = '\0';
+    }
+}
+
+/* 「+N」の説明: 畳んだタグの名前を、条件の順に並べる。入りきらない分は載せない。 */
+static void filter_more_help(const struct folio_window *_Nonnull self, char *_Nonnull out)
+{
+    const struct note_tags *_Nullable tags = folio_state_tag_filter(self->state);
+    size_t hidden = 0;
+    size_t slot = filter_tags_shown(self, &hidden);
+    size_t used = 0;
+    out[0] = '\0';
+    for (; tags != nullptr && slot < note_tags_count(tags); ++slot)
+    {
+        const struct note_tag *_Nonnull tag = note_tags_at(tags, slot);
+        size_t length = note_tag_length(tag);
+        size_t gap = used == 0 ? 0 : 2;
+        if (used + gap + length + 1 > draw_unit_limit)
+        {
+            return;
+        }
+        memcpy(out + used, ", ", gap);
+        memcpy(out + used + gap, note_tag_bytes(tag), length);
+        used += gap + length;
+        out[used] = '\0';
+    }
+}
 
 /* 見出しの行の説明と、読み上げの数の要素の名前。「カテゴリ k ・ ノート n」（#1199・ADR0122）。
  * 数は application から取る（UI は数えない・ARC-004）。絞り込み中も全体の数。 */
@@ -14457,6 +14600,20 @@ static void index_counts_name(const struct folio_window *_Nonnull self, char *_N
     }
 }
 
+/* tool の矩形を、左の欄の部品の矩形（client 座標）にする。出せないあいだは空のまま。 */
+static void drawer_tool_place(const struct folio_window *_Nonnull self,
+                              const struct accessible_item *_Nonnull item, TOOLINFOW *_Nonnull tool)
+{
+    struct accessible_view view = {0};
+    if (tool->hwnd != nullptr && drawer_visible(self) &&
+        self->command_surface == COMMAND_SURFACE_CLOSED && self->native_modal_depth == 0 &&
+        SUCCEEDED(drawer_window_accessible_read(self->drawer, item, &view)))
+    {
+        tool->rect = view.bounds;
+        MapWindowPoints(nullptr, tool->hwnd, (POINT *)&tool->rect, 2);
+    }
+}
+
 static TOOLINFOW drawer_tool(const struct folio_window *_Nonnull self, enum accessible_kind kind,
                              char16_t *_Nonnull text)
 {
@@ -14469,21 +14626,40 @@ static TOOLINFOW drawer_tool(const struct folio_window *_Nonnull self, enum acce
     text[0] = u'\0';
     (void)wide_units(
         ui_text_line(accessible_controls[kind].label, folio_state_language(self->state)), text);
+    char line[draw_unit_limit] = "";
     if (kind == ACCESSIBLE_INDEX_COUNT)
     {
-        char counts[draw_unit_limit];
-        index_counts_name(self, counts);
-        (void)wide_units(counts, text);
+        index_counts_name(self, line);
+    }
+    if (kind == ACCESSIBLE_FILTER_MORE)
+    {
+        filter_more_help(self, line); /* 畳んだタグの名前 */
+    }
+    if (line[0] != '\0')
+    {
+        (void)wide_units(line, text);
     }
     struct accessible_item item = {.kind = kind};
-    struct accessible_view view = {0};
-    if (drawer != nullptr && drawer_visible(self) &&
-        self->command_surface == COMMAND_SURFACE_CLOSED && self->native_modal_depth == 0 &&
-        SUCCEEDED(drawer_window_accessible_read(self->drawer, &item, &view)))
-    {
-        tool.rect = view.bounds;
-        MapWindowPoints(nullptr, drawer, (POINT *)&tool.rect, 2);
-    }
+    drawer_tool_place(self, &item, &tool);
+    return tool;
+}
+
+/* タグごとの札の tool。名前は読み上げと同じ。置かれていない番号の矩形は空で、出ない。 */
+static TOOLINFOW drawer_tag_tool(const struct folio_window *_Nonnull self, size_t slot,
+                                 char16_t *_Nonnull text)
+{
+    TOOLINFOW tool = {.cbSize = tooltip_info_size,
+                      .uFlags = TTF_SUBCLASS,
+                      .hwnd =
+                          self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer),
+                      .uId = drawer_tag_tool_base + slot,
+                      .lpszText = (wchar_t *)text};
+    char line[draw_unit_limit];
+    filter_tag_name(self, slot, line);
+    text[0] = u'\0';
+    (void)wide_units(line, text);
+    struct accessible_item item = filter_tag_item(self, slot);
+    drawer_tool_place(self, &item, &tool);
     return tool;
 }
 
@@ -14496,6 +14672,12 @@ static bool create_drawer_tooltips(const struct folio_window *_Nonnull self)
         if (tool.hwnd == nullptr || !SendMessageW(self->tooltip, TTM_ADDTOOLW, 0, (LPARAM)&tool))
             return false;
     }
+    for (size_t slot = 0; slot < note_tags_max_count; ++slot)
+    {
+        TOOLINFOW tool = drawer_tag_tool(self, slot, text);
+        if (!SendMessageW(self->tooltip, TTM_ADDTOOLW, 0, (LPARAM)&tool))
+            return false;
+    }
     return true;
 }
 
@@ -14505,6 +14687,15 @@ static void refresh_drawer_tooltips(const struct folio_window *_Nonnull self)
     for (size_t at = 0; at < sizeof drawer_tools / sizeof drawer_tools[0]; ++at)
     {
         TOOLINFOW tool = drawer_tool(self, drawer_tools[at], text);
+        if (tool.hwnd != nullptr)
+        {
+            SendMessageW(self->tooltip, TTM_NEWTOOLRECTW, 0, (LPARAM)&tool);
+            SendMessageW(self->tooltip, TTM_UPDATETIPTEXTW, 0, (LPARAM)&tool);
+        }
+    }
+    for (size_t slot = 0; slot < note_tags_max_count; ++slot)
+    {
+        TOOLINFOW tool = drawer_tag_tool(self, slot, text);
         if (tool.hwnd != nullptr)
         {
             SendMessageW(self->tooltip, TTM_NEWTOOLRECTW, 0, (LPARAM)&tool);
@@ -18541,6 +18732,16 @@ static bool drawer_control_visible(const struct folio_window *_Nonnull self,
     {
         return false;
     }
+    if (kind == ACCESSIBLE_FILTER_TAG || kind == ACCESSIBLE_FILTER_MORE)
+    {
+        /* タグの札は 1 つでも置かれているとき、「+N」は畳んだ分があるときだけある（#1247）。 */
+        size_t hidden = 0;
+        size_t shown = filter_tags_shown(self, &hidden);
+        if (kind == ACCESSIBLE_FILTER_TAG ? shown == 0 : hidden == 0)
+        {
+            return false;
+        }
+    }
     return drawer_visible(self);
 }
 
@@ -19085,11 +19286,40 @@ static struct accessible_item outline_item(const struct folio_window *_Nonnull s
                                     .revision = note_outline_revision(self->outline)};
 }
 
+uint64_t folio_window_accessible_filter_revision(const struct folio_window *_Nonnull self)
+{
+    if (self->drawer == nullptr || self->handle == nullptr)
+        return 0;
+    size_t hidden = 0;
+    size_t shown = filter_tags_shown(self, &hidden);
+    return folio_state_tag_filter_revision(self->state) * 128 + shown * 2 + (hidden > 0 ? 1 : 0);
+}
+
 uint64_t folio_window_accessible_outline_revision(const struct folio_window *_Nonnull self)
 {
     if (self->outline == nullptr || self->handle == nullptr)
         return 0;
     return note_outline_revision(self->outline) * 2 + (outline_visible(self) ? 1 : 0);
+}
+
+/* #1247: the names the static table cannot give: a tag chip removes its tag, the folded chip
+ * counts the tags it folds and lists them as its help. */
+static void filter_chip_view(const struct folio_window *_Nonnull self, struct accessible_item item,
+                             struct accessible_view *_Nonnull out)
+{
+    char line[draw_unit_limit];
+    if (item.kind == ACCESSIBLE_FILTER_TAG)
+    {
+        filter_tag_name(self, item.slot, line);
+        (void)wide_units(line, out->name);
+    }
+    if (item.kind == ACCESSIBLE_FILTER_MORE)
+    {
+        filter_more_name(self, line);
+        (void)wide_units(line, out->name);
+        filter_more_help(self, line);
+        (void)wide_units(line, out->help);
+    }
 }
 
 /* The items whose views come from elsewhere than the static table: the surface's and the
@@ -19121,6 +19351,7 @@ HRESULT folio_window_accessible_read(struct folio_window *_Nonnull self,
     if (accessible_read_elsewhere(self, *item, out, &elsewhere))
         return elsewhere;
     accessible_name(self, item->kind, out->name);
+    filter_chip_view(self, *item, out);
     accessible_accelerator(self, item->kind, out->accelerator);
     accessible_details(self, item->kind, out);
     accessible_availability(self, item->kind, out);
@@ -19235,6 +19466,8 @@ static struct accessible_item keyboard_item(const struct folio_window *_Nonnull 
     if (self->keyboard_target == ACCESSIBLE_OUTLINE && outline_visible(self) &&
         note_pane_heading_count(self->pane) > 0)
         return outline_item(self, note_outline_cursor(self->outline));
+    if (self->keyboard_target == ACCESSIBLE_FILTER_TAG)
+        return filter_tag_item(self, self->filter_tag_cursor);
     return (struct accessible_item){.kind = self->keyboard_target};
 }
 
@@ -19265,7 +19498,7 @@ static bool accessible_virtual(enum accessible_kind kind)
            kind != ACCESSIBLE_REPLACE_PATTERN && kind != ACCESSIBLE_REPLACE_TEXT &&
            kind != ACCESSIBLE_DISCOVERY_PREVIEW && !accessible_item_row(item) &&
            kind != ACCESSIBLE_FILTER && kind != ACCESSIBLE_BODY && !accessible_item_root(item) &&
-           kind != ACCESSIBLE_OUTLINE_ITEM;
+           kind != ACCESSIBLE_OUTLINE_ITEM && kind != ACCESSIBLE_FILTER_TAG;
 }
 
 static bool accessible_edge_direction(enum accessible_navigation direction)
@@ -19355,6 +19588,84 @@ static HRESULT outline_navigate(const struct folio_window *_Nonnull self,
     return S_OK;
 }
 
+/* #1247: the filter row's children in order: the favorites chip, the tag chips that are placed,
+ * the folded chip when tags are folded, the opener. */
+constexpr size_t filter_chain_limit = note_tags_max_count + 3;
+
+static size_t filter_chain(const struct folio_window *_Nonnull self,
+                           struct accessible_item *_Nonnull out)
+{
+    size_t hidden = 0;
+    size_t shown = filter_tags_shown(self, &hidden);
+    size_t count = 0;
+    out[count++] = (struct accessible_item){.kind = ACCESSIBLE_FILTER_FAVORITES};
+    for (size_t slot = 0; slot < shown && slot < note_tags_max_count; ++slot)
+    {
+        out[count++] = filter_tag_item(self, slot);
+    }
+    if (hidden > 0)
+    {
+        out[count++] = (struct accessible_item){.kind = ACCESSIBLE_FILTER_MORE};
+    }
+    out[count++] = (struct accessible_item){.kind = ACCESSIBLE_TAG_FILTER};
+    return count;
+}
+
+/* Where the item is in the chain; the count when it is not there. */
+static size_t filter_chain_find(const struct accessible_item *_Nonnull chain, size_t count,
+                                struct accessible_item item)
+{
+    size_t at = 0;
+    while (at < count && !accessible_item_equal(chain[at], item))
+    {
+        ++at;
+    }
+    return at;
+}
+
+/* A chip's previous and next sibling. The static table cannot walk them: the tag chips are one
+ * kind with a number. */
+static bool filter_navigation(const struct accessible_item *_Nonnull item,
+                              enum accessible_navigation direction)
+{
+    return accessible_controls[item->kind].parent == ACCESSIBLE_FILTER_GROUP &&
+           (direction == ACCESSIBLE_NAVIGATION_NEXT || direction == ACCESSIBLE_NAVIGATION_PREVIOUS);
+}
+
+static HRESULT filter_navigate(const struct folio_window *_Nonnull self,
+                               const struct accessible_item *_Nonnull item,
+                               enum accessible_navigation direction,
+                               struct accessible_item *_Nonnull out)
+{
+    struct accessible_item chain[filter_chain_limit];
+    size_t count = filter_chain(self, chain);
+    size_t at = filter_chain_find(chain, count, *item);
+    bool forward = direction == ACCESSIBLE_NAVIGATION_NEXT;
+    if (at == count || (forward ? at + 1 == count : at == 0))
+    {
+        return S_FALSE;
+    }
+    *out = chain[forward ? at + 1 : at - 1];
+    return S_OK;
+}
+
+/* The steps that walk a numbered list rather than the static table. */
+static bool listed_navigation(const struct accessible_item *_Nonnull item,
+                              enum accessible_navigation direction)
+{
+    return outline_navigation(item, direction) || filter_navigation(item, direction);
+}
+
+static HRESULT listed_navigate(const struct folio_window *_Nonnull self,
+                               const struct accessible_item *_Nonnull item,
+                               enum accessible_navigation direction,
+                               struct accessible_item *_Nonnull out)
+{
+    if (outline_navigation(item, direction))
+        return outline_navigate(self, item, direction, out);
+    return filter_navigate(self, item, direction, out);
+}
+
 HRESULT folio_window_accessible_navigate(struct folio_window *_Nonnull self,
                                          const struct accessible_item *_Nonnull item,
                                          enum accessible_navigation direction,
@@ -19368,8 +19679,8 @@ HRESULT folio_window_accessible_navigate(struct folio_window *_Nonnull self,
     {
         return result;
     }
-    if (outline_navigation(item, direction))
-        return outline_navigate(self, item, direction, out);
+    if (listed_navigation(item, direction))
+        return listed_navigate(self, item, direction, out);
     bool tree_child = item->kind == ACCESSIBLE_TREE && accessible_edge_direction(direction);
     if (accessible_item_row(*item) || tree_child)
     {
@@ -19519,6 +19830,10 @@ static enum accessible_kind focus_target(struct folio_window *_Nonnull self,
         outline_set_cursor(self, item.slot);
         return ACCESSIBLE_OUTLINE;
     }
+    if (item.kind == ACCESSIBLE_FILTER_TAG)
+    {
+        self->filter_tag_cursor = item.slot; /* #1247: the chip the keyboard is on */
+    }
     size_t current = note_outline_current(self->outline);
     if (item.kind == ACCESSIBLE_OUTLINE && self->keyboard_target != ACCESSIBLE_OUTLINE)
         outline_set_cursor(self, current == note_outline_none ? 0 : current);
@@ -19573,6 +19888,7 @@ static bool accessible_command(enum accessible_kind kind, enum folio_command *_N
                     {ACCESSIBLE_FIND, FOLIO_COMMAND_FIND},
                     {ACCESSIBLE_TAG_EDIT, FOLIO_COMMAND_EDIT_TAGS},
                     {ACCESSIBLE_TAG_FILTER, FOLIO_COMMAND_FILTER_TAGS},
+                    {ACCESSIBLE_FILTER_MORE, FOLIO_COMMAND_FILTER_TAGS},
                     {ACCESSIBLE_FILTER_FAVORITES, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY}};
     for (size_t index = 0; index < sizeof commands / sizeof commands[0]; ++index)
     {
@@ -19678,6 +19994,10 @@ static HRESULT accessible_activate(struct folio_window *_Nonnull self,
     {
         clear_conditions(self);
         return S_OK;
+    }
+    if (request->item.kind == ACCESSIBLE_FILTER_TAG)
+    {
+        return filter_tag_remove(self, request->item);
     }
     if (accessible_item_shell(request->item.kind) && request->action == ACCESSIBLE_ACTION_INVOKE)
     {
@@ -19916,6 +20236,22 @@ static enum accessible_kind choice_neighbor(enum accessible_kind kind, bool forw
     return (enum accessible_kind)(first + at);
 }
 
+/* 絞り込みの札の行の中の隣の札（端で折り返す）。タグの札は番号で数が変わるので、列挙ではなく
+ * 札の並び（filter_chain）を辿る（#1247）。 */
+static void filter_step(struct folio_window *_Nonnull self, bool forward)
+{
+    struct accessible_item chain[filter_chain_limit];
+    size_t count = filter_chain(self, chain);
+    size_t at = filter_chain_find(chain, count, keyboard_item(self));
+    if (at == count)
+    {
+        at = 0;
+    }
+    at = forward ? (at + 1) % count : (at + count - 1) % count;
+    (void)accessible_set_focus(self, chain[at]);
+    accessibility_host_schedule(self->accessibility);
+}
+
 /* 選択群の中では矢印が focus だけを動かし、選択は Enter/Space で確定する。
  * 矢印で選ぶと一覧経由で窓が縮む・閲覧で保存が走るため（ADR0060 の決定 5）。 */
 static bool choice_step(struct folio_window *_Nonnull self, WPARAM key)
@@ -19930,7 +20266,14 @@ static bool choice_step(struct folio_window *_Nonnull self, WPARAM key)
         return false;
     }
     cancel_part_press(self);
-    (void)keyboard_focus(self, choice_neighbor(self->keyboard_target, forward));
+    if (parent == ACCESSIBLE_FILTER_GROUP)
+    {
+        filter_step(self, forward);
+    }
+    else
+    {
+        (void)keyboard_focus(self, choice_neighbor(self->keyboard_target, forward));
+    }
     return true;
 }
 
@@ -20543,7 +20886,7 @@ static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT
     case folio_message_filter_focused:
         return self->filter_input != nullptr && GetFocus() == self->filter_input;
     case folio_message_part_pressed:
-        return self->pressed_part == (enum accessible_kind)wparam && self->pressed_inside;
+        return drawer_part_pressed(self, wparam, lparam);
     case folio_message_drawer_band:
         drawer_band_changed(self);
         return 0;
@@ -20554,7 +20897,7 @@ static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT
             focus_filter_input(self);
             return 0;
         }
-        self->keyboard_target = wparam == 0 ? ACCESSIBLE_TREE : (enum accessible_kind)wparam;
+        self->keyboard_target = drawer_pointer_target(self, wparam, lparam);
         SetFocus(self->handle);
         InvalidateRect(self->handle, nullptr, FALSE);
         accessibility_host_schedule(self->accessibility);

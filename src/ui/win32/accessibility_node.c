@@ -44,6 +44,7 @@ static bool has_invoke(enum accessible_kind kind)
            kind == ACCESSIBLE_NEW_CATEGORY || kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_SAVE ||
            kind == ACCESSIBLE_HELP || kind == ACCESSIBLE_FIND || kind == ACCESSIBLE_TAG_EDIT ||
            kind == ACCESSIBLE_TAG_FILTER || kind == ACCESSIBLE_FILTER_CLEAR ||
+           kind == ACCESSIBLE_FILTER_TAG || kind == ACCESSIBLE_FILTER_MORE ||
            kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_BUTTON ||
            kind == ACCESSIBLE_OUTLINE_ITEM;
 }
@@ -379,6 +380,8 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_FILTER_GROUP] = UIA_GroupControlTypeId,
     [ACCESSIBLE_FILTER_FAVORITES] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_FILTER_CLEAR] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_FILTER_TAG] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_FILTER_MORE] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_TREE] = UIA_TreeControlTypeId,
     [ACCESSIBLE_CATEGORY] = UIA_TreeItemControlTypeId,
     [ACCESSIBLE_NOTE] = UIA_TreeItemControlTypeId,
