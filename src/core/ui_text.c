@@ -1027,9 +1027,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                  "No favorites yet.\nAdd one with the star beside a note.",
                                  "还没有收藏。\n点击笔记旁的星标即可添加。"},
     [UI_TEXT_EMPTY_FAVORITES_FILTER] =
-        {"一致するお気に入りはありません。\n検索語を変えるか「すべて」に戻します。",
-         "No matching favorites.\nChange the search or switch to All.",
-         "没有匹配的收藏。\n更改搜索词或切换到“全部”。"},
+        {"一致するお気に入りはありません。\n検索語を変えるか、絞り込みを解除します。",
+         "No matching favorites.\nChange the search or clear the filters.",
+         "没有匹配的收藏。\n更改搜索词或清除筛选。"},
     [UI_TEXT_NOTE_FAVORITE_ON] = {"お気に入り", "Favorite", "已收藏"},
     [UI_TEXT_NOTE_FAVORITE_OFF] = {"お気に入りではありません", "Not a favorite", "未收藏"},
     [UI_TEXT_COMMAND_TOGGLE_MINIMAP] = {"ミニマップの表示を切り替える", "Toggle minimap",

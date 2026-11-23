@@ -787,7 +787,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FILTER_TAGS_COUNT] = "# タグ {n}",
     [UI_TEXT_EMPTY_FAVORITES] = "お気に入りはありません。\nノートの星で追加できます。",
     [UI_TEXT_EMPTY_FAVORITES_FILTER] =
-        "一致するお気に入りはありません。\n検索語を変えるか「すべて」に戻します。",
+        "一致するお気に入りはありません。\n検索語を変えるか、絞り込みを解除します。",
     [UI_TEXT_NOTE_FAVORITE_ON] = "お気に入り",
     [UI_TEXT_NOTE_FAVORITE_OFF] = "お気に入りではありません",
     [UI_TEXT_COMMAND_TOGGLE_MINIMAP] = "ミニマップの表示を切り替える",
