@@ -238,6 +238,8 @@ static void verify_inline_edges(void)
 
 /* コードブロックの見出し行に置くコピーの操作（ADR0098）。slot はノート内の通し番号。 */
 #define CODE_OPEN "{\\f1\\fs20\\cf5\\highlight6"
+/* #1205: the uncoloured row between two code blocks with nothing shown between them. */
+#define CODE_PART "{\\pard\\sb0\\sa0\\sl-120\\slmult0\\fs2\\highlight0\\par}\n"
 #define CODE_HEAD "\\pard\\li180\\ri180\\sb120\\sa80\\sl240\\slmult1 "
 #define CODE_HEAD_RIGHT "\\pard\\qr\\li180\\ri0\\sb40\\sa60\\sl-260\\slmult0 "
 #define CODE_FIRST "\\pard\\li180\\ri180\\sb100\\sa0\\sl240\\slmult1 "
@@ -272,8 +274,8 @@ static void verify_code(void)
     expect_body("```c\n```", CODE_OPEN CODE_HEAD "{\\f0\\fs18\\cf9 c}\\sa120\\par\n}");
     expect_body("```\na\n```\n```\nb\n```", CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN
                 "0" CODE_COPY_CLOSE "\\par\n" CODE_FIRST
-                "a\\sa120\\par\n}" CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN "1" CODE_COPY_CLOSE
-                "\\par\n" CODE_FIRST "b\\sa120\\par\n}");
+                "a\\sa120\\par\n}" CODE_OPEN CODE_PART CODE_HEAD_RIGHT CODE_COPY_OPEN
+                "1" CODE_COPY_CLOSE "\\par\n" CODE_FIRST "b\\sa120\\par\n}");
 }
 
 static void verify_lists_quotes_links(void)
@@ -2489,11 +2491,11 @@ static void verify_indented_code_containers(void)
                 "code\\par\n" QUOTE_CODE_LINE "\\par\n" QUOTE_CODE_LINE "more" CODE_END
                 "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 text\\cf1\\par\n");
     /* An example of 5.1: code has no lazy continuation; the second line is a block of its own. */
-    expect_body(">     foo\n    bar",
-                CODE_OPEN QUOTE_CODE_TOP "foo" CODE_END CODE_OPEN CODE_TOP "bar" CODE_END);
+    expect_body(">     foo\n    bar", CODE_OPEN QUOTE_CODE_TOP
+                "foo" CODE_END CODE_OPEN CODE_PART CODE_TOP "bar" CODE_END);
     /* A blank line that is not the quote's ends the code with the quote. */
-    expect_body(">     a\n\n>     b",
-                CODE_OPEN QUOTE_CODE_TOP "a" CODE_END CODE_OPEN QUOTE_CODE_TOP "b" CODE_END);
+    expect_body(">     a\n\n>     b", CODE_OPEN QUOTE_CODE_TOP
+                "a" CODE_END CODE_OPEN CODE_PART QUOTE_CODE_TOP "b" CODE_END);
 }
 
 /* The content is as written: nothing in it starts a block or is read as inline syntax. */
@@ -2535,7 +2537,7 @@ static void verify_indented_code_content(void)
      * a code line that is outside it. Two blocks, each with its own left edge. */
     expect_fragment(">     a\n>\n    b",
                     "\\li660\\ri180\\sb120\\sa0\\sl240\\slmult1 a\\sa120\\par\n"
-                    "}{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa0\\sl240\\slmult1 "
+                    "}" CODE_OPEN CODE_PART "\\pard\\li180\\ri180\\sb120\\sa0\\sl240\\slmult1 "
                     "b\\sa120\\par\n",
                     "");
     /* Under a paragraph the indented line is more of the paragraph, and the next line too. */
@@ -2576,7 +2578,7 @@ static void verify_indented_code_edges(void)
     expect_body("   text", PLAIN "text\\par\n");
     /* No copy slot is taken: the fence after the indented code is still the note's first. */
     expect_body("    a\n\n```\nb\n```",
-                CODE_OPEN CODE_TOP "a" CODE_END CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN
+                CODE_OPEN CODE_TOP "a" CODE_END CODE_OPEN CODE_PART CODE_HEAD_RIGHT CODE_COPY_OPEN
                                    "0" CODE_COPY_CLOSE "\\par\n" CODE_FIRST "b" CODE_END);
     /* A fence is opened three columns in at most, and closed the same: inside one, an indented
      * line is its content and keeps its indent; an indented fence line is code. */
@@ -2586,8 +2588,66 @@ static void verify_indented_code_edges(void)
     expect_body("    ```\n    a", CODE_OPEN CODE_TOP "```\\par\n" CODE_LINE "a" CODE_END);
 }
 
+/* #1205: two code blocks with nothing shown between them are parted by an uncoloured row, or
+ * the highlight in their spacing would make them one box. The row is the second block's first
+ * paragraph: before its header line, or before its first line when it has none. */
+#define FENCE_A CODE_HEAD_RIGHT CODE_COPY_OPEN "0" CODE_COPY_CLOSE "\\par\n" CODE_FIRST "a" CODE_END
+static void verify_adjacent_code(void)
+{
+    /* A fence then indented code (the note hide saw), and the other way round. */
+    expect_body("```\na\n```\n\n    b",
+                CODE_OPEN FENCE_A CODE_OPEN CODE_PART CODE_TOP "b" CODE_END);
+    expect_body("    b\n```c\n```", CODE_OPEN CODE_TOP "b" CODE_END CODE_OPEN CODE_PART CODE_HEAD
+                                                       "{\\f0\\fs18\\cf9 c}\\sa120\\par\n}");
+    /* A fence with lines and no header line (its only line is blank): before the first line. */
+    expect_body("    b\n```\n\n```",
+                CODE_OPEN CODE_TOP "b" CODE_END CODE_OPEN CODE_PART CODE_TOP "\\sa120\\par\n}");
+    /* Indented code goes on over blank lines, so two of them meet only across what shows
+     * nothing: a link reference definition, an empty fence. */
+    expect_body("    a\n\n    b",
+                CODE_OPEN CODE_TOP "a\\par\n" CODE_LINE "\\par\n" CODE_LINE "b" CODE_END);
+    expect_body("    a\n\n[r]: https://example.com\n\n    b",
+                CODE_OPEN CODE_TOP "a" CODE_END CODE_OPEN CODE_PART CODE_TOP "b" CODE_END);
+    /* An empty fence shows nothing and writes no row; the blocks around it still meet, once. */
+    expect_body("    a\n```\n```\n\n    b", CODE_OPEN CODE_TOP
+                "a" CODE_END CODE_OPEN "}" CODE_OPEN CODE_PART CODE_TOP "b" CODE_END);
+    expect_body("    a\n```\n```\n```\n```\n\n    b", CODE_OPEN CODE_TOP
+                "a" CODE_END CODE_OPEN "}" CODE_OPEN "}" CODE_OPEN CODE_PART CODE_TOP "b" CODE_END);
+    expect_body("```\n```\n\n    b", CODE_OPEN "}" CODE_OPEN CODE_TOP "b" CODE_END);
+    /* The first block of the note, and a block after anything shown, have no row. */
+    expect_body("    a\n\ntext\n\n    b", CODE_OPEN CODE_TOP
+                "a" CODE_END PLAIN "text\\par\n" CODE_OPEN CODE_TOP "b" CODE_END);
+    expect_body("    a\n```\n```\ntext\n\n    b", CODE_OPEN CODE_TOP
+                "a" CODE_END CODE_OPEN "}" PLAIN "text\\par\n" CODE_OPEN CODE_TOP "b" CODE_END);
+    /* In a list item: the item's code blocks meet; a new item's marker line is between. */
+    expect_body(
+        "- x\n\n  ```\n  a\n  ```\n\n      b",
+        ITEM_MARK("\\bullet") "x\\par\n" CODE_OPEN
+                              "\\pard\\qr\\li620\\ri0\\sb40\\sa60\\sl-260\\slmult0 " CODE_COPY_OPEN
+                              "0" CODE_COPY_CLOSE "\\par\n"
+                              "\\pard\\li620\\ri180\\sb100\\sa0\\sl240\\slmult1 a" CODE_END
+                                  CODE_OPEN CODE_PART ITEM_CODE_TOP "b" CODE_END);
+    expect_body("-     a\n-     b",
+                "\\pard\\li440\\fi-220\\tx440\\sb0\\sa0\\sl240\\slmult1 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }\\par\n" CODE_OPEN ITEM_CODE_TOP
+                "a" CODE_END "\\pard\\li440\\fi-220\\tx440\\sb0\\sa0\\sl240\\slmult1 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }\\par\n" CODE_OPEN ITEM_CODE_TOP
+                "b" CODE_END);
+    /* A fence that shows its label only is a block too; fences in one quote meet. */
+    expect_body(
+        "```c\n```\n```\nb\n```", CODE_OPEN CODE_HEAD
+        "{\\f0\\fs18\\cf9 c}\\sa120\\par\n}" CODE_OPEN CODE_PART CODE_HEAD_RIGHT CODE_COPY_OPEN
+        "0" CODE_COPY_CLOSE "\\par\n" CODE_FIRST "b" CODE_END);
+    expect_fragment("> ```\n> a\n> ```\n> ```\n> b\n> ```", "a" CODE_END CODE_OPEN CODE_PART, "");
+    /* A diagram is not shaded: no row before it or after it. An empty fence left open at the
+     * note's end writes none. */
+    expect_fragment("```\na\n```\n```mermaid\ngraph LR\n```\n```\nb\n```", "b" CODE_END, CODE_PART);
+    expect_body("    a\n```", CODE_OPEN CODE_TOP "a" CODE_END CODE_OPEN "}");
+}
+
 void run_markdown_tests(void)
 {
+    verify_adjacent_code();
     verify_indented_code_examples();
     verify_indented_code_containers();
     verify_indented_code_content();

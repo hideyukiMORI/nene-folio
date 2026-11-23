@@ -524,8 +524,51 @@ static void indented_code(void)
     lookup_done(lookup);
 }
 
+/* #1205: the uncoloured row between two code blocks is the second block's paragraph: its header
+ * line's, or its first line's when it has no header line. The closing fence before it still
+ * holds no paragraph, so the row is edited and copied as the block under it. */
+static void adjacent_code(void)
+{
+    static const char source[] = "```c\nint a;\n```\n\n    b\n\n```\nd\n```\n";
+    const struct expected_block blocks[] = {{MARKDOWN_SOURCE_CODE_HEADER, "```c", "```c", 1},
+                                            {MARKDOWN_SOURCE_CODE_LINE, "int a;", "int a;", 1},
+                                            {MARKDOWN_SOURCE_CODE_END, "```", "```\n\n    b", 0},
+                                            {MARKDOWN_SOURCE_CODE_LINE, "    b", "b\n", 2},
+                                            {MARKDOWN_SOURCE_CODE_HEADER, "```", "```\nd", 2},
+                                            {MARKDOWN_SOURCE_CODE_LINE, "d", "d\n", 1},
+                                            {MARKDOWN_SOURCE_CODE_END, "```", "```\n", 0}};
+    expect_blocks(source, blocks, 7);
+    struct lookup_case lookup = lookup_for(source);
+    require(first_of(lookup, 3) == 2 && first_of(lookup, 4) == 4 && first_of(lookup, 5) == 6,
+            "the rows between the blocks are counted");
+    expect_caret(lookup, 2, "b\n"); /* the row above the indented code */
+    expect_caret(lookup, 3, "b\n");
+    expect_caret(lookup, 4, "```\nd"); /* the row above the second fence */
+    expect_caret(lookup, 5, "```\nd");
+    expect_copy(lookup, 2, 2, "    b");
+    expect_copy(lookup, 4, 4, "```\nd\n```");
+    expect_copy(lookup, 1, 2, "```c\nint a;\n```\n\n    b");
+    expect_paragraphs(lookup, "    b", "b", (struct markdown_source_selection){3, 3});
+    expect_paragraphs(lookup, "```\nd", "d", (struct markdown_source_selection){4, 5});
+    lookup_done(lookup);
+    /* A fence with no header line: the row is its first line's, and its opening line holds no
+     * paragraph, like the closing one. */
+    const struct expected_block bare[] = {{MARKDOWN_SOURCE_CODE_LINE, "    a", "a\n", 1},
+                                          {MARKDOWN_SOURCE_CODE_HEADER, "```", "```\n\n", 0},
+                                          {MARKDOWN_SOURCE_CODE_LINE, "", "\n```", 2},
+                                          {MARKDOWN_SOURCE_CODE_END, "```", "```", 0}};
+    expect_blocks("    a\n```\n\n```", bare, 4);
+    /* An empty fence between: its lines hold no paragraph, and the row is the next block's. */
+    const struct expected_block empty[] = {{MARKDOWN_SOURCE_CODE_LINE, "    a", "a\n", 1},
+                                           {MARKDOWN_SOURCE_CODE_HEADER, "```", "```\n```", 0},
+                                           {MARKDOWN_SOURCE_CODE_END, "```", "```\n\n", 0},
+                                           {MARKDOWN_SOURCE_CODE_LINE, "    b", "b", 2}};
+    expect_blocks("    a\n```\n```\n\n    b", empty, 4);
+}
+
 void run_source_map_tests(void)
 {
+    adjacent_code();
     indented_code();
     counting();
     every_kind();

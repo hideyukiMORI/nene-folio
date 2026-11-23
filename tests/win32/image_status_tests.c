@@ -10373,7 +10373,7 @@ static void code_copy_click_case(struct folio_window *_Nonnull window,
         L"コピー "
         L"前文\r\nc\x2003\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0\xA0\r\n"
         L"int "
-        L"a;\r\n\tb;"
+        L"a;\r\n\tb;\r\n" /* #1205: the row between the two code blocks is an empty line */
         L"\r\n\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0\xA0\r\n引用 😀\r\n"
         L"  二行"
         L"\r\n終わり コピー");

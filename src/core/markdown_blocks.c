@@ -22,6 +22,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* #1205: no code block has been written, or something else was written after the last one. */
+constexpr size_t code_end_none = SIZE_MAX;
+
 struct markdown_blocks
 {
     struct text_buffer *_Nonnull out;
@@ -58,6 +61,12 @@ struct markdown_blocks
      * blank lines before that one are its content without looking ahead again. */
     bool indented;
     size_t code_until;
+    /* #1205: where the RTF of the last code block that showed something ends (past the empty
+     * fences right after it, which show nothing). A code block that starts right there (only
+     * blank or hidden lines between) is `parting`: its first paragraph writes an uncoloured row
+     * first, or the two would look like one box. */
+    size_t code_end;
+    bool parting;
     struct code_syntax *_Nullable syntax;
     bool diagram;
     size_t diagram_slot;
@@ -399,9 +408,13 @@ static bool close_code(struct markdown_blocks *_Nonnull parser)
         parser->code_state = MARKDOWN_CODE_STATE_OUTSIDE;
         return parser->outcome == MARKDOWN_RTF_CONVERTED;
     }
-    if (parser->code_state == MARKDOWN_CODE_STATE_PARAGRAPH)
+    bool shown = parser->code_state == MARKDOWN_CODE_STATE_PARAGRAPH;
+    if (shown)
         text_buffer_append_text(parser->out, "\\sa120\\par\n");
     text_buffer_append_text(parser->out, "}");
+    /* A block that showed nothing (an empty fence) leaves the one before it the last. */
+    parser->code_end = (shown || parser->parting) ? text_buffer_length(parser->out) : code_end_none;
+    parser->parting = false;
     parser->code_state = MARKDOWN_CODE_STATE_OUTSIDE;
     parser->indented = false;
     code_syntax_destroy(parser->syntax);
@@ -425,6 +438,26 @@ static bool fence_closes(const struct markdown_blocks *_Nonnull parser, struct m
     while (end < line.length && (line.bytes[end] == ' ' || line.bytes[end] == '\t'))
         ++end;
     return end == line.length;
+}
+
+/* #1205: RichEdit paints a paragraph's highlight into its spacing, so the space after one code
+ * block and the space before the next would join into one surface. A thin row of the pane's
+ * colour parts them. It is written after the new block's first entry of the source map, so its
+ * paragraph is that block's (as a table's spacer is the table's). */
+static void part_code(struct markdown_blocks *_Nonnull parser)
+{
+    if (!parser->parting)
+        return;
+    parser->parting = false;
+    text_buffer_append_text(parser->out,
+                            "{\\pard\\sb0\\sa0\\sl-120\\slmult0\\fs2\\highlight0\\par}\n");
+}
+
+/* Opens the code's surface, right after another code block's or not. */
+static void open_code(struct markdown_blocks *_Nonnull parser)
+{
+    parser->parting = text_buffer_length(parser->out) == parser->code_end;
+    text_buffer_append_text(parser->out, "{\\f1\\fs20\\cf5\\highlight6");
 }
 
 static const char *_Nonnull code_spacing(enum markdown_code_state state)
@@ -488,6 +521,7 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
     if (parser->code_state == MARKDOWN_CODE_STATE_PARAGRAPH)
         text_buffer_append_text(parser->out, "\\par\n");
     record(parser, MARKDOWN_SOURCE_CODE_LINE, line_source(line), line.bytes + line.prefix);
+    part_code(parser);
     text_buffer_append_text(parser->out, "\\pard\\li");
     rtf_text_number(parser->out, parser->code_indent + 180);
     text_buffer_append_text(parser->out, "\\ri180\\sb");
@@ -561,6 +595,7 @@ static void code_header(struct markdown_blocks *_Nonnull parser, struct markdown
 {
     if (word.length == 0 && !parser->copyable)
         return;
+    part_code(parser);
     text_buffer_append_text(parser->out, parser->copyable ? "\\pard\\qr\\li" : "\\pard\\li");
     rtf_text_number(parser->out, parser->code_indent + 180);
     text_buffer_append_text(parser->out, parser->copyable
@@ -649,7 +684,7 @@ static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown
         return false;
     if (!begin_copy(parser))
         return false;
-    text_buffer_append_text(parser->out, "{\\f1\\fs20\\cf5\\highlight6");
+    open_code(parser);
     code_header(parser, word);
     return true;
 }
@@ -683,7 +718,7 @@ static bool start_indented(struct markdown_blocks *_Nonnull parser, struct markd
     parser->indented = true;
     parser->code_until = 0;
     parser->code_state = MARKDOWN_CODE_STATE_EMPTY;
-    text_buffer_append_text(parser->out, "{\\f1\\fs20\\cf5\\highlight6");
+    open_code(parser);
     return code_line(parser, line);
 }
 
@@ -1181,6 +1216,7 @@ enum markdown_rtf_outcome markdown_blocks_render(struct markdown_render render,
                                      .language = options.language,
                                      .contrast = options.contrast,
                                      .outcome = MARKDOWN_RTF_CONVERTED,
+                                     .code_end = code_end_none,
                                      .map = options.map};
     parser.outcome = markdown_containers_create(&parser.containers);
     if (parser.outcome == MARKDOWN_RTF_CONVERTED)
