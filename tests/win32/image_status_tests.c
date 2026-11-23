@@ -9434,10 +9434,85 @@ static void header_count_units(struct native_fixture *_Nonnull fixture)
             "back to Japanese");
 }
 
+/* #1246: the search field's clear mark empties the term, so it is there only while the field
+ * has text. The favorites scope alone used to draw it over the empty field's shortcut hint. */
+static uint64_t filter_mark_pixels(HWND input, COLORREF *_Nonnull centre, COLORREF *_Nonnull ground)
+{
+    RECT client;
+    GetClientRect(input, &client);
+    int size = MulDiv(20, (int)GetDpiForWindow(input), 96);
+    size = size < client.bottom ? size : client.bottom;
+    int middle = client.bottom / 2;
+    RECT mark = {client.right - size, middle - size / 2, client.right, middle - size / 2 + size};
+    HDC dc = GetDC(input);
+    uint64_t hash = favorite_pixel_hash(dc, mark);
+    *centre = GetPixel(dc, (mark.left + mark.right) / 2, (mark.top + mark.bottom) / 2);
+    *ground = GetPixel(dc, mark.left + 1, mark.top + 1);
+    ReleaseDC(input, dc);
+    return hash;
+}
+
+static void filter_mark_settle(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    pump(window);
+    for (unsigned at = 0; at < 100 && folio_state_index_filter_pending(fixture->state); ++at)
+        folio_window_continue_idle_work(window);
+    pump(window);
+    UpdateWindow(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
+}
+
+static void filter_mark_needs_a_term(struct native_fixture *_Nonnull fixture)
+{
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "filter mark fixture");
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    filter_mark_settle(window, fixture);
+    COLORREF centre = 0, ground = 0;
+    uint64_t empty = filter_mark_pixels(input, &centre, &ground);
+    invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
+    filter_mark_settle(window, fixture);
+    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES &&
+                folio_state_filtering(fixture->state) &&
+                filter_mark_pixels(input, &centre, &ground) == empty,
+            "the favorites scope alone leaves the empty search field without a clear mark");
+    require(SetWindowTextW(input, L"a"), "type a term under the favorites scope");
+    filter_mark_settle(window, fixture);
+    uint64_t marked = filter_mark_pixels(input, &centre, &ground);
+    require(marked != empty && centre != ground, "a term shows the clear mark");
+    require(SetWindowTextW(input, L""), "empty the term under the favorites scope");
+    filter_mark_settle(window, fixture);
+    require(folio_state_filtering(fixture->state) &&
+                filter_mark_pixels(input, &centre, &ground) == empty,
+            "emptying the term erases the mark while the favorites scope stays");
+    require(SetWindowTextW(input, L"a"), "type the term again");
+    filter_mark_settle(window, fixture);
+    RECT client;
+    GetClientRect(input, &client);
+    LPARAM at = MAKELPARAM(client.right - 4, client.bottom / 2);
+    SendMessageW(input, WM_LBUTTONDOWN, MK_LBUTTON, at);
+    SendMessageW(input, WM_LBUTTONUP, 0, at);
+    filter_mark_settle(window, fixture);
+    require(GetWindowTextLengthW(input) == 0 &&
+                folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES &&
+                filter_mark_pixels(input, &centre, &ground) == empty,
+            "a press on the mark empties the term, keeps the scope and removes the mark");
+    invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
+    filter_mark_settle(window, fixture);
+    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL, "back to every note");
+    printf("filter-mark empty=%llx marked=%llx\n", (unsigned long long)empty,
+           (unsigned long long)marked);
+    folio_window_destroy(window);
+}
+
 static void run_favorites_ui(struct native_fixture *_Nonnull fixture)
 {
     prepare_favorites(fixture);
     header_count_units(fixture);
+    filter_mark_needs_a_term(fixture);
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,
