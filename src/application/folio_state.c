@@ -130,6 +130,7 @@ struct folio_state
     struct note_tags
         *_Nullable index_tags; /* Omitted means no tag restriction, independent of catalog. */
     enum tag_match_mode tag_mode;
+    uint64_t tag_revision; /* index_tags を持ち替えるたびに進む（#1199） */
     struct tag_catalog *_Nullable catalog;
     enum tag_catalog_status catalog_status;
     struct tag_edit_snapshot *_Nullable tag_edit;
@@ -4929,6 +4930,7 @@ static void cancel_index_request(struct folio_state *_Nonnull state)
     state->index_request = nullptr;
     note_tags_destroy(state->index_tags);
     state->index_tags = nullptr;
+    state->tag_revision += 1;
     state->tag_mode = TAG_MATCH_ALL;
 }
 
@@ -4992,6 +4994,7 @@ static void adopt_tag_query(struct folio_state *_Nonnull state, struct note_tags
     utf8_text_destroy(state->index_request);
     note_tags_destroy(state->index_tags);
     state->index_tags = tags;
+    state->tag_revision += 1;
     state->tag_mode = mode;
     state->index_request = term;
     state->scroll = 0;
@@ -5032,6 +5035,27 @@ const struct note_tags *_Nullable folio_state_tag_filter(const struct folio_stat
 enum tag_match_mode folio_state_tag_match_mode(const struct folio_state *_Nonnull state)
 {
     return state->tag_mode;
+}
+
+uint64_t folio_state_tag_filter_revision(const struct folio_state *_Nonnull state)
+{
+    return state->tag_revision;
+}
+
+enum folio_state_outcome folio_state_clear_conditions(struct folio_state *_Nonnull state)
+{
+    struct note_tags *_Nullable empty = nullptr;
+    if (note_tags_empty(&empty) != NOTE_TAGS_READY)
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    enum folio_state_outcome outcome = folio_state_set_tag_filter(state, empty, TAG_MATCH_ALL);
+    note_tags_destroy(empty);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        folio_state_set_note_scope(state, NOTE_SCOPE_ALL);
+    }
+    return outcome;
 }
 
 /* 完成するまで採用せず、最新の要求だけを既存build/adoptへ渡す。 */

@@ -701,6 +701,15 @@ folio_state_tag_catalog_status(const struct folio_state *_Nonnull state);
     const struct folio_state *_Nonnull state);
 [[nodiscard]] enum tag_match_mode
 folio_state_tag_match_mode(const struct folio_state *_Nonnull state);
+/* タグの条件（folio_state_tag_filter が貸す集まり）を持ち替えるたびに進む番号。UI は、タグごとの
+ * 札の同一性（何番目の札が、どのタグか）をこの番号で確かめる（#1199・ADR0122）。条件が非同期の
+ * 失敗で外れたときも進む。 */
+[[nodiscard]] uint64_t folio_state_tag_filter_revision(const struct folio_state *_Nonnull state);
+/* 絞り込みの札の「解除」（#1199・ADR0122）。タグの条件を空にして「すべて含む」へ戻し、表示の範囲を
+ * 「すべて」へ戻す。検索語は残す。タグの条件を外せなかったとき（保存の同期・確保の失敗）は、
+ * 範囲も変えずに、その結果を返す。ノートは編集も保存もしない。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_clear_conditions(struct folio_state *_Nonnull state);
 /* 一回最大一ノートread後、本文が完成済みなら65536比較workまでmatchingを継続する。
  * 最初のmatching継続はcount/build作成とworkを同じcallで行い、count0は即finish。
  * 未読/不正本文は旧copyも除く。OOM/先行同期失敗は要求を止め、完成時だけ最新語の結果を採用。

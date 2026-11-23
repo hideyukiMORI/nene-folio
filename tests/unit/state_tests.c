@@ -10107,6 +10107,45 @@ static void verify_tag_filter_clearing(void)
     folio_state_destroy(state);
 }
 
+/* #1199 / ADR0122: 絞り込みの札の「解除」。タグの条件と表示の範囲を外し、検索語は残す。 */
+static void verify_conditions_clearing(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tags *both = selected_tags(2);
+    uint64_t revision = folio_state_tag_filter_revision(state);
+    require(folio_state_clear_conditions(state) == FOLIO_STATE_READY &&
+                !folio_state_filtering(state) && folio_state_note_scope(state) == NOTE_SCOPE_ALL,
+            "clearing with no condition leaves an unfiltered index");
+    require(folio_state_tag_filter_revision(state) != revision,
+            "every replacement of the tag conditions advances their revision");
+    revision = folio_state_tag_filter_revision(state);
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_set_tag_filter(state, both, TAG_MATCH_ANY) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY,
+            "a text term with two tags in ANY mode");
+    require(folio_state_tag_filter_revision(state) != revision,
+            "setting tags advances the revision");
+    revision = folio_state_tag_filter_revision(state);
+    folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
+    require(folio_state_tag_filter_revision(state) == revision,
+            "the scope does not touch the tag conditions' revision");
+    require(folio_state_clear_conditions(state) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY,
+            "clear the favorites scope and the tags");
+    const struct note_tags *after = folio_state_tag_filter(state);
+    require(folio_state_note_scope(state) == NOTE_SCOPE_ALL &&
+                (after == nullptr || note_tags_count(after) == 0) &&
+                folio_state_tag_match_mode(state) == TAG_MATCH_ALL,
+            "the scope is ALL, no tag is selected and the mode is back to ALL");
+    require(same_text(folio_state_index_filter_term(state), "needle") &&
+                folio_state_index_filter_count(state) == 1,
+            "the text term stays and still filters");
+    require(folio_state_tag_filter_revision(state) != revision, "clearing advances the revision");
+    note_tags_destroy(both);
+    folio_state_destroy(state);
+}
+
 static void verify_tag_filter_save(void)
 {
     struct persistence_adapter adapter = tagged_adapter();
@@ -10143,6 +10182,8 @@ static bool tag_filter_allocation(size_t nth, const struct note_tags *_Nonnull r
     allocation_probe_fail_at(nth);
     enum folio_state_outcome accepted = folio_state_set_tag_filter(state, red, TAG_MATCH_ALL);
     enum folio_state_outcome outcome = accepted;
+    /* #1199: 受理した直後の、タグの条件の改訂の番号。 */
+    uint64_t accepted_revision = folio_state_tag_filter_revision(state);
     if (accepted == FOLIO_STATE_READY)
         outcome = finish_test_index_filter(state);
     allocation_probe_fail_at(0);
@@ -10157,6 +10198,10 @@ static bool tag_filter_allocation(size_t nth, const struct note_tags *_Nonnull r
         require(folio_state_tag_filter(state) == nullptr && !folio_state_filtering(state) &&
                     same_text(folio_state_index_filter_term(state), ""),
                 "asynchronous failure clears the whole latest query, including tag conditions");
+    if (accepted == FOLIO_STATE_READY && outcome == FOLIO_STATE_OUT_OF_MEMORY)
+        require(folio_state_tag_filter_revision(state) != accepted_revision,
+                "dropping the tag conditions after an asynchronous failure advances their "
+                "revision");
     require(folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
                 test_index_filter_complete(state, u"two", 3) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 0,
@@ -10614,6 +10659,7 @@ void run_tag_filter_state_tests(void)
     verify_tag_filter_queries();
     verify_empty_tag_mode();
     verify_tag_filter_clearing();
+    verify_conditions_clearing();
     verify_tag_filter_save();
     verify_tag_catalog_lifecycle();
     verify_tag_catalog_unavailable();
