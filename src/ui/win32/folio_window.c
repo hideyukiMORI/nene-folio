@@ -9430,8 +9430,6 @@ static void apply_theme(struct folio_window *_Nonnull self, enum folio_theme_cho
 static void relanguage_window(struct folio_window *_Nonnull self)
 {
     refresh_help_fonts(self, GetDpiForWindow(self->handle));
-    refresh_word_font(self, GetDpiForWindow(self->handle));
-    refresh_part_metrics(self, GetDpiForWindow(self->handle));
     if (self->drawer != nullptr)
     {
         drawer_window_refont(self->drawer);
