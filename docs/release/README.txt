@@ -35,6 +35,7 @@ Do not use an older binary while data/.rename.json contains unfinished work.
 This application is distributed under the MIT license in LICENSE.
 Third-party notices are in THIRD_PARTY_NOTICES.txt.
 Bundled Noto fonts use SIL Open Font License 1.1 in fonts/LICENSE-Noto-CJK.txt.
+Bundled IBM Plex Mono uses SIL Open Font License 1.1 in fonts/LICENSE-IBM-Plex-Mono.txt.
 Font origins and hashes are recorded in fonts/manifest.json.
 
 This is an unsigned portable package.

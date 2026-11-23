@@ -113,6 +113,18 @@ static void verify_font_pick(void)
         require(ui_font_pick(language, false, false) == ui_font_fallback_face(FOLIO_LANGUAGE_JA),
                 "the Japanese fallback is last");
     }
+    /* #1217: 等幅は、同梱の IBM Plex Mono → Windows の Consolas の 2 段。 */
+    expect_face_text(ui_font_mono_face());
+    expect_face_text(ui_font_mono_fallback_face());
+    require(same_text(ui_font_mono_face(), "IBM Plex Mono"), "the bundled monospace face");
+    require(same_text(ui_font_mono_fallback_face(), "Consolas"), "the monospace fallback");
+    require(ui_font_mono_pick(true) == ui_font_mono_face(), "the bundled monospace face is first");
+    require(ui_font_mono_pick(false) == ui_font_mono_fallback_face(),
+            "without the bundle the monospace fallback is used");
+    require(ui_font_mono_size(11, true) == 10 && ui_font_mono_size(13, true) == 12,
+            "the bundled monospace face is used one size down");
+    require(ui_font_mono_size(11, false) == 11 && ui_font_mono_size(13, false) == 13,
+            "the fallback keeps the size the layout was made for");
 }
 
 /* 書いた文書をもう一度読んで同じ値になるか（キーの順序と整形も版 3 の形のまま）。 */

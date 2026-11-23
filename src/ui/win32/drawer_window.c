@@ -70,7 +70,6 @@ struct drawer_window
 };
 
 static const wchar_t class_name[] = L"NeNeFolioDrawer";
-static const wchar_t mono_face[] = L"Consolas";
 /* 1 回の描画で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行もカテゴリ名・ノート名
  * （255 バイト）もここに収まる。収まらなければ何も描かない。 */
 constexpr size_t draw_unit_limit = 1024;
@@ -145,7 +144,7 @@ static void release_fonts(struct drawer_window *_Nonnull self)
     release_font(&self->unit_font);
 }
 
-/* 文字の書体は言語ごとの face（ADR 0032 の決定 4）。番号の等幅は Consolas のまま。
+/* 文字の書体は言語ごとの face（ADR 0032 の決定 4）。番号の等幅は ui_face_mono（#1217）。
  * DPI が変わったときと言語を採り直したときの両方がここを通る（第 2 の経路を作らない）。 */
 static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
 {
@@ -154,7 +153,9 @@ static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
     release_fonts(self);
     self->category_font = create_font(dpi, base_category_font, FW_BOLD, face);
     self->note_font = create_font(dpi, base_note_font, FW_NORMAL, face);
-    self->mono_font = create_font(dpi, base_mono_font, FW_NORMAL, mono_face);
+    wchar_t mono[LF_FACESIZE];
+    int mono_size = ui_face_mono(mono, base_mono_font);
+    self->mono_font = create_font(dpi, mono_size, FW_NORMAL, mono);
     self->unit_font = create_font(dpi, base_mono_font, FW_NORMAL, face);
 }
 

@@ -143,7 +143,7 @@
 | 外観更新の延期・未適用 | 本文投入/終了処理中の通知と再着色の再試行要求 | ui/win32（`folio_window`） | 安全なdispatchへ一つの通知として戻し、同じpaletteでも失敗分は再試行する。新対象の投入成功後にも未適用色を揃える（ADR0057） |
 | 再着色が停止したUndo | 再開未完了とその間の編集入力停止 | ui/win32（`note_pane`） | 自分が停止したUndoのResume成功後だけ再Suspend/編集/投入を許す。本文を保持し、次対象投入を拒否した時点ではUNAVAILABLEへ渡す（ADR0057） |
 | 利用者に見える文言 | 表示する語・句・1 行 | core（`ui_text` の表 1 か所） | ID で引くだけ。置換子の組み立ても core（`ui_text_format`）で、言語は application （`folio_state_language`）が渡す。ui / app は文言を持たない（C-018 / CNF-010）。表は言語ごとの列を持ち、列の網羅は CNF-011 が守る |
-| UI の書体の face | 言語ごとのフォント名 | core（`ui_font` の表。同梱の face は `ui_font.c`、OS の退避の face は `ui_font_fallback.c`。#42 で差し替えた） | `ui_font_face(language)` で引くだけ。ui は同梱 → その言語の退避 → 日本語の退避の順に実在を確かめて UTF-16 へ広げる（`ui_face`・順は core の `ui_font_pick`・ADR 0036 の決定 4）、core の `markdown_rtf` は fonttbl へ入れる。主窓の自前描画の等幅（Consolas）は言語で変えない（ADR 0032 の決定 4） |
+| UI の書体の face | 言語ごとのフォント名 | core（`ui_font` の表。同梱の face は `ui_font.c`、OS の退避の face は `ui_font_fallback.c`。#42 で差し替えた） | `ui_font_face(language)` で引くだけ。ui は同梱 → その言語の退避 → 日本語の退避の順に実在を確かめて UTF-16 へ広げる（`ui_face`・順は core の `ui_font_pick`・ADR 0036 の決定 4）、core の `markdown_rtf` は fonttbl へ入れる。主窓の自前描画と左の欄の等幅は言語で変えない: 同梱の IBM Plex Mono、無ければ Consolas（core の `ui_font_mono_*`・ui の `ui_face_mono`。#1217 / ADR 0036 の 2026-11-23 の補正）。ノートの中のコード（RTF の `\f1`）は Consolas |
 | 同梱の書体の登録 | exe の隣の `fonts\` の `*.otf` / `*.ttf` を `FR_PRIVATE` で登録した組 | app の入口（`font_bundle`） | 起動と終了の 1 回ずつ。窓を作る前に `font_bundle_register`、メッセージループのあとに `font_bundle_destroy`。結果の判定は core の `font_bundle_verdict`、知らせるのは窓の最初の描画のあとの 1 回（ADR 0036 の決定 3・5） |
 
 同じ事実を 2 つの区分に独立して持たない。派生値は再計算するか、無効化を明示したキャッシュにする。

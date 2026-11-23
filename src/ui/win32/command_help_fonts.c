@@ -16,8 +16,10 @@ struct command_help_fonts command_help_fonts_create(enum folio_language language
 {
     wchar_t face[LF_FACESIZE];
     ui_face_for(language, face);
+    wchar_t mono[LF_FACESIZE];
+    int key = ui_face_mono(mono, 13);
     return (struct command_help_fonts){.body = create_font(face, 14, FW_NORMAL, dpi),
-                                       .key = create_font(L"Consolas", 13, FW_NORMAL, dpi),
+                                       .key = create_font(mono, key, FW_NORMAL, dpi),
                                        .heading = create_font(face, 14, FW_SEMIBOLD, dpi)};
 }
 
