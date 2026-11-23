@@ -9279,6 +9279,57 @@ static void breadcrumb_word_font(struct native_fixture *_Nonnull fixture,
             "the breadcrumb is sized for the note's name in the language's face");
 }
 
+/* #1222: the status row draws its words in the language's bundled face and the values put into
+ * the sentence (here the two key names) in the monospace face. The keys' part is right-aligned;
+ * its leftmost drawn pixel sits one line width left of its rightmost one, and the 10 DIP beyond
+ * that are empty (the note's part ends at least 24 DIP before it). */
+static void status_keys_fonts(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    wchar_t mono[LF_FACESIZE];
+    int mono_size = ui_face_mono(mono, 11);
+    struct header_font words = {face, 11, FW_NORMAL}, values = {mono, mono_size, FW_NORMAL};
+    /* Spaces are drawn in the monospace face too, so the gaps match the key names' advance. */
+    int expected =
+        header_text_width(root, L"F1 ", values) + header_text_width(root, L"ヘルプ", words) +
+        header_text_width(root, L"  ", values) + header_text_width(root, L"·", words) +
+        header_text_width(root, L"  Ctrl+P ", values) + header_text_width(root, L"コマンド", words);
+    int all_mono = header_text_width(root, L"F1 ヘルプ  ·  Ctrl+P コマンド", values);
+    struct accessible_item notice = {.kind = ACCESSIBLE_NOTICE};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &notice, &view) == S_OK && !view.offscreen,
+            "the status row is visible");
+    MapWindowPoints(nullptr, root, (POINT *)&view.bounds, 2);
+    RECT client;
+    GetClientRect(root, &client);
+    HDC source = GetDC(root), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(root, dc, PW_CLIENTONLY), "render the real status row");
+    COLORREF ground = GetPixel(dc, 2, client.bottom - 12);
+    int top = view.bounds.top + 2, bottom = view.bounds.bottom;
+    int right = client.right;
+    while (right > 0 && line_ink(dc, (RECT){right - 1, top, right, bottom}, ground) == 0)
+        --right;
+    int reach = 0;
+    for (int back = 1; back <= expected + MulDiv(14, dpi, 96); ++back)
+        if (line_ink(dc, (RECT){right - back, top, right - back + 1, bottom}, ground) != 0)
+            reach = back;
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(root, source);
+    printf("status-keys drawn=%d expected=%d all-mono=%d dpi=%d\n", reach, expected, all_mono, dpi);
+    /* Three pixels: the first and the last glyph's side bearings. Words in the monospace face
+     * are four pixels wider at 120 DPI, values in the language's face eleven narrower. */
+    require(reach >= expected - 3 && reach <= expected + 3,
+            "the keys of the status row are drawn as words in the language's face and key names "
+            "in the monospace face");
+}
+
 /* #1215: the count says what it counts ("ノート 2"), also while a filter is on ("ノート 0 / 2").
  * Where the unit does not fit, only the numbers are drawn. The narrow English cases follow the
  * same rule with the measured room, whichever way it falls at this DPI. */
@@ -9299,6 +9350,7 @@ static void header_count_units(struct native_fixture *_Nonnull fixture)
             "the default drawer has room for the unit");
     word_font_parts(window);
     breadcrumb_word_font(fixture, window);
+    status_keys_fonts(window);
     invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
     pump(window);
     line.number = L"0 / 2";
