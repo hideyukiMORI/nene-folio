@@ -15,8 +15,8 @@ enum icon_paint_kind : unsigned char
     ICON_PAINT_LAYOUT_BOTH,
     ICON_PAINT_LAYOUT_NOTE,
     ICON_PAINT_SETTINGS,      /* 常設の設定の歯車 */
-    ICON_PAINT_FOLD_COLLAPSE, /* 展開中のカテゴリ行の − */
-    ICON_PAINT_FOLD_EXPAND,   /* 折り畳み中のカテゴリ行の + */
+    ICON_PAINT_FOLD_COLLAPSE, /* 展開中のカテゴリ行の左の ▾ */
+    ICON_PAINT_FOLD_EXPAND,   /* 折り畳み中のカテゴリ行の左の ▸ */
     ICON_PAINT_ADD,           /* 新しいカテゴリを作る + */
     ICON_PAINT_NEW_NOTE,      /* 紙の輪郭と追加記号（共通ヘッダーの新規ノート） */
     ICON_PAINT_SELECTION,     /* 設定画面のいまの値の行に付く印 */
