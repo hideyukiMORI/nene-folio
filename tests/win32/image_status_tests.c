@@ -4655,6 +4655,32 @@ static void submit_ex(struct folio_window *_Nonnull window, const wchar_t *_Nonn
     pump(window);
 }
 
+/* #1199: the heading row's tooltip is the UIA name of the count, and it ends with the number of
+ * notes the state reports now (the sentence is rewritten when the number changes). */
+static void index_count_tooltip(struct folio_window *_Nonnull window,
+                                const struct folio_state *_Nonnull state)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    HWND tooltip = status_tooltip(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    wchar_t text[1024] = {0};
+    TOOLINFOW tool = {.cbSize = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM),
+                      .hwnd = drawer,
+                      .uId = ACCESSIBLE_INDEX_COUNT,
+                      .lpszText = text};
+    require(tooltip != nullptr, "the drawer has a native tooltip");
+    SendMessageW(tooltip, TTM_GETTEXTW, 1024, (LPARAM)&tool);
+    struct accessible_item item = {.kind = ACCESSIBLE_INDEX_COUNT};
+    struct accessible_view view = {0};
+    wchar_t tail[32];
+    require(swprintf(tail, 32, L" %zu", folio_state_note_count(state)) > 0, "the count fits");
+    size_t length = wcslen(text);
+    size_t end = wcslen(tail);
+    require(folio_window_accessible_read(window, &item, &view) == S_OK &&
+                wcscmp(text, view.name) == 0 && length > end &&
+                wcscmp(text + length - end, tail) == 0,
+            "the heading tooltip and the UIA count name the current number of notes");
+}
+
 static void save_as_command(struct folio_window *_Nonnull window,
                             struct native_fixture *_Nonnull fixture, char name[64])
 {
@@ -4675,6 +4701,7 @@ static void save_as_command(struct folio_window *_Nonnull window,
     require(!IsWindowVisible(input) && folio_state_note_count(fixture->state) == count + 1 &&
                 strcmp(folio_state_document_name(fixture->state), name) == 0,
             "Ex creates and selects exactly one new note and closes");
+    index_count_tooltip(window, fixture->state);
     expect_name_operation_body(window, &before);
 }
 
@@ -8866,7 +8893,9 @@ static void favorite_tooltips(struct folio_window *_Nonnull window)
 {
     HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
     HWND tooltip = status_tooltip(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
-    const enum accessible_kind kinds[] = {ACCESSIBLE_SCOPE_ALL, ACCESSIBLE_SCOPE_FAVORITES};
+    /* #1199: the heading row's count is a tooltip and a UIA text with the same sentence. */
+    const enum accessible_kind kinds[] = {ACCESSIBLE_SCOPE_ALL, ACCESSIBLE_SCOPE_FAVORITES,
+                                          ACCESSIBLE_INDEX_COUNT};
     for (size_t at = 0; at < sizeof kinds / sizeof kinds[0]; ++at)
     {
         wchar_t text[1024] = {0};
@@ -8887,6 +8916,21 @@ static void favorite_tooltips(struct folio_window *_Nonnull window)
         require(EqualRect(&tool.rect, &view.bounds),
                 "tooltip and UIA share the visible scope rectangle");
     }
+    struct accessible_item counts = {.kind = ACCESSIBLE_INDEX_COUNT};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &counts, &view) == S_OK &&
+                wcscmp(view.name, L"カテゴリ 2 ・ ノート 2") == 0 && !view.focusable,
+            "the heading row names the numbers of categories and notes, and takes no focus");
+    struct accessible_item plus = {.kind = ACCESSIBLE_NEW_CATEGORY};
+    struct accessible_item tree = {.kind = ACCESSIBLE_TREE};
+    struct accessible_view plus_view = {0};
+    struct accessible_view tree_view = {0};
+    require(folio_window_accessible_read(window, &plus, &plus_view) == S_OK &&
+                folio_window_accessible_read(window, &tree, &tree_view) == S_OK &&
+                view.bounds.left > tree_view.bounds.left &&
+                view.bounds.right < plus_view.bounds.left && view.bounds.top < view.bounds.bottom &&
+                view.bounds.bottom <= tree_view.bounds.top,
+            "the count's rectangle is the heading row, left of the new-category button");
 }
 
 static void favorite_edit_roundtrip(struct folio_window *_Nonnull window,

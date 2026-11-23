@@ -34,6 +34,7 @@ enum accessible_kind : unsigned char
     ACCESSIBLE_SCOPE_ALL,
     ACCESSIBLE_SCOPE_FAVORITES,
     ACCESSIBLE_TAG_FILTER,
+    ACCESSIBLE_INDEX_COUNT, /* 見出しの行（「カテゴリ」と数）。名前は「カテゴリ k ・ ノート n」 */
     ACCESSIBLE_NEW_CATEGORY,
     ACCESSIBLE_TREE,
     ACCESSIBLE_CATEGORY,

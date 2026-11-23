@@ -459,6 +459,8 @@ static const struct
                               ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_SCOPE_FAVORITES] = {ACCESSIBLE_SCOPE_GROUP, UI_TEXT_TITLE_FAVORITES, true,
                                     UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
+    [ACCESSIBLE_INDEX_COUNT] = {ACCESSIBLE_DRAWER, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
+                                ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_NEW_CATEGORY] = {ACCESSIBLE_DRAWER, UI_TEXT_COMMAND_NEW_CATEGORY, true,
                                  UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_TREE] = {ACCESSIBLE_DRAWER, UI_TEXT_TITLE_CATEGORIES, true, UI_TEXT_EMPTY,
@@ -14411,9 +14413,23 @@ static void refresh_tooltip_style(const struct folio_window *_Nonnull self)
 
 /* ドロワーの固定操作のtool。名前はUIAと同じ表から引き、矩形はドロワーのclient
  * 座標。 文言を固定で渡すので、言語と配置が変わるたびに描き直しの経路から写し直す。 */
-static const enum accessible_kind drawer_tools[] = {ACCESSIBLE_SCOPE_ALL,
-                                                    ACCESSIBLE_SCOPE_FAVORITES,
-                                                    ACCESSIBLE_TAG_FILTER, ACCESSIBLE_NEW_CATEGORY};
+static const enum accessible_kind drawer_tools[] = {
+    ACCESSIBLE_SCOPE_ALL, ACCESSIBLE_SCOPE_FAVORITES, ACCESSIBLE_TAG_FILTER, ACCESSIBLE_INDEX_COUNT,
+    ACCESSIBLE_NEW_CATEGORY};
+
+/* 見出しの行の説明と、読み上げの数の要素の名前。「カテゴリ k ・ ノート n」（#1199・ADR0122）。
+ * 数は application から取る（UI は数えない・ARC-004）。絞り込み中も全体の数。 */
+static void index_counts_name(const struct folio_window *_Nonnull self, char *_Nonnull out)
+{
+    struct ui_text_request request = {.id = UI_TEXT_INDEX_COUNTS,
+                                      .language = folio_state_language(self->state),
+                                      .k = folio_state_category_count(self->state),
+                                      .n = folio_state_note_count(self->state)};
+    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+    {
+        out[0] = '\0';
+    }
+}
 
 static TOOLINFOW drawer_tool(const struct folio_window *_Nonnull self, enum accessible_kind kind,
                              char16_t *_Nonnull text)
@@ -14427,6 +14443,12 @@ static TOOLINFOW drawer_tool(const struct folio_window *_Nonnull self, enum acce
     text[0] = u'\0';
     (void)wide_units(
         ui_text_line(accessible_controls[kind].label, folio_state_language(self->state)), text);
+    if (kind == ACCESSIBLE_INDEX_COUNT)
+    {
+        char counts[draw_unit_limit];
+        index_counts_name(self, counts);
+        (void)wide_units(counts, text);
+    }
     struct accessible_item item = {.kind = kind};
     struct accessible_view view = {0};
     if (drawer != nullptr && drawer_visible(self) &&
@@ -18732,6 +18754,23 @@ static bool tag_entry_name(const struct folio_window *_Nonnull self, enum access
     return true;
 }
 
+/* 名前を、いまの状態から 1 行に組み立てる部品（表示を選ぶ釦と、見出しの行の数）。 */
+static bool formatted_part_name(const struct folio_window *_Nonnull self, enum accessible_kind kind,
+                                char *_Nonnull out)
+{
+    if (kind == ACCESSIBLE_LAYOUT_CHOOSER)
+    {
+        layout_chooser_name(self, out);
+        return true;
+    }
+    if (kind == ACCESSIBLE_INDEX_COUNT)
+    {
+        index_counts_name(self, out);
+        return true;
+    }
+    return false;
+}
+
 static void accessible_name(const struct folio_window *_Nonnull self, enum accessible_kind kind,
                             char16_t *_Nonnull out)
 {
@@ -18748,9 +18787,8 @@ static void accessible_name(const struct folio_window *_Nonnull self, enum acces
         status_text(self, body);
         line = body;
     }
-    if (kind == ACCESSIBLE_LAYOUT_CHOOSER)
+    if (formatted_part_name(self, kind, body))
     {
-        layout_chooser_name(self, body);
         line = body;
     }
     if (kind == ACCESSIBLE_BODY && title.any)
