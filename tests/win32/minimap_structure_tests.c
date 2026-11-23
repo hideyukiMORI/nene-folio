@@ -317,12 +317,12 @@ static void syntax_palette(struct note_pane *_Nonnull pane, const char *_Nonnull
                                           palette.code_background.green,
                                           palette.code_background.blue),
             "label uses nine points and the same code background in every palette");
-    require((format.dwMask & CFM_FACE) != 0 && wcscmp(format.szFaceName, L"Consolas") != 0,
+    require((format.dwMask & CFM_FACE) != 0 && wcscmp(format.szFaceName, L"IBM Plex Mono") != 0,
             "label uses the proportional body face");
     token_color(handle, L"value", palette.code_text);
     SendMessageW(handle, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&format);
-    require((format.dwMask & CFM_FACE) != 0 && wcscmp(format.szFaceName, L"Consolas") == 0,
-            "code body restores Consolas after the label");
+    require((format.dwMask & CFM_FACE) != 0 && wcscmp(format.szFaceName, L"IBM Plex Mono") == 0,
+            "code body restores the bundled monospace face after the label");
     token_color(handle, L"42", palette.code_number);
     token_color(handle, L"// comment", palette.code_comment);
     token_color(handle, L"\"{日本語}\\path\"", palette.code_string);

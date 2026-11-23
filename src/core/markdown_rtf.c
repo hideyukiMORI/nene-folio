@@ -7,6 +7,7 @@
 #include "rtf_text.h"
 #include "text_buffer.h"
 #include "theme_palette.h"
+#include "ui_font.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +22,11 @@ struct markdown_rtf
 /* フォント 0 が本文、1 がコード。色は 1 本文・2 見出し・3 薄字・4 リンク（インラインコードも）・
  * 5 コード文字・6 コード地・7 keyword・8 string・9 comment・10 number。単位は半ポイント。 */
 static const char document_header_open[] = "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil ";
-static const char document_header_close[] = ";}{\\f1\\fmodern Consolas;}}";
+/* コードの書体（fonttbl の 1）は、同梱の等幅の face（#1223）。\fmodern は、その face が無い
+ * ときに RichEdit が等幅の系統から代わりを選ぶための手がかり。大きさ（\fs20）は Consolas の
+ * ときのまま: コードは折り返す文で、幅を決め打ちした所が無く、中の日本語の大きさも変えない。 */
+static const char document_header_code[] = ";}{\\f1\\fmodern ";
+static const char document_header_close[] = ";}}";
 /* #975 / ADR0114: RichEdit keeps a paragraph whose style is named "heading N" as its built-in
  * heading style, which the pane reads back per paragraph. No text is added for it. */
 static const char document_styles[] =
@@ -66,6 +71,8 @@ static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette p
     /* fonttbl の face は実行時に挟む。文言ではないので ui_text には置かない（決定 5）。 */
     text_buffer_append_text(out, document_header_open);
     text_buffer_append_text(out, face);
+    text_buffer_append_text(out, document_header_code);
+    text_buffer_append_text(out, ui_font_mono_face());
     text_buffer_append_text(out, document_header_close);
     text_buffer_append_text(out, "{\\colortbl;");
     for (size_t index = 0; index < sizeof colors / sizeof colors[0]; ++index)
