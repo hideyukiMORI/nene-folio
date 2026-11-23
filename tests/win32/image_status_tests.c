@@ -48,6 +48,7 @@
 #include "text_buffer.h"
 #include "transfer_adapter.h"
 #include "ui_face.h"
+#include "ui_part.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "utf16_text.h"
@@ -9214,6 +9215,31 @@ static bool expect_header_count(struct folio_window *_Nonnull window, struct hea
     return with_unit;
 }
 
+/* #1222: the main window draws the names of its buttons in the language's bundled face, not in
+ * the monospace face. The "new note" button is as wide as its name measured in that face (the
+ * name is not ASCII, so no tracking is added), rounded the way every command part is. */
+static void word_font_parts(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    UINT dpi = GetDpiForWindow(root);
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    int name = header_text_width(root, L"新しいノート", (struct header_font){face, 11, FW_NORMAL});
+    wchar_t mono[LF_FACESIZE];
+    int mono_size = ui_face_mono(mono, 11);
+    int linked =
+        header_text_width(root, L"新しいノート", (struct header_font){mono, mono_size, FW_NORMAL});
+    struct accessible_item button = {.kind = ACCESSIBLE_NEW_NOTE};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &button, &view) == S_OK && !view.offscreen,
+            "the new note button is visible");
+    int width = view.bounds.right - view.bounds.left;
+    printf("word-font new-note width=%d word=%d mono=%d dpi=%u\n", width,
+           ui_part_command_width(name, true, dpi), ui_part_command_width(linked, true, dpi), dpi);
+    require(width == ui_part_command_width(name, true, dpi),
+            "the new note button is sized for its name in the language's face");
+}
+
 /* #1215: the count says what it counts ("ノート 2"), also while a filter is on ("ノート 0 / 2").
  * Where the unit does not fit, only the numbers are drawn. The narrow English cases follow the
  * same rule with the measured room, whichever way it falls at this DPI. */
@@ -9232,6 +9258,7 @@ static void header_count_units(struct native_fixture *_Nonnull fixture)
     struct header_count line = {FOLIO_LANGUAGE_JA, L"カテゴリ", L"ノート", L"2"};
     require(expect_header_count(window, line, "the count carries its unit"),
             "the default drawer has room for the unit");
+    word_font_parts(window);
     invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
     pump(window);
     line.number = L"0 / 2";
