@@ -1016,8 +1016,13 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_SETTINGS_FAVORITES_FIRST] = {"お気に入りを先に表示", "Show favorites first",
                                           "优先显示收藏"},
     [UI_TEXT_TITLE_FAVORITES] = {"お気に入り", "Favorites", "收藏"},
-    [UI_TEXT_SCOPE_GROUP] = {"表示範囲", "Show", "显示范围"},
-    [UI_TEXT_SCOPE_ALL] = {"すべて", "All", "全部"},
+    /* 左の欄の絞り込みの札（#1199・ADR0122）。群の名前、解除の字、解除の名前と説明。 */
+    [UI_TEXT_FILTER_GROUP] = {"絞り込み", "Filters", "筛选"},
+    [UI_TEXT_FILTER_CLEAR] = {"× 解除", "× Clear", "× 清除"},
+    [UI_TEXT_FILTER_CLEAR_NAME] = {"絞り込みを解除", "Clear filters", "清除筛选"},
+    /* タグの面を開く札の字。右の ▾ は絵で描く。名前と説明は別（タグで絞り込み）。 */
+    [UI_TEXT_FILTER_TAGS] = {"# タグ", "# Tags", "# 标签"},
+    [UI_TEXT_FILTER_TAGS_COUNT] = {"# タグ {n}", "# Tags {n}", "# 标签 {n}"},
     [UI_TEXT_EMPTY_FAVORITES] = {"お気に入りはありません。\nノートの星で追加できます。",
                                  "No favorites yet.\nAdd one with the star beside a note.",
                                  "还没有收藏。\n点击笔记旁的星标即可添加。"},

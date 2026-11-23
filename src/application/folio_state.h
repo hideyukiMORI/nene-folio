@@ -705,6 +705,11 @@ folio_state_tag_match_mode(const struct folio_state *_Nonnull state);
  * 札の同一性（何番目の札が、どのタグか）をこの番号で確かめる（#1199・ADR0122）。条件が非同期の
  * 失敗で外れたときも進む。 */
 [[nodiscard]] uint64_t folio_state_tag_filter_revision(const struct folio_state *_Nonnull state);
+/* 絞り込みの札の条件（表示の範囲が「すべて」でない、またはタグが 1 つ以上）が効いているか。
+ * 検索語は数えない。folio_state_clear_conditions が外すものと同じ（#1199・ADR0122）。 */
+[[nodiscard]] bool folio_state_conditions_active(const struct folio_state *_Nonnull state);
+/* 絞り込みの札の条件（表示の範囲が「すべて」でない、またはタグが 1 つ以上）が効いているか。
+ * 検索語は数えない。folio_state_clear_conditions が外すものと同じ（#1199・ADR0122）。 */
 /* 絞り込みの札の「解除」（#1199・ADR0122）。タグの条件を空にして「すべて含む」へ戻し、表示の範囲を
  * 「すべて」へ戻す。検索語は残す。タグの条件を外せなかったとき（保存の同期・確保の失敗）は、
  * 範囲も変えずに、その結果を返す。ノートは編集も保存もしない。 */

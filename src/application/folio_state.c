@@ -5042,6 +5042,12 @@ uint64_t folio_state_tag_filter_revision(const struct folio_state *_Nonnull stat
     return state->tag_revision;
 }
 
+bool folio_state_conditions_active(const struct folio_state *_Nonnull state)
+{
+    return state->note_scope != NOTE_SCOPE_ALL ||
+           (state->index_tags != nullptr && note_tags_count(state->index_tags) > 0);
+}
+
 enum folio_state_outcome folio_state_clear_conditions(struct folio_state *_Nonnull state)
 {
     struct note_tags *_Nullable empty = nullptr;
