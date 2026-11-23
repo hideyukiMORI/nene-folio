@@ -9240,6 +9240,43 @@ static void word_font_parts(struct folio_window *_Nonnull window)
             "the new note button is sized for its name in the language's face");
 }
 
+static int breadcrumb_width(struct folio_window *_Nonnull window)
+{
+    struct accessible_item crumb = {.kind = ACCESSIBLE_BREADCRUMB};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &crumb, &view) == S_OK && !view.offscreen,
+            "the breadcrumb is visible");
+    return view.bounds.right - view.bounds.left;
+}
+
+/* #1222: the breadcrumb measures the note's name in the language's bundled face. The two notes
+ * of the fixture are "one" and "two": the same number of letters, so in the monospace face (and
+ * with the tracking, which counts letters) the breadcrumb would be equally wide for both. In a
+ * proportional face it differs by exactly the difference of the two names. */
+static void breadcrumb_word_font(struct native_fixture *_Nonnull fixture,
+                                 struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    struct header_font words = {face, 11, FW_NORMAL};
+    int expected = header_text_width(root, L"two", words) - header_text_width(root, L"one", words);
+    int first = breadcrumb_width(window);
+    require(folio_state_select_note(fixture->state, 0, 1, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the second note");
+    pump(window);
+    int second = breadcrumb_width(window);
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the first note again");
+    pump(window);
+    printf("breadcrumb one=%d two=%d expected-difference=%d\n", first, second, expected);
+    require(expected != 0, "the two names differ in width in the language's face");
+    require(second - first == expected,
+            "the breadcrumb is sized for the note's name in the language's face");
+}
+
 /* #1215: the count says what it counts ("ノート 2"), also while a filter is on ("ノート 0 / 2").
  * Where the unit does not fit, only the numbers are drawn. The narrow English cases follow the
  * same rule with the measured room, whichever way it falls at this DPI. */
@@ -9259,6 +9296,7 @@ static void header_count_units(struct native_fixture *_Nonnull fixture)
     require(expect_header_count(window, line, "the count carries its unit"),
             "the default drawer has room for the unit");
     word_font_parts(window);
+    breadcrumb_word_font(fixture, window);
     invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
     pump(window);
     line.number = L"0 / 2";

@@ -3741,10 +3741,14 @@ static struct breadcrumb_layout breadcrumb_cells(const struct folio_window *_Non
     char digits[3];
     ordinal_label(title.ordinal, digits);
     int ordinal = measure_utf8(device, digits) + padding * 2;
+    /* 番号は等幅（呼び出し側が選んである）、カテゴリ名とノート名は言葉の書体で測る。描く側
+     * （draw_breadcrumb）と同じ書体（#1222）。 */
+    HGDIOBJ mono = SelectObject(device, word_font(self));
     int category =
         measure_utf8(device, breadcrumb_category(title, folio_state_language(self->state)));
     int note = measure_utf8(device, breadcrumb_note(title, folio_state_language(self->state))) +
                unsaved_mark_room(self);
+    SelectObject(device, mono);
     int budget = available - ordinal - padding * 4 - tip * 2;
     breadcrumb_room(budget < 0 ? 0 : budget, scale(base_breadcrumb_note, dpi), &category, &note);
     int category_width = category > 0 ? category + padding * 2 + tip : 0;
@@ -3841,7 +3845,8 @@ static RECT breadcrumb_rect(const struct folio_window *_Nonnull self)
                   cells.note.right < right ? cells.note.right : right, cells.ordinal.bottom};
 }
 
-/* 色面と文字は既存の幅割当を共有し、右の操作領域へ出さない（ADR 0017）。 */
+/* 色面と文字は既存の幅割当を共有し、右の操作領域へ出さない（ADR 0017）。書体は、番号が等幅、
+ * カテゴリ名とノート名が言葉の書体。選び直した書体は RestoreDC で元へ戻る。 */
 static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device, RECT caption)
 {
     struct pane_title_view title = folio_state_pane_title(self->state);
@@ -3863,6 +3868,7 @@ static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device
         draw_breadcrumb_segment(device, cells.category, cells.tip,
                                 self->palette.breadcrumb_background);
         SetTextColor(device, self->palette.breadcrumb_text);
+        SelectObject(device, word_font(self));
         draw_breadcrumb_label(device, breadcrumb_category(title, folio_state_language(self->state)),
                               cells.category, cells.padding + cells.tip);
     }
@@ -3873,7 +3879,10 @@ static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device
     SetTextColor(device, contrast ? self->palette.chip_text : folio_palette_ink(color));
     char digits[3];
     ordinal_label(title.ordinal, digits);
+    SelectObject(device, self->mono_font);
     draw_breadcrumb_label(device, digits, cells.ordinal, cells.padding);
+    /* ノート名（と、その幅から決める未保存の印の場所）は言葉の書体（#1222）。 */
+    SelectObject(device, word_font(self));
     /* 復旧待ちの言い換えはここ 1 か所だけが持つ。application は実名を返す（ADR 0022 の決定 2）。 */
     SetTextColor(device, !contrast && title.recovering == PANE_RECOVERY_NOTE
                              ? self->palette.selected_text
