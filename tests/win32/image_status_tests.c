@@ -9484,6 +9484,8 @@ static int filter_mark_shown(HWND input, const struct filter_mark *_Nonnull mark
 {
     RECT box = filter_mark_rect(input);
     HDC dc = GetDC(input);
+    /* A window whose pixels cannot be read would pass every "the mark is gone" check. */
+    require(GetPixel(dc, box.left, box.top) != CLR_INVALID, "the field's pixels can be read");
     int shown = 0;
     for (int y = 0; y < mark->size; ++y)
         for (int x = 0; x < mark->size; ++x)
@@ -9557,7 +9559,9 @@ static void filter_mark_needs_a_term(struct native_fixture *_Nonnull fixture)
             "a press on the mark empties the term, keeps the scope and removes the mark");
     invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
     filter_mark_settle(window, fixture);
-    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL, "back to every note");
+    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL &&
+                !folio_state_filtering(fixture->state),
+            "back to every note, with no term left in the state");
     printf("filter-mark strokes=%d bare=%d scoped=%d\n", mark.strokes, bare, scoped);
     folio_window_destroy(window);
 }

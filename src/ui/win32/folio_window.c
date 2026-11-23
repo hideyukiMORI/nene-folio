@@ -14192,7 +14192,10 @@ static LRESULT CALLBACK filter_input_message(HWND window, UINT message, WPARAM w
                                                            folio_state_language(self->state)));
         paint_filter_clear(self, window);
     }
-    sync_filter_mark(self, window);
+    if (message != WM_NCDESTROY)
+    {
+        sync_filter_mark(self, window); /* 壊れた後の窓へは聞かない */
+    }
     return result;
 }
 
