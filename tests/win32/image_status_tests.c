@@ -8595,7 +8595,7 @@ static void favorite_label_measure(HDC dc, enum folio_language language, UINT dp
     wchar_t face[LF_FACESIZE];
     ui_face_for(language, face);
     /* #1199: the chips' lit font (bold 11). Each chip alone fits the 200 DIP drawer's row
-     * (168) with its padding, star and check (46). */
+     * (168) with its padding and star (30). */
     HFONT font = CreateFontW(-MulDiv(11, (int)dpi, 96), 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                              CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, face);
@@ -8610,7 +8610,7 @@ static void favorite_label_measure(HDC dc, enum folio_language language, UINT dp
                 "scope label conversion");
         SIZE size;
         require(GetTextExtentPoint32W(dc, text, (int)count, &size) &&
-                    size.cx + MulDiv(46, (int)dpi, 96) <= MulDiv(168, (int)dpi, 96),
+                    size.cx + MulDiv(30, (int)dpi, 96) <= MulDiv(168, (int)dpi, 96),
                 "each filter chip fits one row of the 200 DIP drawer");
         printf("scope-text language=%u dpi=%u label=%u width=%ld available=%d face=%ls\n",
                (unsigned)language, dpi, (unsigned)labels[at], size.cx, MulDiv(168, (int)dpi, 96),
@@ -9601,8 +9601,9 @@ static void expect_tooltip_rect(struct folio_window *_Nonnull window, enum acces
 }
 
 /* Tag conditions light the opener chip and show the clear row. Lighting the favorites chip then
- * moves the opener without changing the band's height: the tooltips still follow. Clearing
- * removes both conditions. */
+ * keeps the band's height. Its Japanese label is full-width, so the bold face does not widen the
+ * chip and the opener stays (filter_chip_shift covers a label that widens). Clearing removes
+ * both conditions. */
 static void filter_chip_tags(struct folio_window *_Nonnull window,
                              struct native_fixture *_Nonnull fixture)
 {
@@ -9628,8 +9629,8 @@ static void filter_chip_tags(struct folio_window *_Nonnull window,
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
     pump(window);
     require(chip_bounds(window, ACCESSIBLE_TREE).top == tree &&
-                chip_bounds(window, ACCESSIBLE_TAG_FILTER).left > lit.left,
-            "lighting favorites moves the opener and keeps the band's height");
+                chip_bounds(window, ACCESSIBLE_TAG_FILTER).left == lit.left,
+            "lighting favorites keeps the band's height and a full-width label keeps the opener");
     expect_tooltip_rect(window, ACCESSIBLE_TAG_FILTER);
     expect_tooltip_rect(window, ACCESSIBLE_FILTER_FAVORITES);
     chip_click(window, ACCESSIBLE_FILTER_CLEAR);
@@ -9646,8 +9647,52 @@ static void filter_chip_tags(struct folio_window *_Nonnull window,
     pump(window);
 }
 
+/* #1242: an English label is wider in the lit chip's bold face. With a tag condition already in
+ * effect the clear row is there, so lighting the favorites chip moves the opener while the band
+ * keeps its height: the tooltip rectangles must follow the chips, not the height. */
+static void filter_chip_shift(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_EN) == FOLIO_STATE_READY,
+            "English for the widening chip");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "widening chip fixture");
+    pump(window);
+    discovery_seed_tags(fixture);
+    for (unsigned at = 0; at < 100 && folio_state_index_filter_pending(fixture->state); ++at)
+        folio_window_continue_idle_work(window);
+    InvalidateRect(folio_window_accessible_window(window, ACCESSIBLE_DRAWER), nullptr, FALSE);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+    RECT star = chip_bounds(window, ACCESSIBLE_FILTER_FAVORITES);
+    RECT opener = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    int tree = chip_bounds(window, ACCESSIBLE_TREE).top;
+    expect_tooltip_rect(window, ACCESSIBLE_TAG_FILTER);
+    chip_click(window, ACCESSIBLE_FILTER_FAVORITES);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+    RECT lit = chip_bounds(window, ACCESSIBLE_FILTER_FAVORITES);
+    RECT moved = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    require(lit.right - lit.left > star.right - star.left && moved.left > opener.left &&
+                moved.top == opener.top && chip_bounds(window, ACCESSIBLE_TREE).top == tree,
+            "a bold English label widens the lit chip and moves the opener on the same row");
+    expect_tooltip_rect(window, ACCESSIBLE_TAG_FILTER);
+    expect_tooltip_rect(window, ACCESSIBLE_FILTER_FAVORITES);
+    chip_click(window, ACCESSIBLE_FILTER_CLEAR);
+    for (unsigned at = 0; at < 100 && folio_state_index_filter_pending(fixture->state); ++at)
+        folio_window_continue_idle_work(window);
+    pump(window);
+    require(!folio_state_conditions_active(fixture->state), "the widening chip fixture is cleared");
+    printf("filter-chip-shift star=%ld lit=%ld opener=%ld moved=%ld\n", star.right - star.left,
+           lit.right - lit.left, opener.left, moved.left);
+    folio_window_destroy(window);
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "back to Japanese after the widening chip");
+}
+
 /* #1199 / ADR0122: the two-way scope choice and the tag button are one row of chips. A lit chip
- * changes its frame and its width, not its fill; the clear row appears below while a condition
+ * changes its frame, not its fill; the clear row appears below while a condition
  * is in effect and moves the tree down; pointer, keyboard and UIA end in the same state. */
 static void filter_chip_row(struct folio_window *_Nonnull window,
                             struct native_fixture *_Nonnull fixture)
@@ -9666,10 +9711,11 @@ static void filter_chip_row(struct folio_window *_Nonnull window,
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
     pump(window);
     RECT lit = chip_bounds(window, ACCESSIBLE_FILTER_FAVORITES);
-    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES &&
-                lit.right - lit.left > star.right - star.left &&
-                chip_bounds(window, ACCESSIBLE_TAG_FILTER).top == lit.top,
-            "a press lights the chip: it grows by its check and the opener stays on the row");
+    require(
+        folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES &&
+            lit.right - lit.left >= star.right - star.left &&
+            chip_bounds(window, ACCESSIBLE_TAG_FILTER).top == lit.top,
+        "a press lights the chip: its bold label never narrows it and the opener stays on the row");
     require(drawer_pixel(window, lit.left, lit.top) != resting &&
                 drawer_pixel(window, lit.left + 3, lit.top + 3) == ground,
             "a lit chip changes the colour of its frame and is not filled");
@@ -9706,6 +9752,7 @@ static void run_favorites_ui(struct native_fixture *_Nonnull fixture)
 {
     prepare_favorites(fixture);
     header_count_units(fixture);
+    filter_chip_shift(fixture);
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,

@@ -423,14 +423,13 @@ static int chip_text_width(const struct drawer_window *_Nonnull self, HDC device
     return utf8_width(device, text);
 }
 
-/* お気に入りの札の幅: 余白・星・字・（点いていれば ✓）・余白。 */
+/* お気に入りの札の幅: 余白・星・字・余白。点いた札は太字の分だけ広い。 */
 static int favorites_chip_width(const struct drawer_window *_Nonnull self, HDC device, UINT dpi)
 {
-    bool lit = favorites_lit(self);
     int icon = scale(ui_part_chip_icon, dpi) + scale(ui_part_chip_icon_gap, dpi);
     const char *text = ui_text_line(UI_TEXT_TITLE_FAVORITES, folio_state_language(self->state));
-    return 2 * scale(ui_part_chip_padding, dpi) + icon + chip_text_width(self, device, text, lit) +
-           (lit ? icon : 0);
+    return 2 * scale(ui_part_chip_padding, dpi) + icon +
+           chip_text_width(self, device, text, favorites_lit(self));
 }
 
 /* タグの面を開く札の字。「# タグ」、タグの条件があるときは数を付ける（「# タグ 2」）。
@@ -559,7 +558,8 @@ static struct ui_part_paint chip_part(const struct drawer_window *_Nonnull self,
         .disabled = SendMessageW(parent, folio_message_pointer_blocked, 0, 0) != 0};
 }
 
-/* お気に入りの札。点いているときは、塗った星・太字・✓（塗らない・ADR0122 の決定 2）。 */
+/* お気に入りの札。点いているときは、塗った星・太字・字の色の枠（塗らない。タグの札と同じく
+ * ✓ は置かない・ADR0122 の決定 2）。 */
 static void draw_favorites_chip(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
 {
     UINT dpi = GetDpiForWindow(self->handle);
@@ -569,16 +569,8 @@ static void draw_favorites_chip(const struct drawer_window *_Nonnull self, HDC d
     part.has_icon = true;
     part.icon = lit ? ICON_PAINT_STAR : ICON_PAINT_STAR_OUTLINE;
     struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
-    int size = scale(ui_part_chip_icon, dpi);
     RECT label = ink.label;
     label.right = bounds.right - scale(ui_part_chip_padding, dpi);
-    if (lit)
-    {
-        RECT check = {label.right - size, (bounds.top + bounds.bottom - size) / 2, label.right,
-                      (bounds.top + bounds.bottom - size) / 2 + size};
-        icon_paint_fill(device, check, ICON_PAINT_CHECK, ink.text);
-        label.right = check.left - scale(ui_part_chip_icon_gap, dpi);
-    }
     SelectObject(device, lit ? self->chip_lit_font : self->unit_font);
     SetTextColor(device, ink.text);
     draw_utf8(device, ui_text_line(UI_TEXT_TITLE_FAVORITES, folio_state_language(self->state)),
