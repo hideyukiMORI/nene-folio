@@ -26,7 +26,7 @@ Do not use an older binary while the note folder contains unfinished
 .rename.json work. Close the app before updating it.
 
 The MIT license is in LICENSE. Third-party notices are in
-THIRD_PARTY_NOTICES.txt; bundled Noto font licenses are in fonts/.
+THIRD_PARTY_NOTICES.txt; bundled Noto and IBM Plex Mono font licenses are in fonts/.
 
 This build is an unsigned submission candidate. Package construction alone
 does not certify installation, updates, removal, or Store acceptance.

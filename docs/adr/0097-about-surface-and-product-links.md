@@ -27,7 +27,7 @@ focusの順はリンク4つ→戻るで、Tab/Shift+Tabと矢印で循環する�
 
 製品名は既存の `UI_TEXT_APP_LOGO`、版は既存の `UI_TEXT_SETTINGS_VERSION` と `product_version_text()` を使い、第二の製品名・版入力を作らない（FR-014 / ADR0045）。
 設定フッターの版の1行は残す。説明・ライセンス・同梱書体・通知ファイルの案内・リンクの補足は `ui_text` の新しいIDへ三言語で置く。
-固有名（MIT License、HideyukiMORI、Noto Sans JP / SC、SIL Open Font License 1.1、THIRD_PARTY_NOTICES.txt、fonts）は訳さない。
+固有名（MIT License、HideyukiMORI、Noto Sans JP / SC、IBM Plex Mono（#1217 で足した）、SIL Open Font License 1.1、THIRD_PARTY_NOTICES.txt、fonts）は訳さない。
 著作権表示は LICENSE と同じ「© 2026 HideyukiMORI」。配布形式（ZIP / MSIX）で文言を変えず、ファイルの絶対pathを組み立てない。
 
 色・書体・寸法の新しい定数は足さない。本文は `current_text`、版と補足は `dialog_secondary`、リンクは中立のコマンド部品とし、

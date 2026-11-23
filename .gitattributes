@@ -3,3 +3,5 @@
 *.ico binary
 *.otf binary
 *.ttf binary
+# 同梱の書体のライセンス本文は、取得したバイト列のまま持つ（上流は CRLF。CNF-012 がバイト数と SHA-256 を照らす・#1217）。
+fonts/LICENSE-IBM-Plex-Mono.txt -text

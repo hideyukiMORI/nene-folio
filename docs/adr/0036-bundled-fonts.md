@@ -125,3 +125,23 @@ exe への埋め込み（`AddFontMemResourceEx`）、OS へのインストール
 本文全体を再書式化せず、RTF投入・言語切替・native入力・保存は従来経路を保つ。
 IMF_AUTOFONTの無効化は絵文字を欠落glyphにしたため採用せず、範囲外文字のnative代替表示を残す。
 全試行、3言語と4貼り付け入口の検証、物理IME等の限界は[品質記録](../quality/2026-11-06-editor-font-binding.md)。
+
+## 2026-11-23 の補正（#1217 — 等幅の書体も同梱する・決定本文は書き換えない）
+
+hide（2026-11-23）: 「それも適切なGoogleフォントを選んで同梱すれば？」。候補を左の欄の実物の場所に当てた絵と、実物の窓の絵（いまの形と並べたもの）を見て、**IBM Plex Mono** に決めた（「IBM Plex Monoかなぁ。」「よい。」）。
+
+1. **等幅の書体は IBM Plex Mono の細字を同梱する**（`fonts/IBMPlexMono-Regular.ttf`。SIL OFL 1.1。google/fonts の `431022a4eeb0e1009ba0126f41353d8ca2375a2a` の `ofl/ibmplexmono` から、取得したバイト列のまま）。太字は使っていないので同梱しない。出所は `fonts/manifest.json`（項目ごとの `acquired`）、検査は CNF-012 のまま。
+2. **face の正本は core の `ui_font_mono_face`（同梱）と `ui_font_mono_fallback_face`（退避 = Consolas）**。言語で変わらないので表は持たない。選ぶのは `ui_font_mono_pick`、実在を確かめて渡すのは ui の `ui_face_mono`（UI の書体の 3 段と同じ分担・ARC-007）。
+3. **使う所**: 主窓の自前描画（`folio_window.c` の `mono_font`。パンくず・札・状態行・番号の帯・検索の欄の EDIT）、ヘルプのキーの字（`command_help_fonts.c`）、左の欄の番号と数（`drawer_window.c`）。`ui_font.h` の「主窓の自前描画は Consolas のまま」は、この補正で改める。
+4. **ノートの中のコード（RTF の `\f1`）は、この変更では Consolas のまま**。書体の名前が core の `markdown_rtf.c` に固定で、実在を確かめて渡す道が要るので、別の変更にする（https://github.com/hideyukiMORI/nene-folio/issues/1223 ）。
+5. **日本語の字**: IBM Plex Mono も Consolas も仮名・漢字を持たないので、等幅の書体で描く日本語は、前と同じく OS の代わりの書体になる。主窓の自前描画の日本語を同梱の UI の書体で描くのは #1222（hide: 席の案のとおり、別の変更にする）。コードの中の日本語は触らない（hide）。
+6. **大きさ**: IBM Plex Mono は、同じ大きさの Consolas より字の送りが広く、行も高い。寸法と文言は Consolas の大きさ（11、ヘルプのキーは 13）で決めてあるので、**同梱の書体のときだけ 1 小さく使う**（10 と 12。`ui_font_mono_size`）。実測（GDI・`D:/NeNeFolio/temp/1217/metrics.ps1`）:
+
+   | DPI | Consolas 11（10字の幅／行の高さ） | IBM Plex Mono 11 | IBM Plex Mono 10 |
+   | --- | --- | --- | --- |
+   | 96 | 60／13 | 70／14 | 60／13 |
+   | 120 | 80／17 | 80／18 | 80／17 |
+   | 144 | 90／20 | 100／22 | 90／19 |
+   | 192 | 120／26 | 130／29 | 120／27 |
+
+   1 小さくすると、字の送りは 4 つの DPI とも Consolas と同じで、行の高さは ±1 画素。同じ大きさ（11）のままだと、96 DPI で字の送りが約 17% 広くなり、Consolas の箱に合わせた文言と幅が崩れる。120 DPI では行が 1 画素高くなり、検索・置換の帯が 4 高くなって、最小の窓（560×360）で本文の下限を割った（実窓の試験 `note_status_find`・`note_status_replace` が落ちた）。窓の最小の大きさは変えていない。192 DPI では行が 1 画素高い（帯が数画素高くなりうる。実窓では未確認）。

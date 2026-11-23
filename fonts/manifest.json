@@ -41,6 +41,17 @@
       "bytes": 8543168,
       "SHA256": "c6cb5a93abaa9edc8ee7463b7ebb7f42d618d40e6ed2f7a5371c97b0b64767c0",
       "license": "LICENSE-Noto-CJK.txt"
+    },
+    {
+      "family": "IBM Plex Mono",
+      "style": "regular",
+      "acquired": "2026-11-23",
+      "sourceURL": "https://raw.githubusercontent.com/google/fonts/431022a4eeb0e1009ba0126f41353d8ca2375a2a/ofl/ibmplexmono/IBMPlexMono-Regular.ttf",
+      "fullrevision": "431022a4eeb0e1009ba0126f41353d8ca2375a2a",
+      "filename": "IBMPlexMono-Regular.ttf",
+      "bytes": 135580,
+      "SHA256": "6a3412f058c7d8dfd9170c41e85ade48e5156ecb89356110ca57a0a27734af46",
+      "license": "LICENSE-IBM-Plex-Mono.txt"
     }
   ],
   "licenses": [
@@ -50,6 +61,15 @@
       "fullrevision": "523d033d6cb47f4a80c58a35753646f5c3608a78",
       "bytes": 4301,
       "SHA256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+      "license": "SIL Open Font License 1.1"
+    },
+    {
+      "filename": "LICENSE-IBM-Plex-Mono.txt",
+      "acquired": "2026-11-23",
+      "sourceURL": "https://raw.githubusercontent.com/google/fonts/431022a4eeb0e1009ba0126f41353d8ca2375a2a/ofl/ibmplexmono/OFL.txt",
+      "fullrevision": "431022a4eeb0e1009ba0126f41353d8ca2375a2a",
+      "bytes": 4456,
+      "SHA256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
       "license": "SIL Open Font License 1.1"
     }
   ]

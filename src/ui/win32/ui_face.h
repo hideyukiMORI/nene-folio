@@ -13,4 +13,9 @@
 /* out は終端を含めて LF_FACESIZE 単位の入れ物。無い face は日本語の face に落とす。 */
 void ui_face_for(enum folio_language language, wchar_t *_Nonnull out);
 
+/* 等幅の書体名（#1217）。同梱の face が在ればそれ、無ければ退避の face（Consolas）。
+ * out は終端を含めて LF_FACESIZE 単位の入れ物。size は Consolas での大きさ（96 DPI）で、
+ * 選んだ face で同じ字の送りになる大きさを返す。 */
+[[nodiscard]] int ui_face_mono(wchar_t *_Nonnull out, int size);
+
 #endif

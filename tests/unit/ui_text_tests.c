@@ -760,7 +760,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_ABOUT_DESCRIPTION] = "手元のフォルダーに置く Markdown ノート。",
     [UI_TEXT_ABOUT_LICENSE_HEADING] = "ライセンス",
     [UI_TEXT_ABOUT_LICENSE] = "MIT License © 2026 HideyukiMORI",
-    [UI_TEXT_ABOUT_FONTS] = "同梱書体 Noto Sans JP / SC は SIL Open Font License 1.1 です。",
+    [UI_TEXT_ABOUT_FONTS] =
+        "同梱書体 Noto Sans JP / SC・IBM Plex Mono は SIL Open Font License 1.1 です。",
     [UI_TEXT_ABOUT_NOTICES] = "配色の出典と各ライセンスの全文は、同梱の THIRD_PARTY_NOTICES.txt と "
                               "fonts フォルダーにあります。",
     [UI_TEXT_ABOUT_LINKS_HEADING] = "リンク",

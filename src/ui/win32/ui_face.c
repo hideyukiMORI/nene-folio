@@ -56,6 +56,13 @@ static bool present(const char *_Nonnull ascii)
     return installed(face);
 }
 
+int ui_face_mono(wchar_t *_Nonnull out, int size)
+{
+    bool bundled = present(ui_font_mono_face());
+    widen(ui_font_mono_pick(bundled), out);
+    return ui_font_mono_size(size, bundled);
+}
+
 void ui_face_for(enum folio_language language, wchar_t *_Nonnull out)
 {
     bool bundled = present(ui_font_face(language));

@@ -9160,7 +9160,7 @@ static int header_text_width(HWND drawer, const wchar_t *_Nonnull text, struct h
 }
 
 /* What the heading row should show: the unit in the language's face, a 6 DIP gap, then the
- * numbers in Consolas. title is the heading's own text, which limits the room. */
+ * numbers in the monospace face. title is the heading's own text, which limits the room. */
 struct header_count
 {
     enum folio_language language;
@@ -9198,8 +9198,10 @@ static bool expect_header_count(struct folio_window *_Nonnull window, struct hea
     int dpi = (int)GetDpiForWindow(drawer);
     wchar_t face[LF_FACESIZE];
     ui_face_for(expected.language, face);
+    wchar_t mono[LF_FACESIZE];
+    int mono_size = ui_face_mono(mono, 11);
     int number = header_text_width(drawer, expected.number,
-                                   (struct header_font){L"Consolas", 11, FW_NORMAL});
+                                   (struct header_font){mono, mono_size, FW_NORMAL});
     int unit = header_text_width(drawer, expected.unit, (struct header_font){face, 11, FW_NORMAL});
     int full = unit + MulDiv(6, dpi, 96) + number;
     int room = header_count_room(window, expected);
@@ -9223,6 +9225,10 @@ static void header_count_units(struct native_fixture *_Nonnull fixture)
             "count fixture");
     pump(window);
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    /* #1217: the fixture registers the bundled fonts, so the monospace face is the bundled one. */
+    wchar_t mono[LF_FACESIZE];
+    require(ui_face_mono(mono, 11) == 10 && wcscmp(mono, L"IBM Plex Mono") == 0,
+            "the bundled monospace face is registered and chosen, one size down");
     struct header_count line = {FOLIO_LANGUAGE_JA, L"カテゴリ", L"ノート", L"2"};
     require(expect_header_count(window, line, "the count carries its unit"),
             "the default drawer has room for the unit");

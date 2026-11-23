@@ -343,7 +343,6 @@ constexpr int base_outline_gap = 12;
 static const wchar_t *const class_name = folio_open_link_class;
 static const wchar_t command_layer_class[] = L"NeNeFolioCommandLayer";
 static const wchar_t settings_backdrop_class[] = L"NeNeFolioSettingsBackdrop";
-static const wchar_t mono_face[] = L"Consolas";
 static const wchar_t edit_class[] = L"EDIT";
 
 /* 設定画面の行（ADR 0031 の決定 7・ADR 0032 の決定 7）。見出しと選択肢を**種別で**持ち、
@@ -682,7 +681,8 @@ constexpr int base_search_button_width = 64;
 /* 頭の釦の字の左の字下げと右の余白、釦と釦の間隔（96 DPI・#122）。 */
 /* 番号の右端と本文の左端のあいだ（96 DPI・ADR 0026 の決定 1）。 */
 constexpr int base_gutter_gap = 8;
-/* 数字を測れなかったときの目安（96 DPI の Consolas 11px の実寸に近い値）。 */
+/* 数字を測れなかったときの目安（96 DPI の 等幅の書体（Consolas 11px・IBM Plex Mono
+ * 10px）の実寸に近い値）。 */
 constexpr int base_digit_fallback = 7;
 /* 主窓がスタックに持つ番号の行の本数。あふれたら描けるぶんだけ描く（決定 3）。 */
 constexpr size_t gutter_row_capacity = 256;
@@ -1423,8 +1423,12 @@ static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
     {
         DeleteObject(self->mono_font);
     }
-    self->mono_font = CreateFontW(-scale(base_mono_font, dpi), 0, 0, 0, FW_NORMAL, FALSE, FALSE,
-                                  FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+    /* 等幅の書体は、同梱（IBM Plex Mono）→ 退避（Consolas）の順で選ぶ（#1217）。大きさは、
+     * どちらでも字の送りが同じになるように ui_face_mono が決める。 */
+    wchar_t mono_face[LF_FACESIZE];
+    int mono_size = ui_face_mono(mono_face, base_mono_font);
+    self->mono_font = CreateFontW(-scale(mono_size, dpi), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                  DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                                   CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, mono_face);
     if (self->command_input != nullptr)
     {
@@ -3319,7 +3323,7 @@ static int wrapped_text(HDC device, const char *_Nonnull text, RECT bounds, bool
 
 /* UTF-8 の 1 行を、描く経路 draw_units と同じ字間で測る。測れなければ 0。
  * 字間 0 で DT_CALCRECT を取り、ASCII だけの行のときだけ単位数 × 字間を足す
- * （Consolas だけの行では DT_CALCRECT が字間を含めない）。フォントリンクで描く行は
+ * （等幅の書体の ASCII だけの行では DT_CALCRECT が字間を含めない）。フォントリンクで描く行は
  * 字間 0 で描くので、DT_CALCRECT の値そのままが描いた幅になる（ADR 0018 の補正 #260）。 */
 static int measure_utf8(HDC device, const char *_Nonnull text)
 {
