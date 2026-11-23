@@ -42,7 +42,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/theme_contrast.c
     src/core/utf8_text.c src/core/utf16_text.c
     src/core/json_reader.c src/core/json_writer.c src/core/name_list.c
-    src/core/category_ledger.c src/core/category_name.c src/core/note_ledger.c src/core/drawer_source.c src/core/drawer_layout.c
+    src/core/category_ledger.c src/core/category_name.c src/core/note_ledger.c src/core/drawer_source.c src/core/drawer_layout.c src/core/chip_flow.c
     src/core/text_buffer.c src/core/note_text.c src/core/note_file_times.c src/core/markdown_rtf.c src/core/rtf_palette.c
     src/core/note_tag.c src/core/note_tags.c src/core/metadata_scalar.c src/core/note_metadata.c
     src/core/tag_catalog.c src/core/tag_edit_snapshot.c src/core/tag_update.c src/core/note_excerpt.c src/core/note_identity.c src/core/note_source.c src/core/discovery_target.c
