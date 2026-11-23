@@ -92,17 +92,20 @@ constexpr int base_category_height = 34;
 constexpr int base_category_gap = 6;
 constexpr int base_category_indent = 16;
 constexpr int base_name_offset = 26; /* 番号の左端から名前の左端まで */
-constexpr int base_note_indent = 40;
 constexpr int base_right_inset = 16;
+/* カテゴリ名とノートの題の右端（右の縁から）。カーソルの角（幅−52〜幅−46）の左で切る
+ * （ADR0091 の決定 1・ADR0122）。 */
+constexpr int base_text_right = 58;
 constexpr int base_bottom_padding = 16; /* 最後の行の下に空ける余白（左右の余白と同じ） */
 constexpr int base_fade_height = 24;    /* あふれを示すフェードの高さ（ADR 0009 の決定 7） */
 constexpr int base_mark_size = 6;
-constexpr int base_mark_gap = 6; /* カテゴリ行で折畳の印とカーソルの角の間に空ける幅 */
+constexpr int base_mark_gap = 6; /* 右の列（星）とカーソルの角の間に空ける幅 */
 constexpr int base_favorite_glyph = 16;
 constexpr int base_favorite_target = 28;
-/* 折畳の印の箱（24 の viewBox と 1 対 1）。板は 2 単位なので、箱が 20px 未満だと
- * 塗りが 50〜75% の灰色になる（ADR 0033 の決定 6・実測）。 */
+/* 右の列の箱。星の当たりの中心と、カーソルの角の x を決める（ADR0091）。 */
 constexpr int base_toggle_box = 24;
+/* 畳む印（三角）の箱。カテゴリ行の左の余白（字下げ 16）に収め、番号の左端で終わる（#1199）。 */
+constexpr int base_fold_box = 16;
 constexpr int base_line_thickness = 2; /* ドラッグ中の挿入線の太さ */
 constexpr int base_category_font = 12;
 constexpr int base_note_font = 14;
@@ -236,7 +239,9 @@ static struct drawer_metrics metrics_for(const struct drawer_window *_Nonnull se
         .category_height = scale(base_category_height, dpi),
         .category_gap = scale(base_category_gap, dpi),
         .category_indent = scale(base_category_indent, dpi),
-        .note_indent = scale(base_note_indent, dpi),
+        /* ノートの題の左端は、カテゴリ名の左端と同じ線（#1199）。別々に丸めた 2 つの和に
+         * するので、どの DPI でも draw_category の名前の左端と 1px もずれない。 */
+        .note_indent = scale(base_category_indent, dpi) + scale(base_name_offset, dpi),
         .viewport_height = client.bottom,
         .bottom_padding = scale(base_bottom_padding, dpi),
     };
@@ -490,16 +495,16 @@ static void draw_cursor_mark(const struct drawer_window *_Nonnull self, HDC devi
     }
 }
 
-/* 折畳の印が要る幅（箱と間）。印が字形でなく面のパスになったので、書体の実測ではなく
- * 定数で決まる（ADR 0033 の決定 6・ADR 0015 の決定 7 の補正）。
- * カーソルの角はこのぶんだけ左に置いて重なりを避ける。 */
+/* 右の列（星の当たりの中心を決める 24 の箱と間）の幅。カーソルの角はこのぶんだけ左に置いて、
+ * 星との重なりを避ける（ADR 0015 の決定 7 の補正）。畳む印は行の左へ移った（#1199）。 */
 static int toggle_room(UINT dpi)
 {
     return scale(base_toggle_box, dpi) + scale(base_mark_gap, dpi);
 }
 
-/* カテゴリ行: 番号（カテゴリ色・等幅）、名前（太字・字間広め）、右端に折畳の印。
- * カーソルがこの行にあるときは折畳の印の左に角を置く（ADR 0015 の決定 7）。 */
+/* カテゴリ行: 左の余白に畳む印（▾／▸）、番号（カテゴリ色・等幅）、名前（太字・字間広め）。
+ * 右の列は星だけに使う（#1199）。カーソルの角は、ノートの行と同じ x に置く（ADR 0015 の決定 7）。
+ */
 static void draw_category(const struct drawer_window *_Nonnull self, HDC device,
                           struct drawer_row row, int width)
 {
@@ -511,28 +516,27 @@ static void draw_category(const struct drawer_window *_Nonnull self, HDC device,
     SetTextColor(device, row_ink(self, row));
     DrawTextW(device, ordinal, 2, &number, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     RECT name = {row.indent + scale(base_name_offset, dpi), row.top,
-                 width - scale(base_right_inset, dpi) * 2, row.top + row.height};
+                 width - scale(base_text_right, dpi), row.top + row.height};
     SelectObject(device, self->category_font);
     SetTextColor(device, self->palette.category_text);
     SetTextCharacterExtra(device, scale(base_tracking, dpi));
     draw_utf8(device, row.text, name, DT_END_ELLIPSIS);
     SetTextCharacterExtra(device, 0);
-    RECT mark = {row.indent, row.top, width - scale(base_right_inset, dpi), row.top + row.height};
-    int box = scale(base_toggle_box, dpi);
+    int box = scale(base_fold_box, dpi);
     int top = row.top + (row.height - box) / 2;
-    RECT toggle = {mark.right - box, top, mark.right, top + box};
-    icon_paint_fill(device, toggle,
-                    row.expanded ? ICON_PAINT_FOLD_COLLAPSE : ICON_PAINT_FOLD_EXPAND,
+    RECT fold = {row.indent - box, top, row.indent, top + box};
+    icon_paint_fill(device, fold, row.expanded ? ICON_PAINT_FOLD_COLLAPSE : ICON_PAINT_FOLD_EXPAND,
                     self->palette.header_text);
     if (row.cursor)
     {
-        draw_cursor_mark(self, device, row, mark.right - toggle_room(dpi));
+        draw_cursor_mark(self, device, row,
+                         width - scale(base_right_inset, dpi) - toggle_room(dpi));
     }
 }
 
 /* ノート行: 選択中なら面を敷き、カーソルの行なら右端にカテゴリ色の角を置く
  * （面は選択・角はカーソル・ADR 0015 の決定 8）。 */
-/* 字形と当たりを分け、カテゴリの折畳印と同じ中心へ置く（ADR0091）。 */
+/* 字形と当たりを分け、右の列の中心（幅−28）へ置く（ADR0091。折畳印は左へ移った・ADR0122）。 */
 static RECT favorite_rect(const struct drawer_window *_Nonnull self, struct drawer_row row)
 {
     UINT dpi = GetDpiForWindow(self->handle);
@@ -596,7 +600,7 @@ static void draw_note(const struct drawer_window *_Nonnull self, HDC device, str
         draw_cursor_mark(self, device, row, width - inset - toggle_room(dpi));
     }
     draw_favorite(self, device, row);
-    RECT bounds = {row.indent, row.top, width - scale(58, dpi), row.top + row.height};
+    RECT bounds = {row.indent, row.top, width - scale(base_text_right, dpi), row.top + row.height};
     SelectObject(device, self->note_font);
     SetTextColor(device, row.selected ? self->palette.selected_text : self->palette.note_text);
     draw_utf8(device, row.text, bounds, DT_END_ELLIPSIS);

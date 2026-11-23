@@ -8959,6 +8959,135 @@ static void prepare_favorites(struct native_fixture *_Nonnull fixture)
                     "prepare both unstarred rows");
 }
 
+/* The first category row, found the way a UIA client finds it: the first child of the tree. */
+static struct accessible_item first_category_item(struct folio_window *_Nonnull window)
+{
+    struct accessible_item tree = {.kind = ACCESSIBLE_TREE}, row = {0};
+    require(folio_window_accessible_navigate(window, &tree, ACCESSIBLE_NAVIGATION_FIRST, &row) ==
+                    S_OK &&
+                row.kind == ACCESSIBLE_CATEGORY && row.ref.category == 0,
+            "the tree's first child is the first category row");
+    return row;
+}
+
+/* How many pixels of a one-pixel-wide or one-pixel-high strip differ from the ground. */
+static size_t line_ink(HDC dc, RECT strip, COLORREF ground)
+{
+    size_t count = 0;
+    for (int y = strip.top; y < strip.bottom; ++y)
+        for (int x = strip.left; x < strip.right; ++x)
+            count += GetPixel(dc, x, y) != ground;
+    return count;
+}
+
+/* #1199: what one part of a drawer row shows. count is the number of pixels that differ from the
+ * drawer's ground; width and height are the numbers of columns and rows that hold such pixels. */
+struct row_ink
+{
+    size_t count;
+    uint64_t hash;
+    int width;
+    int height;
+};
+
+/* The part is given in DIPs from the left edge (or from the right edge when the numbers are
+ * negative or zero). */
+static struct row_ink row_part_ink(struct folio_window *_Nonnull window,
+                                   const struct accessible_item *_Nonnull item, int left, int right)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    RECT client;
+    GetClientRect(drawer, &client);
+    HDC source = GetDC(drawer), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(drawer, dc, PW_CLIENTONLY), "render the real drawer for the fold mark");
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, item, &view) == S_OK && !view.offscreen,
+            "measure a visible drawer row");
+    MapWindowPoints(nullptr, drawer, (POINT *)&view.bounds, 2);
+    int dpi = (int)GetDpiForWindow(drawer);
+    RECT part = view.bounds;
+    part.left = (left < 0 ? client.right : 0) + MulDiv(left, dpi, 96);
+    part.right = (right <= 0 ? client.right : 0) + MulDiv(right, dpi, 96);
+    /* The row's own last column: nothing is drawn there on a row that is not selected. */
+    COLORREF ground = GetPixel(dc, client.right - 2, part.top + 1);
+    struct row_ink ink = {.hash = favorite_pixel_hash(dc, part)};
+    for (int x = part.left; x < part.right; ++x)
+    {
+        size_t column = line_ink(dc, (RECT){x, part.top, x + 1, part.bottom}, ground);
+        ink.count += column;
+        ink.width += column != 0;
+    }
+    for (int y = part.top; y < part.bottom; ++y)
+        ink.height += line_ink(dc, (RECT){part.left, y, part.right, y + 1}, ground) != 0;
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(drawer, source);
+    return ink;
+}
+
+static void fold_first_category(struct folio_window *_Nonnull window, enum accessible_action action)
+{
+    struct accessible_request request = {.item = first_category_item(window), .action = action};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "fold or open the first category through the public tree");
+    pump(window);
+}
+
+/* #1199: the title of a note row starts on the same line as the category name (42 DIP), not two
+ * pixels to its left. The second note is measured: the first one is selected and has a face. */
+static void note_title_edge(struct folio_window *_Nonnull window)
+{
+    struct accessible_item category = first_category_item(window), note = {0};
+    require(folio_window_accessible_navigate(window, &category, ACCESSIBLE_NAVIGATION_FIRST,
+                                             &note) == S_OK &&
+                folio_window_accessible_navigate(window, &note, ACCESSIBLE_NAVIGATION_NEXT,
+                                                 &note) == S_OK &&
+                note.kind == ACCESSIBLE_NOTE,
+            "the second note row of the first category");
+    require(row_part_ink(window, &note, 0, 41).count == 0,
+            "nothing of a note row is drawn left of the category name's line");
+    require(row_part_ink(window, &note, 41, 48).count > 0,
+            "the note title starts at the category name's line");
+}
+
+/* #1199: the fold mark sits in the left margin of a category row (before the number), and the
+ * right column of that row is empty. An open category shows a mark that is wider than tall, a
+ * folded one a mark that is taller than wide. The cursor is put back on the note afterwards. */
+static void fold_mark_pixels(struct folio_window *_Nonnull window)
+{
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_DRAWER), WM_MOUSELEAVE, 0, 0);
+    note_title_edge(window);
+    struct accessible_item category = first_category_item(window);
+    struct row_ink open = row_part_ink(window, &category, 0, 16);
+    require(open.count > 0 && open.width > open.height,
+            "an open category row draws a downward mark in the left margin");
+    require(row_part_ink(window, &category, -40, 0).count == 0,
+            "the right column of a category row holds no fold mark");
+    fold_first_category(window, ACCESSIBLE_ACTION_COLLAPSE);
+    category = first_category_item(window);
+    struct row_ink folded = row_part_ink(window, &category, 0, 16);
+    require(folded.count > 0 && folded.height > folded.width && folded.hash != open.hash,
+            "a folded category row draws a rightward mark in the same place");
+    require(row_part_ink(window, &category, -40, 0).count == 0,
+            "the right column stays empty when the category is folded");
+    fold_first_category(window, ACCESSIBLE_ACTION_EXPAND);
+    category = first_category_item(window);
+    struct row_ink again = row_part_ink(window, &category, 0, 16);
+    require(again.count == open.count && again.hash == open.hash,
+            "opening the category brings the first mark back");
+    struct accessible_request focus = {.item = favorite_item(window),
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK,
+            "put the cursor back on the selected note");
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    printf("fold-mark open=%dx%d folded=%dx%d ink=%zu\n", open.width, open.height, folded.width,
+           folded.height, open.count);
+}
+
 static void run_favorites_visual(struct native_fixture *_Nonnull fixture)
 {
     prepare_favorites(fixture);
@@ -8983,6 +9112,7 @@ static void run_favorites_ui(struct native_fixture *_Nonnull fixture)
                 FOLIO_WINDOW_CREATED,
             "favorite interaction fixture");
     pump(window);
+    fold_mark_pixels(window);
     favorite_tooltips(window);
     puts("favorites UI: hidden star and touch");
     fflush(stdout);

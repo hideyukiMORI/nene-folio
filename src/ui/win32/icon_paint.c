@@ -148,8 +148,9 @@ static const struct
     float height;
     float radius;
 } round_rects[] = {
-    /* 折畳の横棒 <rect x="6" y="11" width="12" height="2" rx="1"/>。
-     * 高さ 2 単位なので箱が 20px 未満だと塗りが灰色になる（決定 6 で箱を 24px に揃えた）。 */
+    /* ＋ の横棒 <rect x="6" y="11" width="12" height="2" rx="1"/>。いまは ICON_PAINT_ADD だけが
+     * 使う（折畳の印は三角になった・ADR0122）。高さ 2 単位なので箱が 20px 未満だと塗りが
+     * 灰色になる。 */
     [round_rect_fold_bar] = {6.0f, 11.0f, 12.0f, 2.0f, 1.0f},
     /* + の縦棒 <rect x="11" y="6" width="2" height="12" rx="1"/>。横棒と重ねるので Winding。 */
     [round_rect_fold_stem] = {11.0f, 6.0f, 2.0f, 12.0f, 1.0f},
@@ -287,6 +288,12 @@ static int add_polygon(struct GpPath *_Nonnull path, const float *_Nonnull point
     }
     return first_failure(status, GdipClosePathFigure(path));
 }
+
+/* カテゴリ行の左の畳む印（#1199・ADR0122）。開いているときは下向き、畳んでいるときは右向きの
+ * 三角。画面案の SVG の写しではなく、ここで決めた形。右向きは、下向きを (12, 12) のまわりに
+ * 90°回したもの。 */
+static const float fold_open[] = {6.0f, 9.0f, 18.0f, 9.0f, 12.0f, 16.0f};
+static const float fold_closed[] = {9.0f, 6.0f, 16.0f, 12.0f, 9.0f, 18.0f};
 
 /* コピー（ADR0098）。設計の16単位の線画（前の紙の輪郭と、後ろの紙のL字）を1.5倍して、線幅2.1の
  * 面へ畳んだ。前の紙は外周と内周で、内周は Alternate で抜ける。後ろの紙のL字は重ならない。 */
@@ -434,8 +441,9 @@ static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
     case ICON_PAINT_SETTINGS:
         return add_settings_path(path);
     case ICON_PAINT_FOLD_COLLAPSE:
-        return add_round_rect(path, round_rect_fold_bar);
+        return add_polygon(path, fold_open, sizeof fold_open / sizeof(float));
     case ICON_PAINT_FOLD_EXPAND:
+        return add_polygon(path, fold_closed, sizeof fold_closed / sizeof(float));
     case ICON_PAINT_ADD:
         return add_plus_path(path);
     case ICON_PAINT_NEW_NOTE:
