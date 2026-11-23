@@ -1158,6 +1158,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     /* 絞り込み中の件数（#86）。数だけなので 3 列とも同じ。 */
     [UI_TEXT_STATUS_FILTER_PREPARING] = {"準備中", "Loading", "准备中"},
     [UI_TEXT_STATUS_FILTER_COUNT] = {"{k} / {n}", "{k} / {n}", "{k} / {n}"},
+    /* 見出しの行の右の数の単位（#1215・ADR0122）。見出しは「カテゴリ」なので、何の数かを
+     * 数の左に言う。数とは別の書体で描くので、数は入れない。 */
+    [UI_TEXT_STATUS_NOTE_UNIT] = {"ノート", "Notes", "笔记"},
     [UI_TEXT_STATUS_SEARCH_FORWARD] = {"このノート内を検索 / Enter: 次へ",
                                        "Find in this note / Enter: Next",
                                        "在本笔记中查找 / Enter: 下一个"},

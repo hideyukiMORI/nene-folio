@@ -582,6 +582,8 @@ static const char *_Nonnull const expected[] = {
     /* #86 で足した。索引の頭の帯の右に出す「一致 / 総数」（ADR 0024 の 2026-09-22 の補正 7）。 */
     [UI_TEXT_STATUS_FILTER_PREPARING] = "準備中",
     [UI_TEXT_STATUS_FILTER_COUNT] = "{k} / {n}",
+    /* #1215: the count in the heading row says what it counts. */
+    [UI_TEXT_STATUS_NOTE_UNIT] = "ノート",
     [UI_TEXT_STATUS_SEARCH_FORWARD] = "このノート内を検索 / Enter: 次へ",
     [UI_TEXT_STATUS_SEARCH_BACKWARD] = "このノート内を検索 / Enter: 前へ",
     [UI_TEXT_STATUS_SEARCH_MALFORMED] = "検索できない文字があります",
