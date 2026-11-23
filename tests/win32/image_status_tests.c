@@ -9323,6 +9323,12 @@ static void status_keys_fonts(struct folio_window *_Nonnull window)
     DeleteDC(dc);
     ReleaseDC(root, source);
     printf("status-keys drawn=%d expected=%d all-mono=%d dpi=%d\n", reach, expected, all_mono, dpi);
+    /* The check below allows three pixels: it must be able to tell the two faces apart. */
+    require(all_mono - expected > 8 || expected - all_mono > 8,
+            "words in the monospace face would be clearly narrower or wider at this DPI");
+    for (size_t at = 0; view.name[at] != 0; ++at)
+        require(view.name[at] != 1 && view.name[at] != 2,
+                "the marks around the values never reach the status row's spoken name");
     /* Three pixels: the first and the last glyph's side bearings. Words in the monospace face
      * are four pixels wider at 120 DPI, values in the language's face eleven narrower. */
     require(reach >= expected - 3 && reach <= expected + 3,

@@ -6474,22 +6474,33 @@ static size_t status_next(const char *_Nonnull text, size_t end, bool *_Nonnull 
     return end + 1;
 }
 
-/* 印の付いた 1 行を、左から順に測る・描く。印の中（差し込んだ値）と空白は等幅、それ以外（言葉）は
- * 言葉の書体。空白を等幅にするのは、言葉と値の間が、値の字の送りと同じ幅で空くようにするため。
- * place が nullptr なら測るだけ。返すのは行の幅。DC の書体は等幅に戻す。 */
+/* 空白の並びを等幅で描くか。値の隣の空白と、2 つ以上続く空白（「·」の前後の区切り）は等幅で、
+ * 値の字の送りと同じ幅で空ける。言葉と言葉の間の 1 つの空白（英語の "Unsaved changes"）は、
+ * 言葉の書体のまま。beside は、この並びのすぐ前が値だったか。 */
+static bool status_space_wide(const char *_Nonnull text, size_t at, size_t end, bool beside)
+{
+    return text[at] == ' ' && (end - at >= 2 || beside || text[end] == status_value_open);
+}
+
+/* 印の付いた 1 行を、左から順に測る・描く。印の中（差し込んだ値）と、値の隣・区切りの空白は等幅、
+ * それ以外（言葉）は言葉の書体。place が nullptr なら測るだけ。返すのは行の幅。DC の書体は
+ * 等幅に戻す。 */
 static int status_line(const struct folio_window *_Nonnull self, HDC device,
                        const char *_Nonnull text, const RECT *_Nullable place)
 {
     int width = 0;
     bool value = false;
+    bool beside = false;
     for (size_t at = 0; text[at] != '\0';)
     {
         size_t end = status_run_end(text, at);
         char run[draw_unit_limit];
         memcpy(run, text + at, end - at);
         run[end - at] = '\0';
-        SelectObject(device, value || text[at] == ' ' ? self->mono_font : word_font(self));
+        bool mono = value || status_space_wide(text, at, end, beside);
+        SelectObject(device, mono ? self->mono_font : word_font(self));
         width += status_run(device, run, place, width);
+        beside = text[end] == status_value_close;
         at = status_next(text, end, &value);
     }
     SelectObject(device, self->mono_font);
