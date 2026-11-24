@@ -8,7 +8,8 @@ enum ui_part_style : unsigned char
     UI_PART_STYLE_COMMAND, /* A 中立コマンド: 16px の絵＋字。単独なら 1px の枠 */
     UI_PART_STYLE_PRIMARY, /* B 主操作: chip_background の塗り。1 つの面に最大 1 つ */
     UI_PART_STYLE_ICON,    /* C 絵だけ: 当たり 28×28、絵 20px */
-    UI_PART_STYLE_CHOICE   /* S 選択群の項目: 選択中は塗り＋下辺の棒 */
+    UI_PART_STYLE_CHOICE,  /* S 選択群の項目: 選択中は塗り＋下辺の棒 */
+    UI_PART_STYLE_CHIP     /* F 絞り込みの札: 高さ 21・1px の枠。点いた札は字と枠の色（塗らない） */
 };
 
 #endif

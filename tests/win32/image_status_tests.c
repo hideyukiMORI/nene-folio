@@ -8494,23 +8494,25 @@ static void favorite_click(struct folio_window *_Nonnull window, bool cancel)
     pump(window);
 }
 
+/* #1199: the favorites chip is a Toggle whose state is the application's scope, and the clear
+ * row exists only while a condition is in effect. */
 static void expect_favorite_scope_name(struct folio_window *_Nonnull window, bool favorites)
 {
-    const enum accessible_kind kinds[] = {ACCESSIBLE_SCOPE_ALL, ACCESSIBLE_SCOPE_FAVORITES};
-    const char16_t *names[] = {u"すべて", u"お気に入り"};
-    for (size_t index = 0; index < sizeof kinds / sizeof kinds[0]; ++index)
-    {
-        struct accessible_item item = {.kind = kinds[index]};
-        struct accessible_view view = {0};
-        require(folio_window_accessible_read(window, &item, &view) == S_OK &&
-                    wcscmp((const wchar_t *)view.name, (const wchar_t *)names[index]) == 0 &&
-                    view.selected == (favorites == (index == 1)) && !view.offscreen,
-                "textual scope choices expose the selected value even when no row matches");
-    }
-    struct accessible_item group = {.kind = ACCESSIBLE_SCOPE_GROUP}, selected = {0};
-    require(folio_window_accessible_selected(window, &group, &selected) == S_OK &&
-                selected.kind == (favorites ? ACCESSIBLE_SCOPE_FAVORITES : ACCESSIBLE_SCOPE_ALL),
-            "scope selection is owned by the same application value");
+    struct accessible_item chip = {.kind = ACCESSIBLE_FILTER_FAVORITES};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &chip, &view) == S_OK &&
+                wcscmp(view.name, L"お気に入り") == 0 && view.selected == favorites &&
+                !view.offscreen && view.focusable,
+            "the favorites chip exposes the scope even when no row matches");
+    struct accessible_item clear = {.kind = ACCESSIBLE_FILTER_CLEAR};
+    struct accessible_view clear_view = {0};
+    HRESULT read = folio_window_accessible_read(window, &clear, &clear_view);
+    bool shown = read == S_OK && !clear_view.offscreen && !IsRectEmpty(&clear_view.bounds);
+    require(shown == favorites, "the clear row exists only while a condition is in effect");
+    if (shown)
+        require(wcscmp(clear_view.name, L"絞り込みを解除") == 0 &&
+                    clear_view.bounds.top >= view.bounds.bottom,
+                "the clear row is named and sits below the chips");
 }
 
 static LPARAM favorite_position(struct folio_window *_Nonnull window)
@@ -8592,11 +8594,13 @@ static void favorite_label_measure(HDC dc, enum folio_language language, UINT dp
 {
     wchar_t face[LF_FACESIZE];
     ui_face_for(language, face);
-    HFONT font = CreateFontW(-MulDiv(12, (int)dpi, 96), 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+    /* #1199: the chips' lit font (bold 11). Each chip alone fits the 200 DIP drawer's row
+     * (168) with its padding and star (30). */
+    HFONT font = CreateFontW(-MulDiv(11, (int)dpi, 96), 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                              CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, face);
     HGDIOBJ old = SelectObject(dc, font);
-    const enum ui_text labels[] = {UI_TEXT_SCOPE_ALL, UI_TEXT_TITLE_FAVORITES};
+    const enum ui_text labels[] = {UI_TEXT_TITLE_FAVORITES, UI_TEXT_TAG_FILTER_EMPTY};
     for (size_t at = 0; at < sizeof labels / sizeof labels[0]; ++at)
     {
         char16_t text[64];
@@ -8606,10 +8610,10 @@ static void favorite_label_measure(HDC dc, enum folio_language language, UINT dp
                 "scope label conversion");
         SIZE size;
         require(GetTextExtentPoint32W(dc, text, (int)count, &size) &&
-                    size.cx + MulDiv(16, (int)dpi, 96) <= MulDiv(84, (int)dpi, 96),
-                "full scope labels fit the 200 DIP drawer with 8 DIP side room");
+                    size.cx + MulDiv(30, (int)dpi, 96) <= MulDiv(168, (int)dpi, 96),
+                "each filter chip fits one row of the 200 DIP drawer");
         printf("scope-text language=%u dpi=%u label=%u width=%ld available=%d face=%ls\n",
-               (unsigned)language, dpi, (unsigned)labels[at], size.cx, MulDiv(84, (int)dpi, 96),
+               (unsigned)language, dpi, (unsigned)labels[at], size.cx, MulDiv(168, (int)dpi, 96),
                face);
     }
     SelectObject(dc, old);
@@ -8774,11 +8778,17 @@ static void favorite_cancel_input(struct folio_window *_Nonnull window,
     expect_favorite_saved(window, fixture, false);
 }
 
-static void select_favorite_scope(struct folio_window *_Nonnull window, enum accessible_kind kind)
+/* #1199: the scope is set through the favorites chip (UIA Toggle = the command's one path). */
+static void select_favorite_scope(struct folio_window *_Nonnull window, bool favorites)
 {
-    struct accessible_request request = {.item = {.kind = kind},
-                                         .action = ACCESSIBLE_ACTION_SELECT};
-    require(folio_window_accessible_action(window, &request) == S_OK, "UIA scope selection");
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_FILTER_FAVORITES},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &request.item, &view) == S_OK,
+            "the favorites chip is readable");
+    if (view.selected != favorites)
+        require(folio_window_accessible_action(window, &request) == S_OK,
+                "UIA toggles the favorites chip");
     pump(window);
 }
 
@@ -8831,7 +8841,7 @@ static void favorite_empty_scope(struct folio_window *_Nonnull window,
     SetWindowTextW(filter, L"no-favorite-match");
     for (unsigned at = 0; at < 100 && folio_state_index_filter_pending(fixture->state); ++at)
         folio_window_continue_idle_work(window);
-    select_favorite_scope(window, ACCESSIBLE_SCOPE_FAVORITES);
+    select_favorite_scope(window, true);
     struct accessible_item tree = {.kind = ACCESSIBLE_TREE};
     struct accessible_view view = {0};
     require(folio_window_accessible_read(window, &tree, &view) == S_OK &&
@@ -8853,9 +8863,9 @@ static void favorite_empty_scope(struct folio_window *_Nonnull window,
             "remove the last focused favorite");
     struct accessible_item focus = {0};
     require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
-                focus.kind == ACCESSIBLE_SCOPE_FAVORITES,
-            "empty tree focus lands on the selected scope");
-    select_favorite_scope(window, ACCESSIBLE_SCOPE_ALL);
+                focus.kind == ACCESSIBLE_FILTER_FAVORITES,
+            "empty tree focus lands on the favorites chip");
+    select_favorite_scope(window, false);
 }
 
 static void favorite_scope_input(struct folio_window *_Nonnull window,
@@ -8867,24 +8877,33 @@ static void favorite_scope_input(struct folio_window *_Nonnull window,
     favorite_key(window, VK_TAB);
     struct accessible_item focus = {0};
     require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
-                focus.kind == ACCESSIBLE_SCOPE_ALL,
-            "Tab enters the selected scope after search");
+                focus.kind == ACCESSIBLE_FILTER_FAVORITES,
+            "Tab enters the chip row after search");
     favorite_key(window, VK_RIGHT);
-    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL,
-            "arrow moves only focus within scope group");
+    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL &&
+                folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_TAG_FILTER,
+            "arrow moves only focus within the chip row");
+    favorite_key(window, VK_LEFT);
     favorite_key(window, VK_SPACE);
     expect_favorite_scope_name(window, true);
+    require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_FILTER_FAVORITES,
+            "Space toggles the chip and keeps focus on it");
     struct accessible_item tree = {.kind = ACCESSIBLE_TREE};
     struct accessible_view view = {0};
     require(folio_window_accessible_read(window, &tree, &view) == S_OK && view.help[0] != 0,
             "empty favorites have an accessible explanation");
     favorite_empty_pixels(window, "favorites-empty.bmp");
     favorite_key(window, VK_TAB);
+    require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_FILTER_CLEAR,
+            "Tab stops once on the chip row, then on the clear row");
     favorite_key(window, VK_TAB);
     require(folio_window_accessible_focus(window, ACCESSIBLE_WINDOW, &focus) != S_OK ||
                 focus.kind != ACCESSIBLE_TREE,
             "Tab skips an empty tree");
-    select_favorite_scope(window, ACCESSIBLE_SCOPE_ALL);
+    select_favorite_scope(window, false);
     favorite_empty_scope(window, fixture);
     require(IsWindow(root), "scope keeps the same window");
 }
@@ -8894,8 +8913,7 @@ static void favorite_tooltips(struct folio_window *_Nonnull window)
     HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
     HWND tooltip = status_tooltip(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
     /* #1199: the heading row's count is a tooltip and a UIA text with the same sentence. */
-    const enum accessible_kind kinds[] = {ACCESSIBLE_SCOPE_ALL, ACCESSIBLE_SCOPE_FAVORITES,
-                                          ACCESSIBLE_INDEX_COUNT};
+    const enum accessible_kind kinds[] = {ACCESSIBLE_FILTER_FAVORITES, ACCESSIBLE_INDEX_COUNT};
     for (size_t at = 0; at < sizeof kinds / sizeof kinds[0]; ++at)
     {
         wchar_t text[1024] = {0};
@@ -9514,6 +9532,323 @@ static void header_count_units(struct native_fixture *_Nonnull fixture)
             "back to Japanese");
 }
 
+/* #1199: two tag conditions, nothing else. */
+static void discovery_seed_tags(struct native_fixture *_Nonnull fixture)
+{
+    struct note_tag *red = nullptr, *blue = nullptr;
+    struct note_tags *tags = nullptr;
+    require(note_tag_create("red", 3, &red) == NOTE_TAG_READY &&
+                note_tag_create("blue", 4, &blue) == NOTE_TAG_READY,
+            "create two tag conditions");
+    const struct note_tag *names[] = {red, blue};
+    require(note_tags_create(names, 2, &tags) == NOTE_TAGS_READY &&
+                folio_state_set_tag_filter(fixture->state, tags, TAG_MATCH_ANY) ==
+                    FOLIO_STATE_READY,
+            "the list owns two tag conditions");
+    note_tags_destroy(tags);
+    note_tag_destroy(red);
+    note_tag_destroy(blue);
+}
+
+/* #1199: a part of the drawer's fixed band, in the drawer's client pixels. */
+static RECT chip_bounds(struct folio_window *_Nonnull window, enum accessible_kind kind)
+{
+    struct accessible_item item = {.kind = kind};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && !view.offscreen &&
+                !IsRectEmpty(&view.bounds),
+            "a visible part of the filter band");
+    MapWindowPoints(nullptr, folio_window_accessible_window(window, ACCESSIBLE_DRAWER),
+                    (POINT *)&view.bounds, 2);
+    return view.bounds;
+}
+
+/* A real pointer press and release in the middle of the part; the pointer then leaves. */
+static void chip_click(struct folio_window *_Nonnull window, enum accessible_kind kind)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    RECT bounds = chip_bounds(window, kind);
+    LPARAM position =
+        MAKELPARAM((bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, position);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
+    SendMessageW(drawer, WM_LBUTTONUP, 0, position);
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    pump(window);
+}
+
+static COLORREF drawer_pixel(struct folio_window *_Nonnull window, int x, int y)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    RECT client;
+    GetClientRect(drawer, &client);
+    HDC source = GetDC(drawer), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(drawer, dc, PW_CLIENTONLY), "render the real drawer for the filter chips");
+    COLORREF pixel = GetPixel(dc, x, y);
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(drawer, source);
+    return pixel;
+}
+
+/* The chips with nothing lit: one row of the chip height, a 1px frame, no clear row. */
+static void filter_chips_resting(struct folio_window *_Nonnull window, RECT star, RECT tags)
+{
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_DRAWER));
+    require(star.top == tags.top && star.right < tags.left &&
+                star.bottom - star.top == MulDiv(21, dpi, 96) &&
+                tags.bottom - tags.top == MulDiv(21, dpi, 96),
+            "the favorites chip and the tag opener share one row of 21 DIP chips");
+    require(drawer_pixel(window, star.left, star.top) !=
+                drawer_pixel(window, star.left + 3, star.top + 3),
+            "a resting chip has a frame around the drawer's ground");
+    struct accessible_item clear = {.kind = ACCESSIBLE_FILTER_CLEAR};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &clear, &view) != S_OK || view.offscreen,
+            "no clear row while nothing is filtered");
+}
+
+/* With nothing filtered there is no clear row to stop on: Tab goes from the chip row to the
+ * new-category button. */
+static void filter_tab_without_clear(struct folio_window *_Nonnull window,
+                                     struct native_fixture *_Nonnull fixture)
+{
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
+    favorite_key(window, VK_TAB);
+    struct accessible_item focus = {0};
+    require(!folio_state_conditions_active(fixture->state) &&
+                folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_FILTER_FAVORITES,
+            "Tab from the search field stops on the chip row");
+    favorite_key(window, VK_TAB);
+    require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_NEW_CATEGORY,
+            "with nothing filtered, the next Tab skips the absent clear row");
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+}
+
+/* Tab reaches the clear row; Space clears, and the focus does not stay on the vanished row. */
+static void filter_clear_keyboard(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture)
+{
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
+    favorite_key(window, VK_TAB);
+    favorite_key(window, VK_SPACE);
+    favorite_key(window, VK_TAB);
+    struct accessible_item focus = {0};
+    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES &&
+                folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_FILTER_CLEAR,
+            "Space lights the chip and Tab reaches the clear row");
+    favorite_key(window, VK_SPACE);
+    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL &&
+                folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_FILTER_FAVORITES,
+            "Space on the clear row clears and moves the focus to the favorites chip");
+}
+
+/* The clear row vanishes under the pointer and the "new category" button's hit area takes its
+ * place. A second press at the same point (a double click) must not reach that button. */
+static void filter_clear_twice(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    select_favorite_scope(window, true);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+    RECT clear = chip_bounds(window, ACCESSIBLE_FILTER_CLEAR);
+    size_t categories = folio_state_category_count(fixture->state);
+    LPARAM position = MAKELPARAM(clear.right - 3, clear.bottom - 3);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, position);
+    for (int press = 0; press < 2; ++press)
+    {
+        SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
+        SendMessageW(drawer, WM_LBUTTONUP, 0, position);
+        pump(window);
+    }
+    RECT plus = chip_bounds(window, ACCESSIBLE_NEW_CATEGORY);
+    POINT point = {clear.right - 3, clear.bottom - 3};
+    require(PtInRect(&plus, point), "the pressed point is inside the new-category button now");
+    require(
+        folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL &&
+            folio_state_category_count(fixture->state) == categories &&
+            !IsWindowVisible(folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT)) &&
+            GetCapture() != drawer,
+        "a second press where the clear row was does not start a new category");
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(clear.right - 4, clear.bottom - 3));
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    pump(window);
+}
+
+/* The tooltip's rectangle of a part is the rectangle UIA reports for it. */
+static void expect_tooltip_rect(struct folio_window *_Nonnull window, enum accessible_kind kind)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    HWND tooltip = status_tooltip(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    wchar_t text[1024] = {0};
+    TOOLINFOW tool = {.cbSize = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM),
+                      .hwnd = drawer,
+                      .uId = kind,
+                      .lpszText = text};
+    require(tooltip != nullptr && SendMessageW(tooltip, TTM_GETTOOLINFOW, 0, (LPARAM)&tool),
+            "the filter part has a registered tooltip");
+    RECT bounds = chip_bounds(window, kind);
+    require(EqualRect(&tool.rect, &bounds), "the tooltip follows the part's rectangle");
+}
+
+/* Tag conditions light the opener chip and show the clear row. Lighting the favorites chip then
+ * keeps the band's height. Its Japanese label is full-width, so the bold face does not widen the
+ * chip and the opener stays (filter_chip_shift covers a label that widens). Clearing removes
+ * both conditions. */
+static void filter_chip_tags(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    RECT resting = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    COLORREF frame = drawer_pixel(window, resting.left, resting.top);
+    discovery_seed_tags(fixture);
+    for (unsigned at = 0; at < 100 && folio_state_index_filter_pending(fixture->state); ++at)
+        folio_window_continue_idle_work(window);
+    InvalidateRect(drawer, nullptr, FALSE);
+    pump(window);
+    RECT lit = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    struct accessible_item opener = {.kind = ACCESSIBLE_TAG_FILTER};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &opener, &view) == S_OK &&
+                wcsstr(view.name, L"2") != nullptr &&
+                lit.right - lit.left > resting.right - resting.left &&
+                drawer_pixel(window, lit.left, lit.top) != frame,
+            "two tag conditions light the opener chip and add their number");
+    int tree = chip_bounds(window, ACCESSIBLE_TREE).top;
+    expect_tooltip_rect(window, ACCESSIBLE_TAG_FILTER);
+    chip_click(window, ACCESSIBLE_FILTER_FAVORITES);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+    require(chip_bounds(window, ACCESSIBLE_TREE).top == tree &&
+                chip_bounds(window, ACCESSIBLE_TAG_FILTER).left == lit.left,
+            "lighting favorites keeps the band's height and a full-width label keeps the opener");
+    expect_tooltip_rect(window, ACCESSIBLE_TAG_FILTER);
+    expect_tooltip_rect(window, ACCESSIBLE_FILTER_FAVORITES);
+    chip_click(window, ACCESSIBLE_FILTER_CLEAR);
+    for (unsigned at = 0; at < 100 && folio_state_index_filter_pending(fixture->state); ++at)
+        folio_window_continue_idle_work(window);
+    pump(window);
+    const struct note_tags *tags = folio_state_tag_filter(fixture->state);
+    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL &&
+                (tags == nullptr || note_tags_count(tags) == 0) &&
+                !folio_state_conditions_active(fixture->state),
+            "one press on the clear row removes the favorites scope and the tags");
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(1, 1));
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    pump(window);
+}
+
+/* #1242: an English label is wider in the lit chip's bold face. With a tag condition already in
+ * effect the clear row is there, so lighting the favorites chip moves the opener while the band
+ * keeps its height: the tooltip rectangles must follow the chips, not the height. */
+static void filter_chip_shift(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_EN) == FOLIO_STATE_READY,
+            "English for the widening chip");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "widening chip fixture");
+    pump(window);
+    discovery_seed_tags(fixture);
+    for (unsigned at = 0; at < 100 && folio_state_index_filter_pending(fixture->state); ++at)
+        folio_window_continue_idle_work(window);
+    InvalidateRect(folio_window_accessible_window(window, ACCESSIBLE_DRAWER), nullptr, FALSE);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+    RECT star = chip_bounds(window, ACCESSIBLE_FILTER_FAVORITES);
+    RECT opener = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    int tree = chip_bounds(window, ACCESSIBLE_TREE).top;
+    expect_tooltip_rect(window, ACCESSIBLE_TAG_FILTER);
+    chip_click(window, ACCESSIBLE_FILTER_FAVORITES);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+    RECT lit = chip_bounds(window, ACCESSIBLE_FILTER_FAVORITES);
+    RECT moved = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    require(lit.right - lit.left > star.right - star.left && moved.left > opener.left &&
+                moved.top == opener.top && chip_bounds(window, ACCESSIBLE_TREE).top == tree,
+            "a bold English label widens the lit chip and moves the opener on the same row");
+    expect_tooltip_rect(window, ACCESSIBLE_TAG_FILTER);
+    expect_tooltip_rect(window, ACCESSIBLE_FILTER_FAVORITES);
+    chip_click(window, ACCESSIBLE_FILTER_CLEAR);
+    for (unsigned at = 0; at < 100 && folio_state_index_filter_pending(fixture->state); ++at)
+        folio_window_continue_idle_work(window);
+    pump(window);
+    require(!folio_state_conditions_active(fixture->state), "the widening chip fixture is cleared");
+    printf("filter-chip-shift star=%ld lit=%ld opener=%ld moved=%ld\n", star.right - star.left,
+           lit.right - lit.left, opener.left, moved.left);
+    folio_window_destroy(window);
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "back to Japanese after the widening chip");
+}
+
+/* #1199 / ADR0122: the two-way scope choice and the tag button are one row of chips. A lit chip
+ * changes its frame, not its fill; the clear row appears below while a condition
+ * is in effect and moves the tree down; pointer, keyboard and UIA end in the same state. */
+static void filter_chip_row(struct folio_window *_Nonnull window,
+                            struct native_fixture *_Nonnull fixture)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    pump(window);
+    RECT star = chip_bounds(window, ACCESSIBLE_FILTER_FAVORITES);
+    RECT tags = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    int tree = chip_bounds(window, ACCESSIBLE_TREE).top;
+    filter_chips_resting(window, star, tags);
+    COLORREF resting = drawer_pixel(window, star.left, star.top);
+    COLORREF ground = drawer_pixel(window, star.left + 3, star.top + 3);
+    chip_click(window, ACCESSIBLE_FILTER_FAVORITES);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+    RECT lit = chip_bounds(window, ACCESSIBLE_FILTER_FAVORITES);
+    require(
+        folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES &&
+            lit.right - lit.left >= star.right - star.left &&
+            chip_bounds(window, ACCESSIBLE_TAG_FILTER).top == lit.top,
+        "a press lights the chip: its bold label never narrows it and the opener stays on the row");
+    require(drawer_pixel(window, lit.left, lit.top) != resting &&
+                drawer_pixel(window, lit.left + 3, lit.top + 3) == ground,
+            "a lit chip changes the colour of its frame and is not filled");
+    RECT clear = chip_bounds(window, ACCESSIBLE_FILTER_CLEAR);
+    int lowered = chip_bounds(window, ACCESSIBLE_TREE).top;
+    require(clear.top >= lit.bottom && clear.bottom <= lowered && lowered > tree,
+            "the clear row sits between the chips and the tree, which moves down");
+    favorite_tooltips(window);
+    chip_click(window, ACCESSIBLE_FILTER_CLEAR);
+    struct accessible_item focus = {0};
+    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL &&
+                chip_bounds(window, ACCESSIBLE_TREE).top == tree &&
+                (folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) != S_OK ||
+                 focus.kind != ACCESSIBLE_FILTER_CLEAR),
+            "a press on the clear row clears, moves the tree back and leaves no focus behind");
+    favorite_tooltips(window);
+    select_favorite_scope(window, true);
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_FILTER_CLEAR},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK &&
+                folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL,
+            "UIA Invoke on the clear row clears");
+    pump(window);
+    filter_tab_without_clear(window, fixture);
+    filter_clear_keyboard(window, fixture);
+    filter_clear_twice(window, fixture);
+    filter_chip_tags(window, fixture);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+    printf("filter-chips star=%ld lit=%ld opener=%ld tree=%d lowered=%d\n", star.right - star.left,
+           lit.right - lit.left, tags.right - tags.left, tree, lowered);
+}
+
 /* #1246: the search field's clear mark empties the term, so it is there only while the field
  * has text. The favorites scope alone used to draw it over the empty field's shortcut hint.
  * The field paints the mark straight to its window DC after WM_PAINT, so PrintWindow does not
@@ -9650,6 +9985,7 @@ static void run_favorites_ui(struct native_fixture *_Nonnull fixture)
 {
     prepare_favorites(fixture);
     header_count_units(fixture);
+    filter_chip_shift(fixture);
     filter_mark_needs_a_term(fixture);
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
@@ -9658,6 +9994,9 @@ static void run_favorites_ui(struct native_fixture *_Nonnull fixture)
     pump(window);
     fold_mark_pixels(window);
     favorite_tooltips(window);
+    puts("favorites UI: filter chips");
+    fflush(stdout);
+    filter_chip_row(window, fixture);
     puts("favorites UI: hidden star and touch");
     fflush(stdout);
     favorite_hidden_input(window, fixture);
@@ -10161,7 +10500,7 @@ static void tags_filter_roundtrip(struct folio_window *_Nonnull window,
     require(folio_state_toggle_favorite(fixture->state, (struct note_ref){0, 0}) ==
                 FOLIO_STATE_READY,
             "mark only the different saved source as favorite");
-    select_favorite_scope(window, ACCESSIBLE_SCOPE_FAVORITES);
+    select_favorite_scope(window, true);
     require(folio_state_index_filter_count(fixture->state) == 0,
             "favorite scope is ANDed with text and tag conditions");
     tags_open(window, ACCESSIBLE_TAG_FILTER);

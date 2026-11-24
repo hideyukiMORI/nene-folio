@@ -21,6 +21,11 @@ constexpr int ui_part_group_gap = 16;    /* 群と群の間 */
 constexpr int ui_part_edge = 16;         /* 部品と窓・面の縁（余白の原則: 縁 16・枠の内側 8） */
 constexpr int ui_part_field_padding = 8; /* 入力欄の枠の内側の字の左右の余白（#349） */
 constexpr int ui_part_surface_title_height = 44; /* 面の題の段（ADR0060 決定22） */
+/* F 様式（絞り込みの札・ADR0122 / ADR0060 の 2026-11-23 の補正）。 */
+constexpr int ui_part_chip_height = 21;
+constexpr int ui_part_chip_padding = 7;  /* 札の左右の余白 */
+constexpr int ui_part_chip_icon = 12;    /* 札の中の絵 */
+constexpr int ui_part_chip_icon_gap = 4; /* 札の中の絵と字の間 */
 
 /* boundsは呼出元座標のphysical px。題44・内容の縁16・閉じるの縁8/当たり28はdpiで拡大する。 */
 [[nodiscard]] RECT ui_part_surface_rect(RECT bounds, UINT dpi, enum ui_part_surface_region region);
