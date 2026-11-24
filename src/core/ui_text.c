@@ -1049,6 +1049,12 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_COMMAND_TOGGLE_OUTLINE] = {"見出しの欄の表示を切り替える", "Toggle headings",
                                         "切换标题栏"},
     [UI_TEXT_KEY_OUTLINE] = {"Ctrl+Shift+O", "Ctrl+Shift+O", "Ctrl+Shift+O"},
+    /* #1264: ノートの上部を畳む。HIDE / SHOW は畳む釦・戻す釦の名前。 */
+    [UI_TEXT_COMMAND_TOGGLE_NOTE_HEADER] = {"ノートの上部の表示を切り替える", "Toggle note header",
+                                            "切换笔记顶部"},
+    [UI_TEXT_KEY_NOTE_HEADER] = {"Ctrl+Shift+H", "Ctrl+Shift+H", "Ctrl+Shift+H"},
+    [UI_TEXT_NOTE_HEADER_HIDE] = {"ノートの上部を隠す", "Hide note header", "隐藏笔记顶部"},
+    [UI_TEXT_NOTE_HEADER_SHOW] = {"ノートの上部を表示", "Show note header", "显示笔记顶部"},
     [UI_TEXT_OUTLINE] = {"見出し", "Headings", "标题"},
     [UI_TEXT_OUTLINE_HELP] =
         {"行を押すとその見出しへ移ります。ホイールで欄を送れます。狭い窓と編集表示では隠れます。",

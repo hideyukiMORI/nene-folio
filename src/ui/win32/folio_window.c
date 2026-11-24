@@ -799,10 +799,12 @@ static HWND surface_return_target(const struct folio_window *_Nonnull self, HWND
 static void redraw_drawer(const struct folio_window *_Nonnull self);
 static void redraw_command_layer(const struct folio_window *_Nonnull self);
 static void rearrange_keeping_line(struct folio_window *_Nonnull self);
-/* The commands that show or hide a part beside the body (the minimap, the headings column). */
+/* The commands that show or hide a part around the body (the minimap, the headings column,
+ * the note's top part). */
 static bool view_toggle_command(enum folio_command command)
 {
-    return command == FOLIO_COMMAND_TOGGLE_MINIMAP || command == FOLIO_COMMAND_TOGGLE_OUTLINE;
+    return command == FOLIO_COMMAND_TOGGLE_MINIMAP || command == FOLIO_COMMAND_TOGGLE_OUTLINE ||
+           command == FOLIO_COMMAND_TOGGLE_NOTE_HEADER;
 }
 static void apply_drawer_width(struct folio_window *_Nonnull self, int width);
 static bool keyboard_accelerator(struct folio_window *_Nonnull self, WORD id);
@@ -10991,6 +10993,34 @@ static void execute_toggle_outline_command(struct folio_window *_Nonnull self,
     apply_outline(self);
 }
 
+/* #1264: show or hide the note's top part. The value is a saved setting, one for the whole
+ * application; a refused save is reported the way the minimap's is. */
+static void apply_note_header(struct folio_window *_Nonnull self)
+{
+    enum folio_state_outcome outcome =
+        folio_state_set_note_header(self->state, !folio_state_note_header(self->state));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        report_outcome(self, outcome);
+        return;
+    }
+    if (settings_surface(self))
+        clear_command_status(self);
+    else if (!hide_command_surface(self))
+        return;
+    cancel_part_press(self);
+    /* #1264: 配置は後段で畳む */
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
+static void execute_toggle_note_header_command(struct folio_window *_Nonnull self,
+                                               const char *_Nonnull argument)
+{
+    (void)argument;
+    apply_note_header(self);
+}
+
 static void execute_toggle_number_command(struct folio_window *_Nonnull self,
                                           const char *_Nonnull argument)
 {
@@ -11586,6 +11616,7 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
     [FOLIO_COMMAND_SET] = execute_set_command,
     [FOLIO_COMMAND_TOGGLE_MINIMAP] = execute_toggle_minimap_command,
     [FOLIO_COMMAND_TOGGLE_OUTLINE] = execute_toggle_outline_command,
+    [FOLIO_COMMAND_TOGGLE_NOTE_HEADER] = execute_toggle_note_header_command,
     [FOLIO_COMMAND_TOGGLE_FAVORITE] = execute_toggle_favorite,
     [FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY] = execute_toggle_favorites_only,
     [FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST] = execute_toggle_favorites_first,
@@ -17089,6 +17120,8 @@ static WORD shortcut_virtual_key(enum folio_shortcut_key key)
         return 'N';
     case FOLIO_SHORTCUT_KEY_O:
         return 'O';
+    case FOLIO_SHORTCUT_KEY_H:
+        return 'H';
     case FOLIO_SHORTCUT_KEY_P:
         return 'P';
     case FOLIO_SHORTCUT_KEY_F:

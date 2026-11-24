@@ -89,7 +89,7 @@ tests/win32（専用desktopと専用portable dataの検証合成ルート）
 step自体を純関数とは呼ばず、同じ構築状態・入力・work列から同じ結果になる決定性を守る。
 `note_ledger`は手動順・星とその安定した優先順を所有し、`drawer_source`は検索/星の可視条件と展開を共有する。
 `folio_settings`の優先表示設定と`folio_state`の実行中の星scopeを入力し、台帳の順序自体は変えない（ADR0090）。
-設定版7の`motion`も同じ不変設定のparser/writerで保持する。OSの動作可否は`appearance_motion`の三値を
+設定の`motion`（版7から）と`note_header`（版8から・#1264）も同じ不変設定のparser/writerで保持する。OSの動作可否は`appearance_motion`の三値を
 既存snapshotで渡し、applicationが保存選択・観測結果・コントラストから実効値を一度だけ判定する（ADR0096）。
 テーマの固定ID/名前/UI・RTF配色は `folio_theme` の一表、systemを含む名前の解析・解決は `folio_theme_choice` が持つ（ADR0049）。
 `note_file_times`はadapterが得たローカルの作成・更新日時を検証した不変の表示値で、時計やファイルを読まない（ADR0087）。

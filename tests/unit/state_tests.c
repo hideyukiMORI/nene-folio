@@ -162,6 +162,7 @@ struct persistence_adapter
     size_t settings_writes; /* write_settings が呼ばれた回数 */
     bool written_minimap;
     bool written_motion;
+    bool written_note_header;
     bool written_number;                   /* 最後に書かれた設定の number */
     enum folio_theme_choice written_theme; /* 最後に書かれた設定の theme */
     enum folio_language written_language;  /* 最後に書かれた設定の language */
@@ -1004,6 +1005,7 @@ static enum persistence_outcome fake_write_settings(struct persistence_adapter *
     }
     adapter->written_minimap = folio_settings_minimap(settings);
     adapter->written_motion = folio_settings_motion(settings);
+    adapter->written_note_header = folio_settings_note_header(settings);
     adapter->written_number = folio_settings_number(settings);
     adapter->written_theme = folio_settings_theme(settings);
     adapter->written_language = folio_settings_language(settings);
@@ -5346,6 +5348,9 @@ static void verify_settings_unreadable(enum persistence_outcome read,
     require(folio_state_set_minimap(state, false) == FOLIO_STATE_SETTINGS_UNREADABLE &&
                 folio_state_minimap(state),
             "unreadable settings refuse minimap changes");
+    require(folio_state_set_note_header(state, false) == FOLIO_STATE_SETTINGS_UNREADABLE &&
+                folio_state_note_header(state),
+            "unreadable settings refuse note header changes");
     require(adapter.settings_writes == 0, "a file nobody could read is never overwritten");
     require(!folio_state_number(state), "the refused change left the value alone");
     require(folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_SYSTEM,
@@ -6167,8 +6172,79 @@ static void verify_minimap_restart(void)
     folio_state_destroy(state);
 }
 
+/* #1264: the note's top part is one saved preference, adopted only after it was written. */
+static void verify_set_note_header(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_note_header(state), "the note header is shown by default");
+    require(folio_state_set_note_header(state, true) == FOLIO_STATE_READY &&
+                adapter.settings_writes == 0,
+            "an unchanged note header is not written");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "editable note");
+    const char *pane = folio_state_pane_rtf(state);
+    require(folio_state_set_note_header(state, false) == FOLIO_STATE_READY &&
+                !folio_state_note_header(state) && !adapter.written_note_header &&
+                adapter.written_minimap && adapter.settings_writes == 1 &&
+                folio_state_pane_rtf(state) == pane,
+            "hiding commits once without rebuilding the body");
+    require(folio_state_set_minimap(state, false) == FOLIO_STATE_READY &&
+                !folio_state_note_header(state) && !adapter.written_note_header &&
+                !adapter.written_minimap,
+            "another saved option keeps the note header hidden");
+    require(folio_state_set_note_header(state, true) == FOLIO_STATE_READY &&
+                folio_state_note_header(state) && adapter.written_note_header &&
+                !folio_state_minimap(state) && adapter.settings_writes == 3 &&
+                folio_state_pane_rtf(state) == pane && adapter.note_writes == 0,
+            "showing preserves existing settings and body");
+    folio_state_destroy(state);
+}
+
+static void verify_note_header_write_failure(enum persistence_outcome failure,
+                                             enum folio_state_outcome expected)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    adapter.settings_write_outcome = failure;
+    require(folio_state_set_note_header(state, false) == expected &&
+                folio_state_note_header(state) && adapter.settings_writes == 1,
+            "failed storage preserves the visible note header");
+    folio_state_destroy(state);
+}
+
+static void verify_note_header_restart(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_outcome = PERSISTENCE_LOADED;
+    adapter.settings_text =
+        "{\"version\":8,\"number\":true,\"theme\":\"dark\",\"language\":\"en\","
+        "\"minimap\":true,\"note_order\":\"manual\",\"motion\":true,\"note_header\":false}";
+    struct folio_state *state = ready_state(&adapter);
+    require(!folio_state_note_header(state) && folio_state_minimap(state) &&
+                folio_state_number(state) && adapter.settings_writes == 0,
+            "restart adopts the hidden note header without writing");
+    folio_state_destroy(state);
+    adapter.settings_text = "{\"version\":7,\"number\":true,\"theme\":\"dark\",\"language\":\"en\","
+                            "\"minimap\":true,\"note_order\":\"manual\",\"motion\":true}";
+    state = ready_state(&adapter);
+    require(folio_state_note_header(state) && adapter.settings_writes == 0,
+            "a version seven file shows the note header and is not rewritten at startup");
+    folio_state_destroy(state);
+}
+
+static void run_note_header_state_tests(void)
+{
+    verify_set_note_header();
+    verify_note_header_restart();
+    verify_note_header_write_failure(PERSISTENCE_UNWRITABLE, FOLIO_STATE_SETTINGS_STORE_FAILED);
+    verify_note_header_write_failure(PERSISTENCE_OUT_OF_MEMORY, FOLIO_STATE_OUT_OF_MEMORY);
+}
+
 void run_minimap_state_tests(void)
 {
+    run_note_header_state_tests();
     verify_set_minimap();
     verify_minimap_restart();
     verify_minimap_write_failure(PERSISTENCE_UNWRITABLE, FOLIO_STATE_SETTINGS_STORE_FAILED);

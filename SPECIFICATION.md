@@ -132,11 +132,11 @@ OS終了通知（WM_QUERYENDSESSION / WM_ENDSESSION）は[ADR0053](docs/adr/0053
 
 - `number`（FR-021 / 版 1 から）・`theme`（FR-016 / 版 2 で追加。`"system"` / `"light"` / `"dark"`と、版4からの125テーマID。出典は[theme-sources.json](docs/theme-sources.json)）・
   `language`（FR-024 / 版 3 で追加。`"ja"` / `"en"` / `"zh-Hans"`。綴りは BCP 47 のまま）・
-  `minimap`（FR-042 / 版5で追加、bool、既定true）・`note_order`（FR-044 / 版6で追加、`"manual"` / `"favorites_first"`、既定は後者）・`motion`（FR-049 / 版7で追加、bool、既定true）。
+  `minimap`（FR-042 / 版5で追加、bool、既定true）・`note_order`（FR-044 / 版6で追加、`"manual"` / `"favorites_first"`、既定は後者）・`motion`（FR-049 / 版7で追加、bool、既定true）・`note_header`（#1264 / 版8で追加、bool、既定true＝ノートの上部を表示）。
 - **版 1 の形 `{"version": 1, "number": <bool>}` と版 2 の形
   `{"version": 2, "number": <bool>, "theme": "…"}` も読めて**、足りないキーに既定値
   （`theme` は `"system"`・`language` は `"ja"`）を埋める（移行）。
-  版3も旧3語のthemeと言語をそのまま読み、版4の全themeも保持する。版1〜4にはminimap=true、版1〜5にはnote_order=favorites_first、版1〜6にはmotion=trueを補う。書くのは常に版7なので、旧版は次の明示的な設定変更で版7になる。起動だけでは書き換えない。未知のテーマ名・順序は不正として上書きしない。
+  版3も旧3語のthemeと言語をそのまま読み、版4の全themeも保持する。版1〜4にはminimap=true、版1〜5にはnote_order=favorites_first、版1〜6にはmotion=true、版1〜7にはnote_header=trueを補う。書くのは常に版8なので、旧版は次の明示的な設定変更で版8になる。起動だけでは書き換えない。未知のテーマ名・順序は不正として上書きしない。
 - ファイルが無ければ既定値で始め、**起動時には作らない**。未知の版・壊れた値は既定値で起動して理由を 1 回見せ、
   そのセッションは設定を変えず**上書きもしない**（ADR 0025 の決定 6）。
 - 変更は**先に書いてから採用する**ので、表示と保存が食い違わない。

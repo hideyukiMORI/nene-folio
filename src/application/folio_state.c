@@ -1936,6 +1936,25 @@ enum folio_state_outcome folio_state_set_minimap(struct folio_state *_Nonnull st
     return store_settings_change(state, changed);
 }
 
+bool folio_state_note_header(const struct folio_state *_Nonnull state)
+{
+    return folio_settings_note_header(state->settings);
+}
+
+enum folio_state_outcome folio_state_set_note_header(struct folio_state *_Nonnull state,
+                                                     bool note_header)
+{
+    if (state->settings_notice != FOLIO_STATE_READY)
+        return state->settings_notice;
+    if (folio_settings_note_header(state->settings) == note_header)
+        return FOLIO_STATE_READY;
+    struct folio_settings *_Nullable changed = nullptr;
+    if (folio_settings_with_note_header(state->settings, note_header, &changed) !=
+        FOLIO_SETTINGS_READY)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    return store_settings_change(state, changed);
+}
+
 /* 設定と閲覧文書を両方先に作ってから書き、書けたときだけ差し替える（ADR 0031 の決定 3）。
  * テーマと言語の 2 つの意図が共有する唯一の経路で、どちらかが作れなければファイルも状態も
  * 変えない（ADR 0032 の決定 5）。changed はこの関数が引き取る。 */
