@@ -1186,6 +1186,22 @@ static void verify_trash_notice(void)
     verify_vocabulary_of(UI_TEXT_KEYS_DESC_TRASH);
 }
 
+/* 履歴の行は、3 言語とも「{n}」と空白 2 つで始まる。描く側（draw_history_text）が、行の頭の
+ * 数字と空白を等幅で描くので、訳が形を変えたら、ここで気づく（#1262）。 */
+static void verify_history_row_shape(void)
+{
+    const enum ui_text rows[] = {UI_TEXT_HISTORY_ROW, UI_TEXT_HISTORY_ROW_UNREADABLE};
+    for (size_t row = 0; row < sizeof rows / sizeof rows[0]; ++row)
+    {
+        for (size_t column = 0; column < folio_language_count; ++column)
+        {
+            const char *line = ui_text_line(rows[row], (enum folio_language)column);
+            require(strncmp(line, "{n}  ", 5) == 0 && line[5] != ' ',
+                    "a history row starts with its number and two spaces");
+        }
+    }
+}
+
 static void verify_opened_in_view_notice(void)
 {
     const char *const lines[] = {"閲覧で開きました。編集で保てない文字があります。",
@@ -1414,6 +1430,7 @@ void run_ui_text_tests(void)
     verify_fill();
     verify_language();
     verify_trash_notice();
+    verify_history_row_shape();
     verify_opened_in_view_notice();
     verify_category_not_selected();
     verify_rename_vocabulary();

@@ -12997,6 +12997,8 @@ static void menu_row_word_font(struct folio_window *_Nonnull window, size_t slot
     surface_label_word_font(window, row.bounds, label, 16);
 }
 
+static void palette_alias_monospace(struct folio_window *_Nonnull window, RECT row);
+
 /* The palette's rows say the command's name in the language's face (the aliases at the right
  * stay monospace). The first row whose name is long enough to tell the faces apart is read; a
  * row's name starts 12 DIP in. */
@@ -13021,7 +13023,72 @@ static void palette_row_word_font(struct folio_window *_Nonnull window)
     }
     require(found == S_OK, "the palette shows a row with a long name");
     surface_label_word_font(window, view.bounds, (const wchar_t *)view.name, 12);
+    found = folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &row);
+    while (found == S_OK)
+    {
+        require(folio_window_accessible_read(window, &row, &view) == S_OK, "read a palette row");
+        if (wcscmp((const wchar_t *)view.name, L"編集") == 0)
+            break;
+        found = folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_NEXT, &row);
+    }
+    require(found == S_OK && !view.offscreen, "the palette shows the Edit row");
+    palette_alias_monospace(window, view.bounds);
     surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+/* The width of the ink in a band of the surface's own window: from the first inked column to
+ * the last. band is a screen rectangle whose top left pixel is ground. */
+static int surface_ink_span(struct folio_window *_Nonnull window, RECT band)
+{
+    HWND layer = folio_window_accessible_window(window, ACCESSIBLE_SURFACE);
+    MapWindowPoints(nullptr, layer, (POINT *)&band, 2);
+    RECT client;
+    GetClientRect(layer, &client);
+    HDC source = GetDC(layer), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(layer, dc, PW_CLIENTONLY), "render the surface's own window for a band");
+    COLORREF ground = GetPixel(dc, band.left, band.top);
+    int first = band.right, last = band.left;
+    for (int x = band.left; x < band.right; ++x)
+    {
+        if (line_ink(dc, (RECT){x, band.top, x + 1, band.bottom}, ground) != 0)
+        {
+            first = x < first ? x : first;
+            last = x;
+        }
+    }
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(layer, source);
+    return last >= first ? last - first + 1 : 0;
+}
+
+/* The alias at a palette row's right stays monospace. The "Edit" row has one alias; it is drawn
+ * in the 96 DIP at the row's right, with the layer's tracking (1 DIP a character). */
+static void palette_alias_monospace(struct folio_window *_Nonnull window, RECT row)
+{
+    static const wchar_t alias[] = L"startinsert";
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    wchar_t mono[LF_FACESIZE];
+    int mono_size = ui_face_mono(mono, 11);
+    struct header_font words = {face, 11, FW_NORMAL}, values = {mono, mono_size, FW_NORMAL};
+    int tracking = ((int)wcslen(alias) - 1) * MulDiv(1, dpi, 96);
+    int expected = header_text_width(root, alias, values) + tracking;
+    int wordy = header_text_width(root, alias, words) + tracking;
+    int inset = MulDiv(6, dpi, 96);
+    int drawn = surface_ink_span(window, (RECT){row.right - MulDiv(96, dpi, 96), row.top + inset,
+                                                row.right - inset, row.bottom - inset});
+    printf("alias-mono-face drawn=%d expected=%d words=%d\n", drawn, expected, wordy);
+    int slack = MulDiv(3, dpi, 96);
+    require(expected - wordy >= 2 * slack || wordy - expected >= 2 * slack,
+            "the alias tells the two faces apart");
+    require(drawn >= expected - slack && drawn <= expected + slack,
+            "a palette row's alias stays in the monospace face");
 }
 
 /* A history row starts with the version's number in the monospace face (with the spaces after
@@ -13030,7 +13097,6 @@ static void palette_row_word_font(struct folio_window *_Nonnull window)
  * tracking (1 DIP a character); the first line holds a non-ASCII character and is not. */
 static void history_row_fonts(struct folio_window *_Nonnull window, struct accessible_item row)
 {
-    HWND layer = folio_window_accessible_window(window, ACCESSIBLE_SURFACE);
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
     int dpi = (int)GetDpiForWindow(root);
     struct accessible_view view = {0};
@@ -13050,35 +13116,17 @@ static void history_row_fonts(struct folio_window *_Nonnull window, struct acces
     int expected = header_text_width(root, number, values) + (int)split * MulDiv(1, dpi, 96) +
                    header_text_width(root, text + split, words);
     int monospace = header_text_width(root, text, values);
-    MapWindowPoints(nullptr, layer, (POINT *)&view.bounds, 2);
-    RECT client;
-    GetClientRect(layer, &client);
-    HDC source = GetDC(layer), dc = CreateCompatibleDC(source);
-    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
-    HGDIOBJ old = SelectObject(dc, bitmap);
-    require(PrintWindow(layer, dc, PW_CLIENTONLY), "render the history's own window");
     int inset = MulDiv(6, dpi, 96);
-    RECT band = {view.bounds.left + inset, view.bounds.top + inset, view.bounds.right - inset,
-                 view.bounds.bottom - inset};
-    COLORREF ground = GetPixel(dc, band.right - 1, band.top);
-    int first = band.right, last = band.left;
-    for (int x = band.left; x < band.right; ++x)
-    {
-        if (line_ink(dc, (RECT){x, band.top, x + 1, band.bottom}, ground) != 0)
-        {
-            first = x < first ? x : first;
-            last = x;
-        }
-    }
-    SelectObject(dc, old);
-    DeleteObject(bitmap);
-    DeleteDC(dc);
-    ReleaseDC(layer, source);
-    int drawn = last >= first ? last - first + 1 : 0;
+    int drawn =
+        surface_ink_span(window, (RECT){view.bounds.left + inset, view.bounds.top + inset,
+                                        view.bounds.right - inset, view.bounds.bottom - inset});
     printf("history-row-face drawn=%d expected=%d monospace=%d\n", drawn, expected, monospace);
-    require(monospace - expected >= 10 || expected - monospace >= 10,
+    /* Four DIP: the side bearings of the first and last glyph (the last is an emoji or a
+     * backtick from a linked face). */
+    int slack = MulDiv(4, dpi, 96);
+    require(monospace - expected >= 2 * slack || expected - monospace >= 2 * slack,
             "the row's text tells the two faces apart");
-    require(drawn >= expected - 5 && drawn <= expected + 5,
+    require(drawn >= expected - slack && drawn <= expected + slack,
             "a history row draws its number monospace and its line in the language's face");
 }
 
