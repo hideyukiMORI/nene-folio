@@ -861,6 +861,11 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_TAG_ALL] = {"すべて含む", "All selected", "包含全部"},
     [UI_TEXT_TAG_ANY] = {"いずれか含む", "Any selected", "包含任一"},
     [UI_TEXT_TAG_SELECTED] = {"選択中 {n} 個", "{n} selected", "已选择 {n} 个"},
+    /* 絞り込みの面だけに出す（#1281）。{k} は、いま一覧に見えているノートの数。 */
+    [UI_TEXT_TAG_FILTER_MATCHING] = {"選択中 {n} 個 ・ 該当 {k} 件", "{n} selected · {k} matching",
+                                     "已选择 {n} 个 ・ 符合 {k} 篇"},
+    [UI_TEXT_TAG_FILTER_COUNTING] = {"選択中 {n} 個 ・ 数えています…", "{n} selected · counting…",
+                                     "已选择 {n} 个 ・ 正在统计…"},
     [UI_TEXT_TAG_USAGE] = {"{name} — 保存済み {n} 件", "{name} — {n} saved notes",
                            "{name} — {n} 篇已保存笔记"},
     [UI_TEXT_TAG_PREPARING] = {"保存済みノートのタグを準備中…", "Preparing tags from saved notes…",

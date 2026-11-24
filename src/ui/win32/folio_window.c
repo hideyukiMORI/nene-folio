@@ -5480,6 +5480,14 @@ static void tag_footer_summary(const struct folio_window *_Nonnull self, char *_
     struct ui_text_request request = {.id = UI_TEXT_TAG_SELECTED,
                                       .language = folio_state_language(self->state),
                                       .n = selected == nullptr ? 0 : note_tags_count(selected)};
+    /* 絞り込みはすぐ効くが、結果の一覧は暗幕の向こうにある。面の中に件数を出す（#1281）。
+     * 絞り込みが背景で進んでいるあいだは、古い件数を出さない。 */
+    if (self->command_surface == COMMAND_SURFACE_TAG_FILTER)
+    {
+        bool counting = folio_state_index_filter_pending(self->state);
+        request.id = counting ? UI_TEXT_TAG_FILTER_COUNTING : UI_TEXT_TAG_FILTER_MATCHING;
+        request.k = counting ? 0 : folio_state_index_filter_count(self->state);
+    }
     (void)ui_text_format(&request, out, capacity);
 }
 
@@ -18129,6 +18137,26 @@ static void management_surface_status(const struct folio_window *_Nonnull self, 
     }
 }
 
+/* タグの面の状態。編集の面は、知らせる文だけ。絞り込みの面の状態は、件数の行（選択中 n 個・該当 m
+ * 件）で始める。知らせる文（準備中・ 取得できないタグ）があれば、空白 1
+ * つを挟んで後ろに続ける（#1281）。 */
+static void tag_filter_status(const struct folio_window *_Nonnull self, char *_Nonnull out)
+{
+    if (self->command_surface != COMMAND_SURFACE_TAG_FILTER)
+    {
+        tag_catalog_line(self, out, replace_status_capacity);
+        return;
+    }
+    tag_footer_summary(self, out, replace_status_capacity);
+    char notice[replace_status_capacity];
+    tag_catalog_line(self, notice, sizeof notice);
+    size_t length = strlen(out);
+    if (notice[0] == '\0' || length + 2 >= replace_status_capacity)
+        return;
+    out[length] = ' ';
+    (void)bounded_text_copy(out + length + 1, replace_status_capacity - length - 1, notice);
+}
+
 static void surface_status_text(const struct folio_window *_Nonnull self, char *_Nonnull out)
 {
     out[0] = '\0';
@@ -18149,7 +18177,7 @@ static void surface_status_text(const struct folio_window *_Nonnull self, char *
     }
     if (tag_surface(self))
     {
-        tag_catalog_line(self, out, replace_status_capacity);
+        tag_filter_status(self, out);
         return;
     }
     if (self->command_surface == COMMAND_SURFACE_SEARCH)
@@ -21231,6 +21259,17 @@ static enum folio_idle_work ready_idle_work(const struct folio_window *_Nonnull 
     return self->next_idle_work;
 }
 
+/* 絞り込みが終わったら、開いている絞り込みの面の件数の行を描き直して、読み上げにも知らせる
+ * （#1281）。行が折り返すと下の行の高さが変わるので、測り直す。 */
+static void tag_filter_counted(struct folio_window *_Nonnull self)
+{
+    if (self->command_surface != COMMAND_SURFACE_TAG_FILTER)
+        return;
+    arrange_command_input(self);
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
 static void continue_index_filter(struct folio_window *_Nonnull self)
 {
     folio_window_begin_dispatch(self);
@@ -21242,6 +21281,7 @@ static void continue_index_filter(struct folio_window *_Nonnull self)
         tag_action_finished(self, outcome);
     if (!folio_state_index_filter_pending(self->state))
     {
+        tag_filter_counted(self);
         refresh_index_filter(self);
         if (part_enabled(self, ACCESSIBLE_TREE))
             refresh_after_input(self);
