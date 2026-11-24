@@ -10948,11 +10948,13 @@ static void surface_row_word_font(struct folio_window *_Nonnull window, struct a
     ReleaseDC(layer, source);
     int drawn = last >= first ? last - first + 1 : 0;
     printf("surface-row-face drawn=%d expected=%d monospace=%d\n", drawn, expected, monospace);
-    /* Five pixels: the side bearings of the first and last glyph, and the dash's. The two faces
-     * must differ by at least twice that for the check to tell them apart. */
-    require(monospace - expected >= 10 || expected - monospace >= 10,
+    /* Three DIP: the side bearings of the first and last glyph, and the dash's. The two faces
+     * must differ by at least twice that for the check to tell them apart (measured: 96 against
+     * 103 at 96 DPI, 125 against 140 at 120). */
+    int slack = MulDiv(3, dpi, 96);
+    require(monospace - expected >= 2 * slack || expected - monospace >= 2 * slack,
             "the row's text tells the two faces apart");
-    require(drawn >= expected - 5 && drawn <= expected + 5,
+    require(drawn >= expected - slack && drawn <= expected + slack,
             "a surface row's words are drawn in the language's face");
 }
 
