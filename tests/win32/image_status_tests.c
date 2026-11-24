@@ -11342,6 +11342,18 @@ static void tags_visual_matrix(struct native_fixture *_Nonnull fixture)
     favorite_high_contrast = false;
 }
 
+/* #1281: the filter surface says how many tags are chosen and how many notes match, at the
+ * start of its status (a notice about the catalog may follow it). */
+static void tags_filter_counts(struct folio_window *_Nonnull window,
+                               const wchar_t *_Nonnull expected)
+{
+    struct accessible_view status = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0);
+    const wchar_t *name = (const wchar_t *)status.name;
+    printf("tag-filter-counts %ls\n", name);
+    require(wcsncmp(name, expected, wcslen(expected)) == 0 && status.live,
+            "the filter surface's status starts with the chosen tags and the matching notes");
+}
+
 static void tags_filter_roundtrip(struct folio_window *_Nonnull window,
                                   struct native_fixture *_Nonnull fixture)
 {
@@ -11359,18 +11371,22 @@ static void tags_filter_roundtrip(struct folio_window *_Nonnull window,
     surface_foot_fits(
         window, tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0).bounds,
         tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_TAG_CLEAR).bounds);
+    tags_filter_counts(window, L"選択中 0 個 ・ 該当 3 件");
     tags_toggle(window, L"red");
     tags_settle(window, fixture->state);
     require(folio_state_index_filter_count(fixture->state) == 1,
             "one tag matches its saved source");
+    tags_filter_counts(window, L"選択中 1 個 ・ 該当 1 件");
     tags_toggle(window, L"green");
     tags_settle(window, fixture->state);
     require(folio_state_index_filter_count(fixture->state) == 0,
             "ALL tags produce an explicit empty result");
+    tags_filter_counts(window, L"選択中 2 個 ・ 該当 0 件");
     surface_button(window, ACCESSIBLE_SURFACE_TAG_ANY);
     tags_settle(window, fixture->state);
     require(folio_state_index_filter_count(fixture->state) == 2,
             "ANY tags match either saved source");
+    tags_filter_counts(window, L"選択中 2 個 ・ 該当 2 件");
     surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
     HWND input = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
     require(SetWindowTextW(input, L"Other"), "set ordinary global text filter");
