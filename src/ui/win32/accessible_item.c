@@ -33,6 +33,11 @@ static const enum accessible_kind accessible_hosts[] = {
     [ACCESSIBLE_FILTER_FAVORITES] = ACCESSIBLE_DRAWER,
     [ACCESSIBLE_TAG_FILTER] = ACCESSIBLE_DRAWER,
     [ACCESSIBLE_FILTER_CLEAR] = ACCESSIBLE_DRAWER,
+    [ACCESSIBLE_FILTER_TAG] = ACCESSIBLE_DRAWER,
+    [ACCESSIBLE_FILTER_MORE] = ACCESSIBLE_DRAWER,
+    [ACCESSIBLE_FILTER_MATCH_GROUP] = ACCESSIBLE_DRAWER,
+    [ACCESSIBLE_FILTER_MATCH_ALL] = ACCESSIBLE_DRAWER,
+    [ACCESSIBLE_FILTER_MATCH_ANY] = ACCESSIBLE_DRAWER,
     [ACCESSIBLE_INDEX_COUNT] = ACCESSIBLE_DRAWER,
     [ACCESSIBLE_NEW_CATEGORY] = ACCESSIBLE_DRAWER,
     [ACCESSIBLE_TREE] = ACCESSIBLE_DRAWER,
@@ -98,7 +103,7 @@ bool accessible_item_equal(struct accessible_item left, struct accessible_item r
         return false;
     }
     if ((accessible_item_surface(left) && !accessible_item_root(left)) ||
-        left.kind == ACCESSIBLE_OUTLINE_ITEM)
+        left.kind == ACCESSIBLE_OUTLINE_ITEM || left.kind == ACCESSIBLE_FILTER_TAG)
     {
         return left.revision == right.revision && left.slot == right.slot;
     }

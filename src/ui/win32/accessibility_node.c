@@ -44,6 +44,7 @@ static bool has_invoke(enum accessible_kind kind)
            kind == ACCESSIBLE_NEW_CATEGORY || kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_SAVE ||
            kind == ACCESSIBLE_HELP || kind == ACCESSIBLE_FIND || kind == ACCESSIBLE_TAG_EDIT ||
            kind == ACCESSIBLE_TAG_FILTER || kind == ACCESSIBLE_FILTER_CLEAR ||
+           kind == ACCESSIBLE_FILTER_TAG || kind == ACCESSIBLE_FILTER_MORE ||
            kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_BUTTON ||
            kind == ACCESSIBLE_OUTLINE_ITEM;
 }
@@ -52,7 +53,8 @@ static bool has_selection(enum accessible_kind kind)
 {
     return kind == ACCESSIBLE_TREE || kind == ACCESSIBLE_LAYOUT_GROUP ||
            kind == ACCESSIBLE_MODE_GROUP || kind == ACCESSIBLE_SURFACE_LIST ||
-           kind == ACCESSIBLE_SURFACE_TABS || kind == ACCESSIBLE_OUTLINE;
+           kind == ACCESSIBLE_SURFACE_TABS || kind == ACCESSIBLE_OUTLINE ||
+           kind == ACCESSIBLE_FILTER_MATCH_GROUP;
 }
 
 static bool has_selection_item(enum accessible_kind kind)
@@ -61,7 +63,8 @@ static bool has_selection_item(enum accessible_kind kind)
            kind == ACCESSIBLE_LAYOUT_BOTH || kind == ACCESSIBLE_LAYOUT_NOTE ||
            kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT ||
            kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_LANGUAGE ||
-           kind == ACCESSIBLE_SURFACE_TAB || kind == ACCESSIBLE_OUTLINE_ITEM;
+           kind == ACCESSIBLE_SURFACE_TAB || kind == ACCESSIBLE_OUTLINE_ITEM ||
+           kind == ACCESSIBLE_FILTER_MATCH_ALL || kind == ACCESSIBLE_FILTER_MATCH_ANY;
 }
 
 /* Toggle: 面の切り替え、ノートの星、左の欄のお気に入りの札（#1199）。 */
@@ -379,6 +382,11 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_FILTER_GROUP] = UIA_GroupControlTypeId,
     [ACCESSIBLE_FILTER_FAVORITES] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_FILTER_CLEAR] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_FILTER_TAG] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_FILTER_MORE] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_FILTER_MATCH_GROUP] = UIA_GroupControlTypeId,
+    [ACCESSIBLE_FILTER_MATCH_ALL] = UIA_RadioButtonControlTypeId,
+    [ACCESSIBLE_FILTER_MATCH_ANY] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_TREE] = UIA_TreeControlTypeId,
     [ACCESSIBLE_CATEGORY] = UIA_TreeItemControlTypeId,
     [ACCESSIBLE_NOTE] = UIA_TreeItemControlTypeId,
@@ -842,6 +850,8 @@ static struct accessible_item selection_container(struct accessible_item item)
     enum accessible_kind kind = item.kind;
     if (kind == ACCESSIBLE_OUTLINE_ITEM)
         return (struct accessible_item){.kind = ACCESSIBLE_OUTLINE};
+    if (kind == ACCESSIBLE_FILTER_MATCH_ALL || kind == ACCESSIBLE_FILTER_MATCH_ANY)
+        return (struct accessible_item){.kind = ACCESSIBLE_FILTER_MATCH_GROUP};
     if (kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT)
     {
         return (struct accessible_item){.kind = ACCESSIBLE_MODE_GROUP};

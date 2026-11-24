@@ -118,13 +118,35 @@ static void draw_primary(HDC device, const struct folio_palette *_Nonnull palett
     }
 }
 
+/* 枠を持たない札の 2 択（「すべて含む／いずれか」・#1249）: 選んでいる方は下辺の線。
+ * focus の輪（内側の 2px）が同じ下辺を使うので、focus のあいだは輪のすぐ内側に描く。
+ * 無効のあいだも、どちらを選んでいるかは border の色で残す（S 様式の棒と同じ）。 */
+static void draw_chip_choice(HDC device, const struct folio_palette *_Nonnull palette,
+                             const struct ui_part_paint *_Nonnull part)
+{
+    if (!part->selected)
+    {
+        return;
+    }
+    int width = ui_part_focus_width(part->dpi);
+    RECT bar = part->bounds;
+    bar.bottom -= part->focused ? width : 0;
+    bar.top = bar.bottom - width;
+    fill(device, bar, part->disabled ? palette->border : palette->current_text);
+}
+
 /* 札の枠。静止は 1px の border、点いた札は字の色（高コントラストでは 2px・ADR0122 の決定 5）。
- * 枠を持たない札（grouped。「× 解除」）は描かない。 */
+ * 枠を持たない札（grouped。「× 解除」と 2 択）は、枠を描かない。 */
 static void draw_chip_frame(HDC device, const struct folio_palette *_Nonnull palette,
                             const struct ui_part_paint *_Nonnull part)
 {
-    if (part->style != UI_PART_STYLE_CHIP || part->grouped)
+    if (part->style != UI_PART_STYLE_CHIP)
     {
+        return;
+    }
+    if (part->grouped)
+    {
+        draw_chip_choice(device, palette, part);
         return;
     }
     bool high = palette->contrast == FOLIO_CONTRAST_HIGH;

@@ -30,10 +30,15 @@ enum accessible_kind : unsigned char
     ACCESSIBLE_FIND,
     ACCESSIBLE_MENU,
     ACCESSIBLE_TAG_EDIT,
-    ACCESSIBLE_FILTER_GROUP,     /* 絞り込みの札の行（#1199）。子は下の 2 つで、列挙で連続 */
-    ACCESSIBLE_FILTER_FAVORITES, /* お気に入りの札（Toggle） */
-    ACCESSIBLE_TAG_FILTER,       /* タグの面を開く札 */
-    ACCESSIBLE_FILTER_CLEAR,     /* 「× 解除」。条件が効いているときだけある */
+    ACCESSIBLE_FILTER_GROUP,       /* 絞り込みの札の行（#1199）。子は下の 4 つで、列挙で連続 */
+    ACCESSIBLE_FILTER_FAVORITES,   /* お気に入りの札（Toggle） */
+    ACCESSIBLE_FILTER_TAG,         /* タグごとの札（#1247）。番号とタグの条件の改訂で 1 つを指す */
+    ACCESSIBLE_FILTER_MORE,        /* 畳んだタグの「+N」。畳んだ分があるときだけある */
+    ACCESSIBLE_TAG_FILTER,         /* タグの面を開く札 */
+    ACCESSIBLE_FILTER_MATCH_GROUP, /* タグの条件の 2 択（#1249）。タグが 2 つ以上のときだけある */
+    ACCESSIBLE_FILTER_MATCH_ALL,   /* すべて含む */
+    ACCESSIBLE_FILTER_MATCH_ANY,   /* いずれか */
+    ACCESSIBLE_FILTER_CLEAR,       /* 「× 解除」。条件が効いているときだけある */
     ACCESSIBLE_INDEX_COUNT, /* 見出しの行（「カテゴリ」と数）。名前は「カテゴリ k ・ ノート n」 */
     ACCESSIBLE_NEW_CATEGORY,
     ACCESSIBLE_TREE,

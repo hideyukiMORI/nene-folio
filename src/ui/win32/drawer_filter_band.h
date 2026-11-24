@@ -3,13 +3,22 @@
 #ifndef NENEFOLIO_DRAWER_FILTER_BAND_H
 #define NENEFOLIO_DRAWER_FILTER_BAND_H
 
+#include "note_tags.h"
+
 #include <windows.h>
 
 struct drawer_filter_band
 {
     RECT group;     /* 札の行の全体（1 行か 2 行） */
     RECT favorites; /* お気に入りの札 */
+    /* タグごとの札（#1247）。先頭の shown 個が置かれ、後ろの hidden 個は「+N」に畳まれている */
+    RECT chips[note_tags_max_count];
+    size_t shown;
+    size_t hidden;
+    RECT more;      /* 「+N」の札。畳んだ分が無いときは空 */
     RECT tags;      /* タグの面を開く札 */
+    RECT match_all; /* 「すべて含む」。タグの条件が 2 つ未満のときは空（#1249） */
+    RECT match_any; /* 「いずれか」。同じ */
     RECT clear;     /* 「× 解除」。条件が効いていないときは空 */
     int bottom;     /* 札の行（と解除の行）の下端＝カテゴリの段の上端 */
 };
