@@ -181,6 +181,8 @@ struct folio_window
     HFONT _Nullable mono_font;
     /* 言葉（釦の名前など）を描く、言語ごとの同梱の書体（#1222）。番号・日時・キーは mono_font。 */
     HFONT _Nullable word_font;
+    /* 設定の言語の行は、その行の言語の書体で名前を描く（#1279）。添字は enum folio_language。 */
+    HFONT _Nullable language_fonts[folio_language_count];
     struct command_help_fonts help_fonts;
     HFONT _Nullable gutter_font; /* mono_fontと本文倍率から作る行番号の派生資源（ADR0067）。 */
     HWND _Nullable command_layer;
@@ -1439,17 +1441,40 @@ static void refresh_help_fonts(struct folio_window *_Nonnull self, UINT dpi)
 
 /* 言葉の書体は、言語ごとの face（同梱 → その言語の退避 → 日本語の退避。ui_face_for）。
  * DPI と言語のどちらが変わっても作り直す（#1222）。 */
-static void refresh_word_font(struct folio_window *_Nonnull self, UINT dpi)
+static HFONT _Nullable create_word_font(enum folio_language language, UINT dpi)
+{
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(language, face);
+    return CreateFontW(-scale(base_word_font, dpi), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                       DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                       DEFAULT_PITCH | FF_DONTCARE, face);
+}
+
+static void release_word_fonts(struct folio_window *_Nonnull self)
 {
     if (self->word_font != nullptr)
     {
         DeleteObject(self->word_font);
+        self->word_font = nullptr;
     }
-    wchar_t face[LF_FACESIZE];
-    ui_face_for(folio_state_language(self->state), face);
-    self->word_font = CreateFontW(-scale(base_word_font, dpi), 0, 0, 0, FW_NORMAL, FALSE, FALSE,
-                                  FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                                  CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, face);
+    for (size_t index = 0; index < folio_language_count; ++index)
+    {
+        if (self->language_fonts[index] != nullptr)
+        {
+            DeleteObject(self->language_fonts[index]);
+            self->language_fonts[index] = nullptr;
+        }
+    }
+}
+
+static void refresh_word_font(struct folio_window *_Nonnull self, UINT dpi)
+{
+    release_word_fonts(self);
+    self->word_font = create_word_font(folio_state_language(self->state), dpi);
+    for (size_t index = 0; index < folio_language_count; ++index)
+    {
+        self->language_fonts[index] = create_word_font((enum folio_language)index, dpi);
+    }
     self->part_metrics.valid = false;
 }
 
@@ -1457,6 +1482,14 @@ static void refresh_word_font(struct folio_window *_Nonnull self, UINT dpi)
 static HFONT _Nullable word_font(const struct folio_window *_Nonnull self)
 {
     return self->word_font != nullptr ? self->word_font : self->mono_font;
+}
+
+/* 言語の名前を描く書体（その言語の face）。作れなかったときは、いまの言葉の書体で描く。 */
+static HFONT _Nullable language_font(const struct folio_window *_Nonnull self,
+                                     enum folio_language language)
+{
+    HFONT _Nullable font = self->language_fonts[language];
+    return font != nullptr ? font : word_font(self);
 }
 
 static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
@@ -5088,10 +5121,12 @@ static void draw_settings_row(const struct folio_window *_Nonnull self, HDC devi
     label.left += scale(choice ? 32 : 0, dpi);
     label.right -= scale(4, dpi);
     SetTextColor(device, self->palette.current_text);
-    /* 言語の名前（日本語・English・简体中文）は、等幅のまま。日本語・英語の言葉の書体には
-     * 「简」が無く、1 つの名前の中で書体が混ざる。 */
+    /* 言語の名前（日本語・English・简体中文）は、その行の言語の書体で描く。日本語・英語の
+     * 言葉の書体には「简」が無く、いまの言語の書体では 1 つの名前の中で書体が混ざる（#1279）。 */
     bool language = settings_rows[index].kind == SETTINGS_ROW_LANGUAGE;
-    HGDIOBJ previous = SelectObject(device, language ? self->mono_font : word_font(self));
+    HGDIOBJ previous = SelectObject(
+        device, language ? language_font(self, (enum folio_language)settings_rows[index].value)
+                         : word_font(self));
     draw_units(device, ui_text_line(settings_rows[index].label, folio_state_language(self->state)),
                label, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     SelectObject(device, previous);
@@ -15788,11 +15823,7 @@ static void window_destroyed(struct folio_window *_Nonnull self)
         DeleteObject(self->mono_font);
         self->mono_font = nullptr;
     }
-    if (self->word_font != nullptr)
-    {
-        DeleteObject(self->word_font);
-        self->word_font = nullptr;
-    }
+    release_word_fonts(self);
     if (self->gutter_font != nullptr)
     {
         DeleteObject(self->gutter_font);
@@ -17493,10 +17524,7 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     {
         DeleteObject(window->mono_font);
     }
-    if (window->word_font != nullptr)
-    {
-        DeleteObject(window->word_font);
-    }
+    release_word_fonts(window);
     if (window->gutter_font != nullptr)
         DeleteObject(window->gutter_font);
     if (window->command_brush != nullptr)
