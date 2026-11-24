@@ -674,6 +674,12 @@ void folio_state_close_tag_edit(struct folio_state *_Nonnull state);
 [[nodiscard]] enum folio_state_outcome
 folio_state_note_tag_count(const struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
                            size_t count, size_t *_Nonnull out);
+/* The current source's tags, in the note's order, without starting an edit session (the note's
+ * tag labels above the body). Sources are those of folio_state_note_tag_count. The caller owns
+ * *out and releases it with note_tags_destroy. Failure preserves out. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_note_tags(const struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+                      size_t count, struct note_tags *_Nullable *_Nonnull out);
 /* Omitted only when no edit session is active. Borrow until the next tag intention. */
 [[nodiscard]] const struct note_tags *_Nullable folio_state_edit_tags(
     const struct folio_state *_Nonnull state);
