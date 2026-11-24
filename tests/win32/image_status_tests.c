@@ -10184,6 +10184,197 @@ static void filter_chip_shift(struct native_fixture *_Nonnull fixture)
             "back to Japanese after the widening chip");
 }
 
+/* #1249: the pair "all / any" of the tag condition, on the clear row while two or more tags
+ * filter the list. */
+static bool match_part_absent(struct folio_window *_Nonnull window, enum accessible_kind kind)
+{
+    struct accessible_item item = {.kind = kind};
+    struct accessible_view view = {0};
+    return folio_window_accessible_read(window, &item, &view) != S_OK || view.offscreen;
+}
+
+static bool match_selected(struct folio_window *_Nonnull window, enum accessible_kind kind)
+{
+    struct accessible_item item = {.kind = kind};
+    struct accessible_view view = {0};
+    return folio_window_accessible_read(window, &item, &view) == S_OK && view.selected;
+}
+
+/* Two tags (any): the pair sits left of the clear row's button, "any" is selected and carries
+ * the line under it, UIA reports the same selection, the tooltips follow. */
+static void match_pair_resting(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    RECT group = chip_bounds(window, ACCESSIBLE_FILTER_GROUP);
+    RECT all = chip_bounds(window, ACCESSIBLE_FILTER_MATCH_ALL);
+    RECT any = chip_bounds(window, ACCESSIBLE_FILTER_MATCH_ANY);
+    RECT clear = chip_bounds(window, ACCESSIBLE_FILTER_CLEAR);
+    RECT pair = chip_bounds(window, ACCESSIBLE_FILTER_MATCH_GROUP);
+    require(all.left == group.left && all.top >= group.bottom && any.left > all.right &&
+                any.top == all.top && clear.top == all.top && clear.left > any.right &&
+                pair.left == all.left && pair.right == any.right,
+            "the pair sits at the left of the clear row, the clear button at its right");
+    struct accessible_item item = {.kind = ACCESSIBLE_FILTER_MATCH_GROUP};
+    struct accessible_item selected = {0};
+    require(folio_state_tag_match_mode(fixture->state) == TAG_MATCH_ANY &&
+                match_selected(window, ACCESSIBLE_FILTER_MATCH_ANY) &&
+                !match_selected(window, ACCESSIBLE_FILTER_MATCH_ALL) &&
+                folio_window_accessible_selected(window, &item, &selected) == S_OK &&
+                selected.kind == ACCESSIBLE_FILTER_MATCH_ANY,
+            "the selected radio is the condition's mode");
+    COLORREF ground = drawer_pixel(window, all.left + 1, all.bottom - 1);
+    require(drawer_pixel(window, any.left + 1, any.bottom - 1) != ground &&
+                drawer_pixel(window, any.left + 1, any.top) == ground,
+            "the selected one carries a line under it and no fill");
+    expect_tooltip_rect(window, ACCESSIBLE_FILTER_MATCH_ALL);
+    expect_tooltip_rect(window, ACCESSIBLE_FILTER_MATCH_ANY);
+}
+
+/* A press selects; the pair does not move; UIA Select selects; selecting the selected one
+ * leaves the condition's revision alone. */
+static void match_pair_select(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture)
+{
+    RECT all = chip_bounds(window, ACCESSIBLE_FILTER_MATCH_ALL);
+    RECT any = chip_bounds(window, ACCESSIBLE_FILTER_MATCH_ANY);
+    chip_click(window, ACCESSIBLE_FILTER_MATCH_ALL);
+    filter_settle(window, fixture);
+    RECT all_after = chip_bounds(window, ACCESSIBLE_FILTER_MATCH_ALL);
+    RECT any_after = chip_bounds(window, ACCESSIBLE_FILTER_MATCH_ANY);
+    require(folio_state_tag_match_mode(fixture->state) == TAG_MATCH_ALL &&
+                tag_condition_count(fixture) == 2 &&
+                match_selected(window, ACCESSIBLE_FILTER_MATCH_ALL) &&
+                EqualRect(&all, &all_after) && EqualRect(&any, &any_after),
+            "a press selects the other mode, keeps the tags and does not move the pair");
+    struct accessible_request select = {.item = {.kind = ACCESSIBLE_FILTER_MATCH_ANY},
+                                        .action = ACCESSIBLE_ACTION_SELECT};
+    require(folio_window_accessible_action(window, &select) == S_OK, "UIA Select on any");
+    filter_settle(window, fixture);
+    uint64_t revision = folio_state_tag_filter_revision(fixture->state);
+    require(folio_state_tag_match_mode(fixture->state) == TAG_MATCH_ANY &&
+                folio_window_accessible_action(window, &select) == S_OK &&
+                folio_state_tag_filter_revision(fixture->state) == revision,
+            "UIA Select selects; selecting the selected one changes nothing");
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+}
+
+/* Tab stops once on the pair, on the selected one; arrows move only the focus; Space selects;
+ * the next Tab reaches the clear row. */
+static void match_pair_keyboard(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture)
+{
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
+    favorite_key(window, VK_TAB);
+    favorite_key(window, VK_TAB);
+    require(filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_MATCH_ANY}),
+            "Tab from the chip row enters the pair on the selected mode");
+    favorite_key(window, VK_LEFT);
+    require(
+        filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_MATCH_ALL}) &&
+            folio_state_tag_match_mode(fixture->state) == TAG_MATCH_ANY,
+        "an arrow moves only the focus within the pair");
+    favorite_key(window, VK_SPACE);
+    filter_settle(window, fixture);
+    require(
+        folio_state_tag_match_mode(fixture->state) == TAG_MATCH_ALL &&
+            filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_MATCH_ALL}),
+        "Space selects the focused mode and the focus stays");
+    favorite_key(window, VK_TAB);
+    require(filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_CLEAR}),
+            "the next Tab reaches the clear row");
+}
+
+/* With one tag left the pair is gone, and a focus that was on it moves to the favorites chip. */
+static void match_pair_vanishes(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture)
+{
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_FILTER_MATCH_ALL},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK, "focus the pair");
+    pump(window);
+    struct accessible_request remove = {.item = tag_chip(fixture, 1),
+                                        .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &remove) == S_OK, "remove the second tag");
+    filter_settle(window, fixture);
+    require(
+        tag_condition_count(fixture) == 1 &&
+            match_part_absent(window, ACCESSIBLE_FILTER_MATCH_GROUP) &&
+            match_part_absent(window, ACCESSIBLE_FILTER_MATCH_ALL) &&
+            match_part_absent(window, ACCESSIBLE_FILTER_MATCH_ANY) &&
+            !match_part_absent(window, ACCESSIBLE_FILTER_CLEAR) &&
+            filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_FAVORITES}),
+        "with one tag the pair is gone and its focus moves to the favorites chip");
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
+    favorite_key(window, VK_TAB);
+    favorite_key(window, VK_TAB);
+    require(filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_CLEAR}),
+            "with one tag, Tab goes from the chip row to the clear row");
+    chip_click(window, ACCESSIBLE_FILTER_CLEAR);
+    filter_settle(window, fixture);
+    require(tag_condition_count(fixture) == 0 &&
+                folio_state_tag_match_mode(fixture->state) == TAG_MATCH_ALL,
+            "the clear row removes the tag and the mode goes back to all");
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(1, 1));
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+}
+
+static void filter_match_pair(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture)
+{
+    require(match_part_absent(window, ACCESSIBLE_FILTER_MATCH_GROUP) &&
+                match_part_absent(window, ACCESSIBLE_FILTER_MATCH_ALL),
+            "no pair while no tag filters the list");
+    discovery_seed_tags(fixture);
+    filter_settle(window, fixture);
+    match_pair_resting(window, fixture);
+    match_pair_select(window, fixture);
+    match_pair_keyboard(window, fixture);
+    match_pair_vanishes(window, fixture);
+}
+
+/* #1249: at the narrowest drawer, in each language, the pair stays inside the row; the clear
+ * button is on the same row when it fits and on the next one when it does not. */
+static void filter_match_narrow(struct native_fixture *_Nonnull fixture)
+{
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    for (size_t at = 0; at < sizeof languages / sizeof languages[0]; ++at)
+    {
+        require(folio_state_set_language(fixture->state, languages[at]) == FOLIO_STATE_READY,
+                "language for the narrow pair");
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "narrow pair fixture");
+        pump(window);
+        struct accessible_request width = {.item = {.kind = ACCESSIBLE_SPLITTER},
+                                           .action = ACCESSIBLE_ACTION_SET_RANGE,
+                                           .range_value = 200};
+        require(folio_window_accessible_action(window, &width) == S_OK, "minimum drawer width");
+        discovery_seed_tags(fixture);
+        filter_settle(window, fixture);
+        RECT group = chip_bounds(window, ACCESSIBLE_FILTER_GROUP);
+        RECT any = chip_bounds(window, ACCESSIBLE_FILTER_MATCH_ANY);
+        RECT clear = chip_bounds(window, ACCESSIBLE_FILTER_CLEAR);
+        bool beside = clear.top == any.top && clear.left > any.right;
+        bool below = clear.top >= any.bottom;
+        require(any.right <= group.right && clear.right <= group.right && (beside || below),
+                "the pair and the clear button stay inside the narrow row without overlapping");
+        printf("filter-match-narrow language=%u pair=%ld clear=%ld..%ld %s\n",
+               (unsigned)languages[at], any.right - group.left, clear.left - group.left,
+               clear.right - group.left, beside ? "beside" : "below");
+        require(folio_state_clear_conditions(fixture->state) == FOLIO_STATE_READY,
+                "clear the narrow pair fixture");
+        folio_window_destroy(window);
+    }
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "back to Japanese after the narrow pair");
+}
+
 /* #1199 / ADR0122: the two-way scope choice and the tag button are one row of chips. A lit chip
  * changes its frame, not its fill; the clear row appears below while a condition
  * is in effect and moves the tree down; pointer, keyboard and UIA end in the same state. */
@@ -10244,6 +10435,7 @@ static void filter_chip_row(struct folio_window *_Nonnull window,
     filter_tag_pointer(window, fixture);
     filter_tag_fold(window, fixture);
     filter_tag_long(window, fixture);
+    filter_match_pair(window, fixture);
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
     pump(window);
     printf("filter-chips star=%ld lit=%ld opener=%ld tree=%d lowered=%d\n", star.right - star.left,
@@ -10387,6 +10579,7 @@ static void run_favorites_ui(struct native_fixture *_Nonnull fixture)
     prepare_favorites(fixture);
     header_count_units(fixture);
     filter_chip_shift(fixture);
+    filter_match_narrow(fixture);
     filter_mark_needs_a_term(fixture);
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==

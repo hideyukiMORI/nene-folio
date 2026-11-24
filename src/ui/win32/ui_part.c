@@ -123,8 +123,19 @@ static void draw_primary(HDC device, const struct folio_palette *_Nonnull palett
 static void draw_chip_frame(HDC device, const struct folio_palette *_Nonnull palette,
                             const struct ui_part_paint *_Nonnull part)
 {
-    if (part->style != UI_PART_STYLE_CHIP || part->grouped)
+    if (part->style != UI_PART_STYLE_CHIP)
     {
+        return;
+    }
+    if (part->grouped)
+    {
+        /* 枠を持たない札の 2 択（「すべて含む／いずれか」・#1249）: 選んでいる方は下辺の線。 */
+        if (chip_lit(part))
+        {
+            RECT bar = part->bounds;
+            bar.top = bar.bottom - ui_part_focus_width(part->dpi);
+            fill(device, bar, palette->current_text);
+        }
         return;
     }
     bool high = palette->contrast == FOLIO_CONTRAST_HIGH;

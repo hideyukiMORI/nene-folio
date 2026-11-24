@@ -15,10 +15,12 @@ struct drawer_filter_band
     RECT chips[note_tags_max_count];
     size_t shown;
     size_t hidden;
-    RECT more;  /* 「+N」の札。畳んだ分が無いときは空 */
-    RECT tags;  /* タグの面を開く札 */
-    RECT clear; /* 「× 解除」。条件が効いていないときは空 */
-    int bottom; /* 札の行（と解除の行）の下端＝カテゴリの段の上端 */
+    RECT more;      /* 「+N」の札。畳んだ分が無いときは空 */
+    RECT tags;      /* タグの面を開く札 */
+    RECT match_all; /* 「すべて含む」。タグの条件が 2 つ未満のときは空（#1249） */
+    RECT match_any; /* 「いずれか」。同じ */
+    RECT clear;     /* 「× 解除」。条件が効いていないときは空 */
+    int bottom;     /* 札の行（と解除の行）の下端＝カテゴリの段の上端 */
 };
 
 #endif

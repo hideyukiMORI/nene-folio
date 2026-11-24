@@ -9,6 +9,8 @@ enum drawer_header_button : unsigned char
     DRAWER_HEADER_TAG,  /* タグごとの札。どの札かは番号で持つ（#1247） */
     DRAWER_HEADER_MORE, /* 畳んだタグの「+N」 */
     DRAWER_HEADER_TAG_FILTER,
+    DRAWER_HEADER_MATCH_ALL, /* タグの条件の 2 択（#1249） */
+    DRAWER_HEADER_MATCH_ANY,
     DRAWER_HEADER_CLEAR,
     DRAWER_HEADER_NEW_CATEGORY
 };

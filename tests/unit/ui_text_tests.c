@@ -788,6 +788,9 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FILTER_TAG_REMOVE] = "タグ {name} を外す",
     [UI_TEXT_FILTER_MORE] = "+{n}",
     [UI_TEXT_FILTER_MORE_NAME] = "ほか {n} 個のタグ",
+    [UI_TEXT_FILTER_MATCH_GROUP] = "タグの条件",
+    [UI_TEXT_FILTER_MATCH_ALL] = "すべて含む",
+    [UI_TEXT_FILTER_MATCH_ANY] = "いずれか",
     [UI_TEXT_EMPTY_FAVORITES] = "お気に入りはありません。\nノートの星で追加できます。",
     [UI_TEXT_EMPTY_FAVORITES_FILTER] =
         "一致するお気に入りはありません。\n検索語を変えるか、絞り込みを解除します。",

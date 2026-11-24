@@ -18,6 +18,7 @@
 #include "note_ref.h"
 #include "note_tag.h"
 #include "note_tags.h"
+#include "tag_match_mode.h"
 #include "ui_face.h"
 #include "ui_part.h"
 #include "ui_pointer.h"
@@ -105,6 +106,8 @@ constexpr int base_chip_gap = 5;      /* 札の間と、札の行の間 */
 constexpr int base_chip_bottom = 4;   /* 札の行の下に空ける間 */
 constexpr int base_clear_height = 18; /* 「× 解除」の行 */
 constexpr int base_clear_bottom = 2;  /* 解除の行の下に空ける間 */
+constexpr int base_match_padding = 2; /* 2 択の字の左右の余白（#1249） */
+constexpr int base_match_gap = 8;     /* 2 択の間と、2 択と解除の間 */
 constexpr int chip_rows = 2;          /* 札を並べてよい行の数 */
 /* タグの札の幅の上限と下限（#1247）。長い名前は … で切る。上限は、札が「+N」・開く札と同じ行に
  * 入る幅までさらに狭める（狭めないと、長い名前の札 1 つで 2 行に入らず、全部が畳まれる）。 */
@@ -528,6 +531,30 @@ static int more_chip_width(const struct drawer_window *_Nonnull self, HDC device
     return 2 * scale(ui_part_chip_padding, dpi) + chip_text_width(self, device, text, true);
 }
 
+/* 2 択の 1 つの字。 */
+static const char *_Nonnull match_text(const struct drawer_window *_Nonnull self,
+                                       enum tag_match_mode mode)
+{
+    enum ui_text line = UI_TEXT_FILTER_MATCH_ALL;
+    switch (mode)
+    {
+    case TAG_MATCH_ALL:
+        break;
+    case TAG_MATCH_ANY:
+        line = UI_TEXT_FILTER_MATCH_ANY;
+        break;
+    }
+    return ui_text_line(line, folio_state_language(self->state));
+}
+
+/* 2 択の 1 つの幅。選んでいる方は太字なので、どちらも太字で測る（選び替えても幅が動かない）。 */
+static int match_width(const struct drawer_window *_Nonnull self, HDC device, UINT dpi,
+                       enum tag_match_mode mode)
+{
+    return 2 * scale(base_match_padding, dpi) +
+           chip_text_width(self, device, match_text(self, mode), true);
+}
+
 static int clear_width(const struct drawer_window *_Nonnull self, HDC device, UINT dpi)
 {
     const char *text = ui_text_line(UI_TEXT_FILTER_CLEAR, folio_state_language(self->state));
@@ -551,17 +578,34 @@ static RECT chip_rect(RECT row, struct chip_flow_place place, int height)
                   row.top + place.top + height};
 }
 
-/* 「× 解除」の行を、札の行の下の右端に置く。条件が効いていないときは置かない。 */
-static void place_clear(const struct drawer_window *_Nonnull self,
-                        struct drawer_filter_band *_Nonnull band, int width, UINT dpi)
+/* 札の行の下の行: 左に「すべて含む／いずれか」（タグの条件が 2 つ以上のときだけ）、右端に
+ * 「× 解除」。条件が効いていないときは、行ごと置かない。2 択と解除が 1 行に入らない幅では、
+ * 解除を次の行へ送る（ADR0122 の決定 4）。widths は、すべて含む・いずれか・解除の順。 */
+static void place_status(const struct drawer_window *_Nonnull self,
+                         struct drawer_filter_band *_Nonnull band, const int *_Nonnull widths,
+                         UINT dpi)
 {
     if (!folio_state_conditions_active(self->state))
     {
         return;
     }
-    int left = band->group.right - width;
-    band->clear = (RECT){left > band->group.left ? left : band->group.left, band->bottom,
-                         band->group.right, band->bottom + scale(base_clear_height, dpi)};
+    int height = scale(base_clear_height, dpi);
+    int top = band->bottom;
+    if (tag_condition_count(self) >= 2)
+    {
+        int gap = scale(base_match_gap, dpi);
+        int left = band->group.left;
+        band->match_all = (RECT){left, top, left + widths[0], top + height};
+        left = band->match_all.right + gap;
+        band->match_any = (RECT){left, top, left + widths[1], top + height};
+        if (band->match_any.right + gap + widths[2] > band->group.right)
+        {
+            top += height + scale(base_clear_bottom, dpi);
+        }
+    }
+    int left = band->group.right - widths[2];
+    band->clear = (RECT){left > band->group.left ? left : band->group.left, top, band->group.right,
+                         top + height};
     band->bottom = band->clear.bottom + scale(base_clear_bottom, dpi);
 }
 
@@ -590,7 +634,9 @@ static struct drawer_filter_band filter_band(const struct drawer_window *_Nonnul
         int width = tag_chip_width(self, device, dpi, slot);
         widths[1 + slot] = width < limit ? width : limit;
     }
-    int clear = clear_width(self, device, dpi);
+    const int status[3] = {match_width(self, device, dpi, TAG_MATCH_ALL),
+                           match_width(self, device, dpi, TAG_MATCH_ANY),
+                           clear_width(self, device, dpi)};
     RestoreDC(device, saved);
     ReleaseDC(self->handle, device);
     struct chip_flow_place places[1 + note_tags_max_count] = {{0, 0, 0}};
@@ -610,7 +656,7 @@ static struct drawer_filter_band filter_band(const struct drawer_window *_Nonnul
     band.group = (RECT){row.left, row.top, row.right,
                         row.top + flow.rows * height + (flow.rows - 1) * input.row_gap};
     band.bottom = band.group.bottom + scale(base_chip_bottom, dpi);
-    place_clear(self, &band, clear, dpi);
+    place_status(self, &band, status, dpi);
     return band;
 }
 
@@ -628,6 +674,11 @@ static bool same_band(const struct drawer_filter_band *_Nonnull left,
         {
             return false;
         }
+    }
+    if (!EqualRect(&left->match_all, &right->match_all) ||
+        !EqualRect(&left->match_any, &right->match_any))
+    {
+        return false;
     }
     return left->bottom == right->bottom && EqualRect(&left->favorites, &right->favorites) &&
            EqualRect(&left->tags, &right->tags) && EqualRect(&left->clear, &right->clear);
@@ -753,6 +804,29 @@ static void draw_tags_chip(const struct drawer_window *_Nonnull self, HDC device
                     tags_chip_text(self));
 }
 
+/* 「すべて含む／いずれか」の 1 つ。枠を持たない札で、選んでいる方は字の色・太字・下辺の線
+ * （塗らない。線は ui_part が描く・ADR0060 の 2026-11-24 の補正）。無いときは描かない。 */
+static void draw_match(const struct drawer_window *_Nonnull self, HDC device,
+                       enum tag_match_mode mode, RECT bounds)
+{
+    if (IsRectEmpty(&bounds))
+    {
+        return;
+    }
+    bool all = mode == TAG_MATCH_ALL;
+    bool selected = folio_state_tag_match_mode(self->state) == mode;
+    struct ui_part_paint part = chip_part(
+        self,
+        (struct drawer_header_hit){all ? DRAWER_HEADER_MATCH_ALL : DRAWER_HEADER_MATCH_ANY, 0},
+        bounds);
+    part.grouped = true;
+    part.selected = selected;
+    struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
+    SelectObject(device, selected ? self->chip_lit_font : self->unit_font);
+    SetTextColor(device, ink.text);
+    draw_utf8(device, match_text(self, mode), bounds, DT_CENTER);
+}
+
 /* 「× 解除」。枠を持たない札（字だけ）。条件が効いていないときは描かない。 */
 static void draw_clear(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
 {
@@ -817,6 +891,8 @@ static void draw_header(const struct drawer_window *_Nonnull self, HDC device)
     }
     draw_more_chip(self, device, band.hidden, band.more);
     draw_tags_chip(self, device, band.tags);
+    draw_match(self, device, TAG_MATCH_ALL, band.match_all);
+    draw_match(self, device, TAG_MATCH_ANY, band.match_any);
     draw_clear(self, device, band.clear);
     draw_category_band(self, device);
 }
@@ -1385,6 +1461,10 @@ static RECT header_button_rect(const struct drawer_window *_Nonnull self,
         return filter_band(self).more;
     case DRAWER_HEADER_TAG_FILTER:
         return filter_band(self).tags;
+    case DRAWER_HEADER_MATCH_ALL:
+        return filter_band(self).match_all;
+    case DRAWER_HEADER_MATCH_ANY:
+        return filter_band(self).match_any;
     case DRAWER_HEADER_CLEAR:
         return filter_band(self).clear;
     case DRAWER_HEADER_NEW_CATEGORY:
@@ -1407,6 +1487,10 @@ static enum accessible_kind header_kind(enum drawer_header_button button)
         return ACCESSIBLE_FILTER_MORE;
     case DRAWER_HEADER_TAG_FILTER:
         return ACCESSIBLE_TAG_FILTER;
+    case DRAWER_HEADER_MATCH_ALL:
+        return ACCESSIBLE_FILTER_MATCH_ALL;
+    case DRAWER_HEADER_MATCH_ANY:
+        return ACCESSIBLE_FILTER_MATCH_ANY;
     case DRAWER_HEADER_CLEAR:
         return ACCESSIBLE_FILTER_CLEAR;
     case DRAWER_HEADER_NEW_CATEGORY:
@@ -1436,9 +1520,11 @@ static struct drawer_header_hit header_hit_at(const struct drawer_window *_Nonnu
         if (PtInRect(&band.chips[slot], point))
             return (struct drawer_header_hit){DRAWER_HEADER_TAG, slot};
     }
-    const enum drawer_header_button buttons[] = {DRAWER_HEADER_FAVORITES, DRAWER_HEADER_MORE,
-                                                 DRAWER_HEADER_TAG_FILTER, DRAWER_HEADER_CLEAR};
-    const RECT bounds[] = {band.favorites, band.more, band.tags, band.clear};
+    const enum drawer_header_button buttons[] = {DRAWER_HEADER_FAVORITES,  DRAWER_HEADER_MORE,
+                                                 DRAWER_HEADER_TAG_FILTER, DRAWER_HEADER_MATCH_ALL,
+                                                 DRAWER_HEADER_MATCH_ANY,  DRAWER_HEADER_CLEAR};
+    const RECT bounds[] = {band.favorites, band.more,      band.tags,
+                           band.match_all, band.match_any, band.clear};
     for (size_t at = 0; at < sizeof buttons / sizeof buttons[0]; ++at)
     {
         if (PtInRect(&bounds[at], point))
@@ -1750,6 +1836,10 @@ static void invoke_header(struct drawer_window *_Nonnull self, enum drawer_heade
 {
     struct accessible_request request = {.item = {.kind = header_kind(button)},
                                          .action = ACCESSIBLE_ACTION_INVOKE};
+    if (button == DRAWER_HEADER_MATCH_ALL || button == DRAWER_HEADER_MATCH_ANY)
+    {
+        request.action = ACCESSIBLE_ACTION_SELECT; /* 2 択は選ぶ（選んでいる方は何もしない） */
+    }
     if (button == DRAWER_HEADER_TAG)
     {
         request.item.slot = self->header_pressed_slot;
@@ -1769,6 +1859,8 @@ static void run_header(struct drawer_window *_Nonnull self, enum drawer_header_b
     case DRAWER_HEADER_TAG:
     case DRAWER_HEADER_MORE:
     case DRAWER_HEADER_TAG_FILTER:
+    case DRAWER_HEADER_MATCH_ALL:
+    case DRAWER_HEADER_MATCH_ANY:
     case DRAWER_HEADER_CLEAR:
         invoke_header(self, button);
         return;
@@ -2240,19 +2332,43 @@ static void accessible_row_view(struct drawer_window *_Nonnull self, struct draw
                     selected.category == row.category && selected.note == row.note;
 }
 
+/* 絞り込みの帯の部品の矩形を、1 回作った配置から引く。帯の部品でなければ偽。 */
+static bool filter_part_rect(const struct drawer_window *_Nonnull self, enum accessible_kind kind,
+                             RECT *_Nonnull out)
+{
+    struct drawer_filter_band band = filter_band(self);
+    const enum accessible_kind kinds[] = {
+        ACCESSIBLE_FILTER_GROUP, ACCESSIBLE_FILTER_FAVORITES,  ACCESSIBLE_TAG_FILTER,
+        ACCESSIBLE_FILTER_MORE,  ACCESSIBLE_FILTER_MATCH_ALL,  ACCESSIBLE_FILTER_MATCH_ANY,
+        ACCESSIBLE_FILTER_CLEAR, ACCESSIBLE_FILTER_MATCH_GROUP};
+    const RECT rects[] = {
+        band.group,
+        band.favorites,
+        band.tags,
+        band.more,
+        band.match_all,
+        band.match_any,
+        band.clear,
+        {band.match_all.left, band.match_all.top, band.match_any.right, band.match_any.bottom}};
+    for (size_t at = 0; at < sizeof kinds / sizeof kinds[0]; ++at)
+    {
+        if (kinds[at] == kind)
+        {
+            *out = rects[at];
+            return true;
+        }
+    }
+    return false;
+}
+
 static RECT accessible_fixed_rect(const struct drawer_window *_Nonnull self,
                                   enum accessible_kind kind)
 {
-    if (kind == ACCESSIBLE_FILTER_GROUP)
-        return filter_band(self).group;
-    if (kind == ACCESSIBLE_FILTER_FAVORITES)
-        return filter_band(self).favorites;
-    if (kind == ACCESSIBLE_TAG_FILTER)
-        return filter_band(self).tags;
-    if (kind == ACCESSIBLE_FILTER_MORE)
-        return filter_band(self).more;
-    if (kind == ACCESSIBLE_FILTER_CLEAR)
-        return filter_band(self).clear;
+    RECT part = {0, 0, 0, 0};
+    if (filter_part_rect(self, kind, &part))
+    {
+        return part;
+    }
     if (kind == ACCESSIBLE_NEW_CATEGORY)
     {
         return new_category_rect(self);

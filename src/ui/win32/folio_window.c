@@ -466,6 +466,13 @@ static const struct
                                 UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_TAG_FILTER] = {ACCESSIBLE_FILTER_GROUP, UI_TEXT_COMMAND_FILTER_TAGS, true,
                                UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
+    /* タグの条件の 2 択（#1249）。名前と説明は、タグの面と同じ字。 */
+    [ACCESSIBLE_FILTER_MATCH_GROUP] = {ACCESSIBLE_DRAWER, UI_TEXT_FILTER_MATCH_GROUP, false,
+                                       UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
+    [ACCESSIBLE_FILTER_MATCH_ALL] = {ACCESSIBLE_FILTER_MATCH_GROUP, UI_TEXT_TAG_ALL, true,
+                                     UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
+    [ACCESSIBLE_FILTER_MATCH_ANY] = {ACCESSIBLE_FILTER_MATCH_GROUP, UI_TEXT_TAG_ANY, true,
+                                     UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_FILTER_CLEAR] = {ACCESSIBLE_DRAWER, UI_TEXT_FILTER_CLEAR_NAME, true, UI_TEXT_EMPTY,
                                  ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_INDEX_COUNT] = {ACCESSIBLE_DRAWER, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
@@ -3684,11 +3691,26 @@ static void normalize_header_target(struct folio_window *_Nonnull self)
     accessibility_host_schedule(self->accessibility);
 }
 
+/* タグの条件の 2 択で選んでいる方（#1249）。描画（左の欄）と同じ application の値。 */
+static enum accessible_kind selected_match_kind(const struct folio_window *_Nonnull self)
+{
+    switch (folio_state_tag_match_mode(self->state))
+    {
+    case TAG_MATCH_ALL:
+        return ACCESSIBLE_FILTER_MATCH_ALL;
+    case TAG_MATCH_ANY:
+        return ACCESSIBLE_FILTER_MATCH_ANY;
+    }
+    return ACCESSIBLE_FILTER_MATCH_ALL;
+}
+
 static bool part_selected(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
     /* お気に入りの札の Toggle の状態。描画（左の欄）と同じ application の値（#1199）。 */
     if (kind == ACCESSIBLE_FILTER_FAVORITES)
         return folio_state_note_scope(self->state) == NOTE_SCOPE_FAVORITES;
+    if (accessible_controls[kind].parent == ACCESSIBLE_FILTER_MATCH_GROUP)
+        return selected_match_kind(self) == kind;
     if (accessible_controls[kind].parent == ACCESSIBLE_LAYOUT_GROUP)
     {
         return selected_layout_kind(self) == kind;
@@ -10438,6 +10460,36 @@ static size_t filter_tags_shown(const struct folio_window *_Nonnull self, size_t
     return self->drawer == nullptr ? 0 : drawer_window_filter_tags(self->drawer, hidden);
 }
 
+/* タグの条件のタグの数。 */
+static size_t filter_tag_count(const struct folio_window *_Nonnull self)
+{
+    const struct note_tags *_Nullable tags = folio_state_tag_filter(self->state);
+    return tags == nullptr ? 0 : note_tags_count(tags);
+}
+
+/* タグの条件の 2 択と、その群か。タグが 2 つ以上のときだけある（#1249）。 */
+static bool filter_match_part(enum accessible_kind kind)
+{
+    return kind == ACCESSIBLE_FILTER_MATCH_GROUP ||
+           accessible_controls[kind].parent == ACCESSIBLE_FILTER_MATCH_GROUP;
+}
+
+/* 状態で出入りする札の行の部品が、いまは無いか: 解除（条件が効いていない）、「+N」（畳んだ分が
+ * 無い）、タグの条件の 2 択（タグが 2 つ未満）。hidden は畳んだタグの数。 */
+static bool filter_part_gone(const struct folio_window *_Nonnull self, enum accessible_kind kind,
+                             size_t hidden)
+{
+    if (kind == ACCESSIBLE_FILTER_CLEAR)
+    {
+        return !folio_state_conditions_active(self->state);
+    }
+    if (kind == ACCESSIBLE_FILTER_MORE)
+    {
+        return hidden == 0;
+    }
+    return filter_match_part(kind) && filter_tag_count(self) < 2;
+}
+
 /* 消えた部品に focus を残さない（#1199・#1247）。解除の行や「+N」が消えたら、お気に入りの札へ。
  * タグの札が減ったら、同じ場所に来た札（無ければ最後の札、札が無ければお気に入りの札）へ。 */
 static bool settle_filter_focus(struct folio_window *_Nonnull self)
@@ -10454,8 +10506,7 @@ static bool settle_filter_focus(struct folio_window *_Nonnull self)
         }
         target = ACCESSIBLE_FILTER_FAVORITES;
     }
-    if ((target == ACCESSIBLE_FILTER_CLEAR && !folio_state_conditions_active(self->state)) ||
-        (target == ACCESSIBLE_FILTER_MORE && hidden == 0))
+    if (filter_part_gone(self, target, hidden))
     {
         target = ACCESSIBLE_FILTER_FAVORITES;
     }
@@ -10996,6 +11047,34 @@ static HRESULT filter_tag_remove(struct folio_window *_Nonnull self, struct acce
         return accessibility_node_invalid;
     }
     enum folio_state_outcome outcome = toggle_filter_tag(self, note_tags_at(tags, item.slot));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        report_outcome(self, outcome);
+    }
+    (void)settle_filter_focus(self);
+    settle_empty_drawer_focus(self);
+    redraw_drawer(self);
+    accessibility_host_schedule(self->accessibility);
+    return S_OK;
+}
+
+/* タグの条件の 2 択（#1249）: タグはそのままで、形だけを替える。タグの面の切り替えと同じ
+ * `folio_state_set_tag_filter`。選んでいる方を選んでも、何もしない。 */
+static HRESULT filter_match_select(struct folio_window *_Nonnull self, enum accessible_kind kind)
+{
+    const struct note_tags *_Nullable tags = folio_state_tag_filter(self->state);
+    if (tags == nullptr || selected_match_kind(self) == kind)
+    {
+        return S_OK;
+    }
+    enum tag_match_mode mode = kind == ACCESSIBLE_FILTER_MATCH_ALL ? TAG_MATCH_ALL : TAG_MATCH_ANY;
+    struct note_tags *_Nullable copy = nullptr;
+    enum folio_state_outcome outcome = tag_set_outcome(note_tags_copy(tags, &copy));
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = folio_state_set_tag_filter(self->state, copy, mode);
+    }
+    note_tags_destroy(copy);
     if (outcome != FOLIO_STATE_READY)
     {
         report_outcome(self, outcome);
@@ -12137,7 +12216,8 @@ static enum accessible_action part_action(const struct folio_window *_Nonnull se
     bool chip = kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT;
     bool recovering = chip && (self->pane == nullptr ||
                                note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY);
-    bool choice = chip || accessible_controls[kind].parent == ACCESSIBLE_LAYOUT_GROUP;
+    bool choice = chip || accessible_controls[kind].parent == ACCESSIBLE_LAYOUT_GROUP ||
+                  accessible_controls[kind].parent == ACCESSIBLE_FILTER_MATCH_GROUP;
     return choice && !recovering ? ACCESSIBLE_ACTION_SELECT : ACCESSIBLE_ACTION_INVOKE;
 }
 
@@ -14552,8 +14632,9 @@ static void refresh_tooltip_style(const struct folio_window *_Nonnull self)
 /* ドロワーの固定操作のtool。名前はUIAと同じ表から引き、矩形はドロワーのclient
  * 座標。 文言を固定で渡すので、言語と配置が変わるたびに描き直しの経路から写し直す。 */
 static const enum accessible_kind drawer_tools[] = {
-    ACCESSIBLE_FILTER_FAVORITES, ACCESSIBLE_FILTER_MORE, ACCESSIBLE_TAG_FILTER,
-    ACCESSIBLE_FILTER_CLEAR,     ACCESSIBLE_INDEX_COUNT, ACCESSIBLE_NEW_CATEGORY};
+    ACCESSIBLE_FILTER_FAVORITES, ACCESSIBLE_FILTER_MORE,      ACCESSIBLE_TAG_FILTER,
+    ACCESSIBLE_FILTER_MATCH_ALL, ACCESSIBLE_FILTER_MATCH_ANY, ACCESSIBLE_FILTER_CLEAR,
+    ACCESSIBLE_INDEX_COUNT,      ACCESSIBLE_NEW_CATEGORY};
 /* タグごとの札の tool の id（札の番号を足す・#1247）。種類の値とは重ならない所に置く。 */
 constexpr UINT_PTR drawer_tag_tool_base = 0x200;
 
@@ -18761,10 +18842,6 @@ static bool layout_control(enum accessible_kind kind)
 static bool drawer_control_visible(const struct folio_window *_Nonnull self,
                                    enum accessible_kind kind)
 {
-    if (kind == ACCESSIBLE_FILTER_CLEAR && !folio_state_conditions_active(self->state))
-    {
-        return false;
-    }
     if (kind == ACCESSIBLE_FILTER_TAG || kind == ACCESSIBLE_FILTER_MORE)
     {
         /* タグの札は 1 つでも置かれているとき、「+N」は畳んだ分があるときだけある（#1247）。 */
@@ -18774,6 +18851,10 @@ static bool drawer_control_visible(const struct folio_window *_Nonnull self,
         {
             return false;
         }
+    }
+    else if (filter_part_gone(self, kind, 0))
+    {
+        return false; /* 解除と、タグの条件の 2 択 */
     }
     return drawer_visible(self);
 }
@@ -19245,7 +19326,8 @@ static void accessible_selection_view(struct folio_window *_Nonnull self, enum a
                                       struct accessible_view *_Nonnull out)
 {
     out->selected = part_selected(self, kind);
-    if (kind == ACCESSIBLE_LAYOUT_GROUP || kind == ACCESSIBLE_MODE_GROUP || kind == ACCESSIBLE_TREE)
+    if (kind == ACCESSIBLE_LAYOUT_GROUP || kind == ACCESSIBLE_MODE_GROUP ||
+        kind == ACCESSIBLE_TREE || kind == ACCESSIBLE_FILTER_MATCH_GROUP)
     {
         struct accessible_item item = {.kind = kind};
         struct accessible_item selected = {.kind = ACCESSIBLE_WINDOW};
@@ -19458,6 +19540,11 @@ HRESULT folio_window_accessible_selected(struct folio_window *_Nonnull self,
         *out = (struct accessible_item){.kind = folio_state_pane_mode(self->state) == PANE_MODE_VIEW
                                                     ? ACCESSIBLE_VIEW
                                                     : ACCESSIBLE_EDIT};
+        return S_OK;
+    }
+    if (item->kind == ACCESSIBLE_FILTER_MATCH_GROUP)
+    {
+        *out = (struct accessible_item){.kind = selected_match_kind(self)};
         return S_OK;
     }
     struct note_ref selected;
@@ -20032,6 +20119,10 @@ static HRESULT accessible_activate(struct folio_window *_Nonnull self,
     {
         return filter_tag_remove(self, request->item);
     }
+    if (accessible_controls[request->item.kind].parent == ACCESSIBLE_FILTER_MATCH_GROUP)
+    {
+        return filter_match_select(self, request->item.kind);
+    }
     if (accessible_item_shell(request->item.kind) && request->action == ACCESSIBLE_ACTION_INVOKE)
     {
         invoke_shell(self, request->item.kind);
@@ -20229,6 +20320,8 @@ static enum accessible_kind keyboard_slot(enum accessible_kind kind)
 {
     if (accessible_controls[kind].parent == ACCESSIBLE_FILTER_GROUP)
         return ACCESSIBLE_FILTER_FAVORITES;
+    if (accessible_controls[kind].parent == ACCESSIBLE_FILTER_MATCH_GROUP)
+        return ACCESSIBLE_FILTER_MATCH_ALL;
     if (accessible_controls[kind].parent == ACCESSIBLE_LAYOUT_GROUP)
     {
         return ACCESSIBLE_LAYOUT_DRAWER;
@@ -20244,6 +20337,10 @@ static enum accessible_kind keyboard_entry(const struct folio_window *_Nonnull s
     {
         return layout_metrics_for(self).chooser ? ACCESSIBLE_LAYOUT_CHOOSER
                                                 : selected_layout_kind(self);
+    }
+    if (kind == ACCESSIBLE_FILTER_MATCH_ALL)
+    {
+        return selected_match_kind(self);
     }
     return kind == ACCESSIBLE_VIEW ? mode_kind(folio_state_pane_mode(self->state)) : kind;
 }
@@ -20294,7 +20391,7 @@ static bool choice_step(struct folio_window *_Nonnull self, WPARAM key)
     enum accessible_kind parent = accessible_controls[self->keyboard_target].parent;
     if ((!forward && !backward) ||
         (parent != ACCESSIBLE_LAYOUT_GROUP && parent != ACCESSIBLE_MODE_GROUP &&
-         parent != ACCESSIBLE_FILTER_GROUP))
+         parent != ACCESSIBLE_FILTER_GROUP && parent != ACCESSIBLE_FILTER_MATCH_GROUP))
     {
         return false;
     }
@@ -20343,14 +20440,27 @@ static bool keyboard_same_region(enum accessible_kind left, enum accessible_kind
 
 static void keyboard_tab_step(struct folio_window *_Nonnull self, bool forward)
 {
-    const enum accessible_kind order[] = {
-        ACCESSIBLE_NEW_NOTE,     ACCESSIBLE_LAYOUT_DRAWER, ACCESSIBLE_HELP,
-        ACCESSIBLE_SETTINGS,     ACCESSIBLE_MINIMIZE,      ACCESSIBLE_MAXIMIZE,
-        ACCESSIBLE_CLOSE,        ACCESSIBLE_FILTER,        ACCESSIBLE_FILTER_FAVORITES,
-        ACCESSIBLE_FILTER_CLEAR, ACCESSIBLE_NEW_CATEGORY,  ACCESSIBLE_TREE,
-        ACCESSIBLE_SPLITTER,     ACCESSIBLE_VIEW,          ACCESSIBLE_SAVE,
-        ACCESSIBLE_FIND,         ACCESSIBLE_MENU,          ACCESSIBLE_TAG_EDIT,
-        ACCESSIBLE_OUTLINE,      ACCESSIBLE_MINIMAP};
+    const enum accessible_kind order[] = {ACCESSIBLE_NEW_NOTE,
+                                          ACCESSIBLE_LAYOUT_DRAWER,
+                                          ACCESSIBLE_HELP,
+                                          ACCESSIBLE_SETTINGS,
+                                          ACCESSIBLE_MINIMIZE,
+                                          ACCESSIBLE_MAXIMIZE,
+                                          ACCESSIBLE_CLOSE,
+                                          ACCESSIBLE_FILTER,
+                                          ACCESSIBLE_FILTER_FAVORITES,
+                                          ACCESSIBLE_FILTER_MATCH_ALL,
+                                          ACCESSIBLE_FILTER_CLEAR,
+                                          ACCESSIBLE_NEW_CATEGORY,
+                                          ACCESSIBLE_TREE,
+                                          ACCESSIBLE_SPLITTER,
+                                          ACCESSIBLE_VIEW,
+                                          ACCESSIBLE_SAVE,
+                                          ACCESSIBLE_FIND,
+                                          ACCESSIBLE_MENU,
+                                          ACCESSIBLE_TAG_EDIT,
+                                          ACCESSIBLE_OUTLINE,
+                                          ACCESSIBLE_MINIMAP};
     size_t count = sizeof order / sizeof order[0];
     enum accessible_kind current = keyboard_slot(keyboard_kind(self));
     if (current == ACCESSIBLE_LAYOUT_CHOOSER)
