@@ -25,6 +25,8 @@ enum accessible_kind : unsigned char
     ACCESSIBLE_MODE_GROUP,
     ACCESSIBLE_VIEW,
     ACCESSIBLE_EDIT,
+    /* ノートの上部を畳む・戻す山形の釦（#1264）。頭の帯の右端。 */
+    ACCESSIBLE_NOTE_HEADER,
     ACCESSIBLE_ACTION_GROUP,
     ACCESSIBLE_SAVE,
     ACCESSIBLE_FIND,

@@ -2814,6 +2814,109 @@ static void saved_mode_roundtrip(struct folio_window *_Nonnull window,
 }
 
 /* #685: Same-mode selection keeps edits; leaving a changed edit saves one revision. */
+static int root_ink_width(struct folio_window *_Nonnull window, RECT band);
+static void favorite_key(struct folio_window *_Nonnull window, UINT key);
+
+/* #1264: one part of the main window, as the accessible tree reports it. */
+static struct accessible_view header_part(struct folio_window *_Nonnull window,
+                                          enum accessible_kind kind)
+{
+    struct accessible_item item = {.kind = kind};
+    struct accessible_view view = {0};
+    if (folio_window_accessible_read(window, &item, &view) != S_OK)
+        view.offscreen = true;
+    return view;
+}
+
+static void header_toggle(struct folio_window *_Nonnull window)
+{
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_NOTE_HEADER},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "invoke the note header's chevron button");
+    pump(window);
+}
+
+/* The parts that collapsing the note's top hides: the mode pair, the action row, the tags. */
+static const enum accessible_kind header_hidden[] = {
+    ACCESSIBLE_MODE_GROUP, ACCESSIBLE_VIEW, ACCESSIBLE_EDIT, ACCESSIBLE_ACTION_GROUP,
+    ACCESSIBLE_SAVE,       ACCESSIBLE_FIND, ACCESSIBLE_MENU, ACCESSIBLE_TAG_EDIT};
+
+static void header_parts_shown(struct folio_window *_Nonnull window, bool shown)
+{
+    for (size_t at = 0; at < sizeof header_hidden / sizeof header_hidden[0]; ++at)
+        require(header_part(window, header_hidden[at]).offscreen != shown,
+                shown ? "an open note header shows its mode pair, actions and tags"
+                      : "a collapsed note header hides its mode pair, actions and tags");
+}
+
+/* #1264: the chevron at the right of the note's caption collapses the note's top to one slim
+ * row (the title and the chevron) and brings it back. The body takes the room: 44 + 36 + 28 DIP
+ * of caption, actions and tags become 28. The choice is a saved setting. */
+static void note_header_case(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    struct accessible_view chevron = header_part(window, ACCESSIBLE_NOTE_HEADER);
+    struct accessible_view modes = header_part(window, ACCESSIBLE_MODE_GROUP);
+    struct accessible_view crumb = header_part(window, ACCESSIBLE_BREADCRUMB);
+    struct accessible_view body = header_part(window, ACCESSIBLE_BODY);
+    require(folio_state_note_header(fixture->state) && !chevron.offscreen && chevron.enabled &&
+                wcscmp((const wchar_t *)chevron.name, L"ノートの上部を隠す") == 0,
+            "an open note shows the chevron, named for what it does: hide the note header");
+    require(modes.bounds.right <= chevron.bounds.left && crumb.bounds.right <= modes.bounds.left &&
+                chevron.bounds.bottom - chevron.bounds.top == MulDiv(28, dpi, 96),
+            "the chevron sits right of the mode pair, a part-high square");
+    header_parts_shown(window, true);
+    RECT box = chevron.bounds;
+    MapWindowPoints(nullptr, root, (POINT *)&box, 2);
+    InflateRect(&box, -MulDiv(4, dpi, 96), -MulDiv(4, dpi, 96));
+    require(root_ink_width(window, box) >= MulDiv(8, dpi, 96), "the chevron is drawn in its box");
+
+    header_toggle(window);
+    struct accessible_view slim = header_part(window, ACCESSIBLE_BREADCRUMB);
+    struct accessible_view down = header_part(window, ACCESSIBLE_NOTE_HEADER);
+    struct accessible_view moved = header_part(window, ACCESSIBLE_BODY);
+    require(!folio_state_note_header(fixture->state) && !down.offscreen &&
+                wcscmp((const wchar_t *)down.name, L"ノートの上部を表示") == 0,
+            "collapsing is saved, and the chevron is renamed to show the note header");
+    header_parts_shown(window, false);
+    require(!slim.offscreen && slim.bounds.bottom - slim.bounds.top == MulDiv(28, dpi, 96) &&
+                slim.bounds.right <= down.bounds.left &&
+                wcscmp((const wchar_t *)slim.name, (const wchar_t *)crumb.name) == 0,
+            "the slim row keeps the note's title, left of the chevron");
+    printf("note-header body top open=%ld collapsed=%ld\n", body.bounds.top, moved.bounds.top);
+    require(body.bounds.top - moved.bounds.top == MulDiv(80, dpi, 96) &&
+                moved.bounds.bottom == body.bounds.bottom,
+            "the body takes the 80 DIP that the collapsed header gives up");
+    RECT title = slim.bounds;
+    MapWindowPoints(nullptr, root, (POINT *)&title, 2);
+    InflateRect(&title, 0, -MulDiv(4, dpi, 96));
+    require(root_ink_width(window, title) >= MulDiv(8, dpi, 96),
+            "the slim row draws the note's title");
+    struct accessible_item focus = {0};
+    SetFocus(root);
+    favorite_key(window, VK_F6);
+    for (size_t step = 0; step < 4; ++step)
+    {
+        if (folio_window_accessible_focus(window, ACCESSIBLE_WINDOW, &focus) == S_OK &&
+            focus.kind == ACCESSIBLE_NOTE_HEADER)
+            break;
+        favorite_key(window, VK_F6);
+    }
+    require(focus.kind == ACCESSIBLE_NOTE_HEADER,
+            "F6 reaches the note's tools through the chevron while the mode pair is hidden");
+    favorite_key(window, VK_RETURN);
+    require(folio_state_note_header(fixture->state),
+            "Enter on the chevron brings the note header back");
+    header_parts_shown(window, true);
+    struct accessible_view again = header_part(window, ACCESSIBLE_MODE_GROUP);
+    struct accessible_view back = header_part(window, ACCESSIBLE_BODY);
+    require(EqualRect(&again.bounds, &modes.bounds) && EqualRect(&back.bounds, &body.bounds),
+            "bringing the header back restores the mode pair and the body where they were");
+}
+
 static void run_mode_save_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -2826,9 +2929,16 @@ static void run_mode_save_case(struct native_fixture *_Nonnull fixture)
                 FOLIO_WINDOW_CREATED,
             "real mode save window");
     pump(window);
+    note_header_case(window, fixture);
     action(window, ACCESSIBLE_EDIT);
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
     append_switch_text(window);
+    /* #1264: collapsing and bringing back the header keeps the unsaved edit. */
+    header_toggle(window);
+    require(header_part(window, ACCESSIBLE_SAVE).offscreen &&
+                !folio_state_note_header(fixture->state),
+            "the header collapses while editing");
+    header_toggle(window);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);

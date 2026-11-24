@@ -418,6 +418,16 @@ static int add_star_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind
     return status;
 }
 
+/* 上向き・下向きの山形（#1264）。MENU の山形（太さ 2・45°）を、箱の上下の中央へ置いた形。 */
+static int add_chevron_path(struct GpPath *_Nonnull path, bool up)
+{
+    static const float down[] = {6.0f, 10.0f, 12.0f, 16.0f, 18.0f, 10.0f, 16.0f,
+                                 8.0f, 12.0f, 12.0f, 8.0f,  8.0f,  6.0f,  10.0f};
+    static const float rise[] = {6.0f,  14.0f, 12.0f, 8.0f, 18.0f, 14.0f, 16.0f,
+                                 16.0f, 12.0f, 12.0f, 8.0f, 16.0f, 6.0f,  14.0f};
+    return add_polygon(path, up ? rise : down, sizeof down / sizeof down[0]);
+}
+
 /* 形ごとに割る（全値の switch・default は書かない・C-002）。 */
 static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
 {
@@ -464,6 +474,10 @@ static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
         return add_copy_path(path);
     case ICON_PAINT_CHECK:
         return add_check_path(path);
+    case ICON_PAINT_CHEVRON_UP:
+        return add_chevron_path(path, true);
+    case ICON_PAINT_CHEVRON_DOWN:
+        return add_chevron_path(path, false);
     }
     return gdiplus_ok;
 }
@@ -480,6 +494,8 @@ static int fill_mode_for(enum icon_paint_kind kind)
     case ICON_PAINT_NEW_NOTE:
     case ICON_PAINT_SELECTION:
     case ICON_PAINT_MENU:
+    case ICON_PAINT_CHEVRON_UP:
+    case ICON_PAINT_CHEVRON_DOWN:
         return gdiplus_fill_winding;
     case ICON_PAINT_STAR:
     case ICON_PAINT_STAR_OUTLINE:
