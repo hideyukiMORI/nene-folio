@@ -13177,9 +13177,11 @@ static void history_row_fonts(struct folio_window *_Nonnull window, struct acces
             "a history row draws its number monospace and its line in the language's face");
 }
 
-/* A theme row says the theme's name in the language's face. "ubuntu-aubergine" is all ASCII,
- * so it is drawn with the layer's tracking (1 DIP a character). The name starts 32 DIP in; the
- * samples take the 156 DIP at the row's right when the row is wide enough. */
+/* A theme row says the theme's name in the language's face. "solarized-light" is all ASCII,
+ * so it is drawn with the layer's tracking (1 DIP a character). Its narrow letters make the
+ * monospace face the wider one by 9 DIP or more at every scale ("ubuntu-aubergine" was as wide
+ * in both faces at 96 DPI, where the required CI runs). The name starts 32 DIP in; the samples
+ * take the 156 DIP at the row's right when the row is wide enough. */
 static void theme_filter(struct folio_window *_Nonnull window, const wchar_t *_Nonnull text)
 {
     HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
@@ -13191,7 +13193,7 @@ static void theme_filter(struct folio_window *_Nonnull window, const wchar_t *_N
  * theme becomes the first row. The filter is emptied again afterwards. */
 static void theme_row_word_font(struct folio_window *_Nonnull window)
 {
-    static const wchar_t name[] = L"ubuntu-aubergine";
+    static const wchar_t name[] = L"solarized-light";
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
     int dpi = (int)GetDpiForWindow(root);
     theme_filter(window, name);
@@ -13218,13 +13220,12 @@ static void theme_row_word_font(struct folio_window *_Nonnull window)
     int drawn = surface_ink_span(window, band);
     theme_filter(window, L"");
     printf("theme-row-face drawn=%d expected=%d monospace=%d\n", drawn, expected, monospace);
-    /* The ink never passes the advances and is at most the side bearings (2 DIP) short of
-     * them, so a monospace drawing shows once the faces differ by 4 DIP (measured: 134 against
-     * 143 at 120 DPI). */
-    require(monospace - expected >= MulDiv(4, dpi, 96),
+    /* The ink is within 2 DIP of the advances on either side (side bearings, and a last letter
+     * that overhangs its advance), so a monospace drawing shows once the faces differ by 6 DIP. */
+    require(monospace - expected >= MulDiv(6, dpi, 96),
             "the theme's name is wider in monospace by more than its bearings");
     require(band.right - band.left > monospace, "the band holds either drawing");
-    require(drawn >= expected - 2 * slack && drawn <= expected + MulDiv(1, dpi, 96),
+    require(drawn >= expected - 2 * slack && drawn <= expected + MulDiv(2, dpi, 96),
             "a theme row's name is drawn in the language's face");
 }
 
