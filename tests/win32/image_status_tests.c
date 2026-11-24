@@ -11818,8 +11818,10 @@ static void menu_row_word_font(struct folio_window *_Nonnull window, size_t slot
     ReleaseDC(layer, source);
     int drawn = last >= first ? last - first + 1 : 0;
     printf("menu-word-face drawn=%d expected=%d monospace=%d\n", drawn, expected, monospace);
-    require(monospace - expected >= 5 || expected - monospace >= 5,
-            "the row's label tells the two faces apart");
+    /* The band ends just past the expected width, so a wider drawing would be cut and could
+     * pass: the check holds only while the monospace drawing is the narrower one. */
+    require(expected - monospace >= 5,
+            "the row's label is clearly narrower in the monospace face, so the check can tell");
     require(drawn >= expected - 3 && drawn <= expected + 3,
             "a menu row's name is drawn in the language's face");
 }
