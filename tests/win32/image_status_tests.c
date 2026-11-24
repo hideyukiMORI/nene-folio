@@ -10686,6 +10686,23 @@ static void filter_mark_stays(struct folio_window *_Nonnull window,
                 "the clear mark stays while the term changes and is not empty");
     }
     require(GetWindowTextLengthW(input) == 1, "the term is back to its first character");
+    /* Messages that change nothing must not thicken the mark: its edge is blended, so drawing
+     * it again over itself would darken the edge pixels (the learned colours would not match).
+     * Selecting, moving the caret and replacing the selection keep it too. */
+    for (int at = 0; at < 50; ++at)
+        SendMessageW(input, WM_MOUSEMOVE, 0, MAKELPARAM(4, 4));
+    require(filter_mark_shown(input, mark) == mark->strokes,
+            "pointer moves over the field leave the mark as it was drawn");
+    SendMessageW(input, EM_SETSEL, 0, -1);
+    require(filter_mark_shown(input, mark) == mark->strokes, "selecting all keeps the mark");
+    SendMessageW(input, EM_REPLACESEL, TRUE, (LPARAM)L"xy");
+    require(filter_mark_shown(input, mark) == mark->strokes,
+            "replacing the selection keeps the mark, read before any repaint is pumped");
+    SendMessageW(input, WM_KEYDOWN, VK_LEFT, 0);
+    SendMessageW(input, WM_KEYDOWN, VK_DELETE, 0);
+    require(GetWindowTextLengthW(input) == 1 && filter_mark_shown(input, mark) == mark->strokes,
+            "the Delete key keeps the mark while a character is left");
+    filter_mark_settle(window, fixture);
 }
 
 static void filter_mark_needs_a_term(struct native_fixture *_Nonnull fixture)
