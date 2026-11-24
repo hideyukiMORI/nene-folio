@@ -13313,10 +13313,182 @@ static struct accessible_view settings_row_named(struct folio_window *_Nonnull w
     return view;
 }
 
-/* A settings row says its words in the language's face; the language rows keep the monospace
- * face (the Japanese face has no glyph for one character of "简体中文", so the names are left
- * as they were until that is decided). A row's text starts 32 DIP in, after its mark's box
- * (which ends 28 DIP in); the band starts between the two. The window is in Japanese. */
+/* The ink of one drawn line, column by column from its first inked column: how many pixels of
+ * each column differ from the ground. Two drawings of the same text in the same face and size
+ * give the same columns wherever they start; another face gives other columns even when the
+ * line is as wide (CJK names are as wide in every face of one size). */
+constexpr int profile_limit = 400;
+
+struct ink_profile
+{
+    int width;
+    int total;
+    COLORREF ground;
+    COLORREF ink; /* the pixel furthest from the ground */
+    SIZE band;    /* the size of the band it was read from */
+    int columns[profile_limit];
+};
+
+static int colour_distance(COLORREF left, COLORREF right)
+{
+    return abs(GetRValue(left) - GetRValue(right)) + abs(GetGValue(left) - GetGValue(right)) +
+           abs(GetBValue(left) - GetBValue(right));
+}
+
+static void profile_column(HDC dc, RECT column, struct ink_profile *_Nonnull profile, int at)
+{
+    for (int y = column.top; y < column.bottom; ++y)
+    {
+        COLORREF pixel = GetPixel(dc, column.left, y);
+        if (pixel == profile->ground)
+            continue;
+        profile->columns[at] += 1;
+        profile->total += 1;
+        profile->width = at + 1;
+        if (colour_distance(pixel, profile->ground) >
+            colour_distance(profile->ink, profile->ground))
+            profile->ink = pixel;
+    }
+}
+
+/* band's top left pixel is ground. */
+static struct ink_profile profile_of(HDC dc, RECT band)
+{
+    struct ink_profile profile = {.ground = GetPixel(dc, band.left, band.top),
+                                  .band = {band.right - band.left, band.bottom - band.top}};
+    profile.ink = profile.ground;
+    int first = -1;
+    for (int x = band.left; x < band.right; ++x)
+    {
+        if (first < 0 && line_ink(dc, (RECT){x, band.top, x + 1, band.bottom}, profile.ground) == 0)
+            continue;
+        first = first < 0 ? x : first;
+        if (x - first >= profile_limit)
+            break;
+        profile_column(dc, (RECT){x, band.top, x + 1, band.bottom}, &profile, x - first);
+    }
+    return profile;
+}
+
+/* The profile of a band of the surface's own window. band is a screen rectangle. */
+static struct ink_profile surface_profile(struct folio_window *_Nonnull window, RECT band)
+{
+    HWND layer = folio_window_accessible_window(window, ACCESSIBLE_SURFACE);
+    MapWindowPoints(nullptr, layer, (POINT *)&band, 2);
+    RECT client;
+    GetClientRect(layer, &client);
+    HDC source = GetDC(layer), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(layer, dc, PW_CLIENTONLY), "render the surface's own window for a profile");
+    struct ink_profile profile = profile_of(dc, band);
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(layer, source);
+    return profile;
+}
+
+static void reference_line(HDC dc, const wchar_t *_Nonnull text, struct header_font font, int dpi)
+{
+    RECT line = {0};
+    GetClipBox(dc, &line);
+    line.left = MulDiv(4, dpi, 96);
+    HFONT handle = CreateFontW(-MulDiv(font.size, dpi, 96), 0, 0, 0, font.weight, FALSE, FALSE,
+                               FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                               CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, font.face);
+    HGDIOBJ previous = SelectObject(dc, handle);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextCharacterExtra(dc, text[0] < 0x80 ? MulDiv(1, dpi, 96) : 0);
+    DrawTextW(dc, text, -1, &line, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    SelectObject(dc, previous);
+    DeleteObject(handle);
+}
+
+/* What the layer draws for a one-line name: the text in this face, in a band of this size, on
+ * the drawn ground in the drawn ink. An all-ASCII name has the layer's tracking (1 DIP a
+ * character). */
+static struct ink_profile reference_profile(HWND root, const wchar_t *_Nonnull text,
+                                            struct header_font font,
+                                            const struct ink_profile *_Nonnull drawn)
+{
+    SIZE band = drawn->band;
+    int dpi = (int)GetDpiForWindow(root);
+    HDC source = GetDC(root), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, band.cx, band.cy);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    RECT all = {0, 0, band.cx, band.cy};
+    HBRUSH ground = CreateSolidBrush(drawn->ground);
+    FillRect(dc, &all, ground);
+    DeleteObject(ground);
+    SetTextColor(dc, drawn->ink);
+    reference_line(dc, text, font, dpi);
+    struct ink_profile profile = profile_of(dc, all);
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(root, source);
+    return profile;
+}
+
+/* How far two profiles are apart, in thousandths of the first one's ink. */
+static int profile_distance(const struct ink_profile *_Nonnull left,
+                            const struct ink_profile *_Nonnull right)
+{
+    int width = left->width > right->width ? left->width : right->width;
+    int apart = 0;
+    for (int at = 0; at < width; ++at)
+        apart += abs(left->columns[at] - right->columns[at]);
+    return left->total == 0 ? 1000 : MulDiv(apart, 1000, left->total);
+}
+
+/* One language row: its name is drawn in that language's face, whatever the window's language
+ * is (#1279). other is a language whose face the name must not be drawn in. */
+struct language_row
+{
+    const wchar_t *_Nonnull name;
+    enum folio_language language;
+    enum folio_language other;
+};
+
+static struct accessible_view settings_row_named(struct folio_window *_Nonnull window,
+                                                 const wchar_t *_Nonnull name);
+
+static void language_row_face(struct folio_window *_Nonnull window, struct language_row expected)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    RECT row = settings_row_named(window, expected.name).bounds;
+    int inset = MulDiv(6, dpi, 96);
+    RECT band = {row.left + MulDiv(30, dpi, 96), row.top + inset, row.right - inset,
+                 row.bottom - inset};
+    struct ink_profile drawn = surface_profile(window, band);
+    wchar_t own[LF_FACESIZE], foreign[LF_FACESIZE], mono[LF_FACESIZE];
+    ui_face_for(expected.language, own);
+    ui_face_for(expected.other, foreign);
+    int mono_size = ui_face_mono(mono, 11);
+    struct ink_profile same =
+        reference_profile(root, expected.name, (struct header_font){own, 11, FW_NORMAL}, &drawn);
+    struct ink_profile monospace = reference_profile(
+        root, expected.name, (struct header_font){mono, mono_size, FW_NORMAL}, &drawn);
+    struct ink_profile strange = reference_profile(
+        root, expected.name, (struct header_font){foreign, 11, FW_NORMAL}, &drawn);
+    int close = profile_distance(&drawn, &same);
+    int apart = profile_distance(&drawn, &monospace);
+    int mixed = profile_distance(&drawn, &strange);
+    printf("language-row-face language=%u dpi=%d ink=%d same=%d monospace=%d other=%d\n",
+           (unsigned)expected.language, dpi, drawn.total, close, apart, mixed);
+    require(drawn.total > 0, "the language row shows its name");
+    require(close <= 40, "a language row's name is drawn in that language's face");
+    require(apart >= 200, "a language row's name is not drawn in the monospace face");
+    require(expected.other == expected.language || mixed >= 200,
+            "a language row's name is not drawn in another language's face");
+}
+
+/* A settings row says its words in the language's face. Each language row says its name in
+ * that row's own language's face (the Japanese face has no glyph for one character of
+ * "简体中文"; #1279). A row's text starts 32 DIP in, after its mark's box (which ends 28 DIP
+ * in); the band starts between the two. The window is in Japanese. */
 static void settings_row_fonts(struct folio_window *_Nonnull window)
 {
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
@@ -13338,21 +13510,12 @@ static void settings_row_fonts(struct folio_window *_Nonnull window)
             "the toggle's label tells the two faces apart");
     require(drawn >= expected - slack && drawn <= expected + slack,
             "a settings row's words are drawn in the language's face");
-    static const wchar_t english[] = L"English";
-    row = settings_row_named(window, english).bounds;
-    int tracking = ((int)wcslen(english) - 1) * MulDiv(1, dpi, 96);
-    expected = header_text_width(root, english, values) + tracking;
-    other = header_text_width(root, english, words) + tracking;
-    drawn = surface_ink_span(window, (RECT){row.left + MulDiv(30, dpi, 96), row.top + inset,
-                                            row.right - inset, row.bottom - inset});
-    printf("settings-language-face drawn=%d expected=%d words=%d\n", drawn, expected, other);
-    /* A short ASCII name: its bearings are small, and the faces differ by only 7 px at 96 DPI. */
-    int narrow = MulDiv(2, dpi, 96);
-    require(expected - other >= 2 * narrow || other - expected >= 2 * narrow,
-            "the language's name tells the two faces apart");
-    /* The ink is narrower than the advances by the side bearings, never wider. */
-    require(drawn >= expected - 2 * narrow && drawn <= expected + narrow,
-            "a language row keeps the monospace face");
+    language_row_face(window,
+                      (struct language_row){L"日本語", FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_JA});
+    language_row_face(window,
+                      (struct language_row){L"English", FOLIO_LANGUAGE_EN, FOLIO_LANGUAGE_EN});
+    language_row_face(
+        window, (struct language_row){L"简体中文", FOLIO_LANGUAGE_ZH_HANS, FOLIO_LANGUAGE_JA});
 }
 
 /* The reading view's menu: Copy, Copy as Markdown | Edit here | Select all (#1012). */
