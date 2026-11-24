@@ -9531,6 +9531,26 @@ static void filter_chips_resting(struct folio_window *_Nonnull window, RECT star
             "no clear row while nothing is filtered");
 }
 
+/* With nothing filtered there is no clear row to stop on: Tab goes from the chip row to the
+ * new-category button. */
+static void filter_tab_without_clear(struct folio_window *_Nonnull window,
+                                     struct native_fixture *_Nonnull fixture)
+{
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
+    favorite_key(window, VK_TAB);
+    struct accessible_item focus = {0};
+    require(!folio_state_conditions_active(fixture->state) &&
+                folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_FILTER_FAVORITES,
+            "Tab from the search field stops on the chip row");
+    favorite_key(window, VK_TAB);
+    require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_NEW_CATEGORY,
+            "with nothing filtered, the next Tab skips the absent clear row");
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+}
+
 /* Tab reaches the clear row; Space clears, and the focus does not stay on the vanished row. */
 static void filter_clear_keyboard(struct folio_window *_Nonnull window,
                                   struct native_fixture *_Nonnull fixture)
@@ -9739,6 +9759,7 @@ static void filter_chip_row(struct folio_window *_Nonnull window,
                 folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL,
             "UIA Invoke on the clear row clears");
     pump(window);
+    filter_tab_without_clear(window, fixture);
     filter_clear_keyboard(window, fixture);
     filter_clear_twice(window, fixture);
     filter_chip_tags(window, fixture);
