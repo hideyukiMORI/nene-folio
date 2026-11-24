@@ -684,7 +684,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_NEW_NOTE_NO_CATEGORY] = "カテゴリがありません。先にカテゴリを作ります",
     [UI_TEXT_EMPTY_HEADING] = "ノートが選ばれていません",
     [UI_TEXT_EMPTY_BODY] = "左の一覧からノートを選ぶか、新しいノートを作ります",
-    [UI_TEXT_EMPTY_KEYS] = "すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
+    [UI_TEXT_EMPTY_KEYS] = "すべてのノートを検索: {from} ／ ヘルプ: {to}",
     [UI_TEXT_COMMAND_CAPTION] = "{name}",
     [UI_TEXT_COMMAND_INPUT_CAPTION] = "{name}…",
     [UI_TEXT_MENU_ACCESS_CAPTION] = "{name} ({from})",
@@ -1279,8 +1279,8 @@ static void verify_action_bar_texts(void)
         {"左の一覧からノートを選ぶか、新しいノートを作ります",
          "Choose a note from the list on the left, or create a new note",
          "从左侧列表选择笔记，或新建笔记"},
-        {"すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
-         "Search all notes: Ctrl+Shift+F / Help: F1", "搜索全部笔记: Ctrl+Shift+F ／ 帮助: F1"},
+        {"すべてのノートを検索: {from} ／ ヘルプ: {to}", "Search all notes: {from} / Help: {to}",
+         "搜索全部笔记: {from} ／ 帮助: {to}"},
     };
     for (size_t row = 0; row < sizeof ids / sizeof ids[0]; ++row)
     {
