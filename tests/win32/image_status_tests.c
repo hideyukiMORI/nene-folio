@@ -2672,6 +2672,8 @@ static void settings_edit_preserved(struct folio_window *_Nonnull window,
     verify_history_unchanged(fixture, history);
 }
 
+static void settings_row_fonts(struct folio_window *_Nonnull window);
+
 static void settings_edit_cycle(struct folio_window *_Nonnull window,
                                 struct native_fixture *_Nonnull fixture,
                                 const struct history_snapshot *_Nonnull history)
@@ -2690,6 +2692,7 @@ static void settings_edit_cycle(struct folio_window *_Nonnull window,
     struct native_body_snapshot opened = {0};
     capture_native_body(window, &opened);
     expect_settings_values(fixture, &values);
+    settings_row_fonts(window);
     for (size_t step = 0; step < 4; ++step)
     {
         select_setting_control(window, 6 + step % 2, ACCESSIBLE_SURFACE_TOGGLE);
@@ -13130,6 +13133,68 @@ static void history_row_fonts(struct folio_window *_Nonnull window, struct acces
             "the row's text tells the two faces apart");
     require(drawn >= expected - slack && drawn <= expected + slack,
             "a history row draws its number monospace and its line in the language's face");
+}
+
+/* The settings row with this name, read through the surface's list. */
+static struct accessible_view settings_row_named(struct folio_window *_Nonnull window,
+                                                 const wchar_t *_Nonnull name)
+{
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_item row;
+    struct accessible_view view = {0};
+    HRESULT found =
+        folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &row);
+    while (found == S_OK)
+    {
+        require(folio_window_accessible_read(window, &row, &view) == S_OK, "read a settings row");
+        if (wcscmp((const wchar_t *)view.name, name) == 0)
+            break;
+        found = folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_NEXT, &row);
+    }
+    require(found == S_OK && !view.offscreen, "the settings surface shows the named row");
+    return view;
+}
+
+/* A settings row says its words in the language's face; the language rows keep the monospace
+ * face (the Japanese face has no glyph for one character of "简体中文", so the names are left
+ * as they were until that is decided). A row's text starts 32 DIP in, after its mark's box
+ * (which ends 28 DIP in); the band starts between the two. The window is in Japanese. */
+static void settings_row_fonts(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    wchar_t mono[LF_FACESIZE];
+    int mono_size = ui_face_mono(mono, 11);
+    struct header_font words = {face, 11, FW_NORMAL}, values = {mono, mono_size, FW_NORMAL};
+    int inset = MulDiv(6, dpi, 96), slack = MulDiv(3, dpi, 96);
+    static const wchar_t toggle[] = L"お気に入りを先に表示";
+    RECT row = settings_row_named(window, toggle).bounds;
+    int expected = header_text_width(root, toggle, words);
+    int other = header_text_width(root, toggle, values);
+    int drawn = surface_ink_span(window, (RECT){row.left + MulDiv(30, dpi, 96), row.top + inset,
+                                                row.right - inset, row.bottom - inset});
+    printf("settings-row-face drawn=%d expected=%d monospace=%d\n", drawn, expected, other);
+    require(expected - other >= 2 * slack || other - expected >= 2 * slack,
+            "the toggle's label tells the two faces apart");
+    require(drawn >= expected - slack && drawn <= expected + slack,
+            "a settings row's words are drawn in the language's face");
+    static const wchar_t english[] = L"English";
+    row = settings_row_named(window, english).bounds;
+    int tracking = ((int)wcslen(english) - 1) * MulDiv(1, dpi, 96);
+    expected = header_text_width(root, english, values) + tracking;
+    other = header_text_width(root, english, words) + tracking;
+    drawn = surface_ink_span(window, (RECT){row.left + MulDiv(30, dpi, 96), row.top + inset,
+                                            row.right - inset, row.bottom - inset});
+    printf("settings-language-face drawn=%d expected=%d words=%d\n", drawn, expected, other);
+    /* A short ASCII name: its bearings are small, and the faces differ by only 7 px at 96 DPI. */
+    int narrow = MulDiv(2, dpi, 96);
+    require(expected - other >= 2 * narrow || other - expected >= 2 * narrow,
+            "the language's name tells the two faces apart");
+    require(drawn >= expected - narrow && drawn <= expected + narrow,
+            "a language row keeps the monospace face");
 }
 
 /* The reading view's menu: Copy, Copy as Markdown | Edit here | Select all (#1012). */
