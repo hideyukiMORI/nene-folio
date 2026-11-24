@@ -22,6 +22,7 @@ struct command_surface_metrics
     int tags_footer;
     int tag_button_height;
     int tag_bottom_height; /* 絞り込みの面のいちばん下の行（件数と「閉じる」。#1283） */
+    int settings_band;     /* 設定の面のいちばん下の帯（左に知らせ、右に「閉じる」。#1283） */
     bool tag_hint_visible;
     bool about_ready; /* アプリの情報を開いたときだけ測る */
     int about_footer;

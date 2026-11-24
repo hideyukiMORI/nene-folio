@@ -5002,7 +5002,6 @@ static RECT settings_footer_rect(const struct folio_window *_Nonnull self)
 static void draw_settings_footer(const struct folio_window *_Nonnull self, HDC device)
 {
     RECT line = settings_footer_rect(self);
-    line.bottom = surface_done_rect(self).top - scale(8, GetDpiForWindow(self->handle));
     draw_surface_button(self, device, ACCESSIBLE_SURFACE_DONE);
     enum folio_language language = folio_state_language(self->state);
     SetTextColor(device, self->palette.current_text);
@@ -5015,7 +5014,8 @@ static void draw_settings_footer(const struct folio_window *_Nonnull self, HDC d
     if (ui_text_format(&version, text, sizeof text) == UI_TEXT_FORMAT_READY)
         line.top += wrapped_text(device, text, line, true);
     line.top += wrapped_text(device, ui_text_line(UI_TEXT_SETTINGS_GUIDANCE, language), line, true);
-    line.top = line.bottom - self->settings_metrics.notice;
+    line.top = line.bottom - self->settings_metrics.settings_band;
+    line.right = surface_done_rect(self).left - scale(8, GetDpiForWindow(self->handle));
     if (settings_has_notice(self))
     {
         SetTextColor(device, self->palette.current_text);
@@ -7882,10 +7882,15 @@ static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
     SetTextCharacterExtra(device, scale(base_tracking, metrics.dpi));
     bool ready = band_outcomes_height(device, metrics.language, bounds, &metrics.notice);
     metrics.motion_help = settings_motion_help_height(self, device, bounds);
-    /* 設定の面は、下の行の右下に「閉じる」を置く（#1283）。字は、その上に積む。 */
-    metrics.settings_footer = metrics.notice +
-                              surface_footer_text_height(self, device, bounds, false) +
-                              scale(ui_part_height + 8, metrics.dpi);
+    /* 設定の面は、知らせのために空けてある下の帯の右に「閉じる」を置く（#1283）。知らせは
+     * その左に描くので、狭くした幅で測り直す。帯は、釦の高さより低くしない。 */
+    RECT beside = bounds;
+    beside.right -= scale(base_done_width + 8, metrics.dpi);
+    ready = band_outcomes_height(device, metrics.language, beside, &metrics.settings_band) && ready;
+    if (metrics.settings_band < scale(ui_part_height, metrics.dpi))
+        metrics.settings_band = scale(ui_part_height, metrics.dpi);
+    metrics.settings_footer =
+        metrics.settings_band + surface_footer_text_height(self, device, bounds, false);
     metrics.themes_footer = metrics.notice +
                             surface_footer_text_height(self, device, bounds, true) +
                             scale(ui_part_height + 8, metrics.dpi);
@@ -19027,13 +19032,19 @@ static void surface_settings_button_action(struct folio_window *_Nonnull self, s
     adopt_settings_row(self);
 }
 
-static HRESULT surface_button_action(struct folio_window *_Nonnull self, size_t slot)
+/* 押せない釦（無効な釦、変換中のタグの面の釦）。 */
+static bool surface_button_refused(const struct folio_window *_Nonnull self, size_t slot)
 {
     if (discovery_surface(self) && !discovery_button_enabled(self, slot))
-        return accessibility_node_disabled;
+        return true;
     if (management_surface(self) && !management_button_enabled(self, slot))
-        return accessibility_node_disabled;
-    if (tag_surface(self) && self->command_composing)
+        return true;
+    return tag_surface(self) && self->command_composing;
+}
+
+static HRESULT surface_button_action(struct folio_window *_Nonnull self, size_t slot)
+{
+    if (surface_button_refused(self, slot))
         return accessibility_node_disabled;
     switch ((enum accessible_surface_button)slot)
     {
@@ -19212,8 +19223,8 @@ static HRESULT surface_root_action(struct folio_window *_Nonnull self,
 static HRESULT tag_button_focus(struct folio_window *_Nonnull self, size_t slot)
 {
     const enum tag_surface_focus values[] = {
-        TAG_SURFACE_CLOSE,  TAG_SURFACE_ADD,     TAG_SURFACE_APPLY,     TAG_SURFACE_CANCEL,
-        TAG_SURFACE_ALL,    TAG_SURFACE_ANY,     TAG_SURFACE_CLEAR,     TAG_SURFACE_PRIMARY,
+        TAG_SURFACE_CLOSE,     TAG_SURFACE_ADD, TAG_SURFACE_APPLY, TAG_SURFACE_CANCEL,
+        TAG_SURFACE_ALL,       TAG_SURFACE_ANY, TAG_SURFACE_CLEAR, TAG_SURFACE_PRIMARY,
         TAG_SURFACE_SECONDARY, TAG_SURFACE_DONE};
     for (size_t at = 0; at < sizeof values / sizeof values[0]; ++at)
         if (tag_focus_slot(values[at]) == slot)
