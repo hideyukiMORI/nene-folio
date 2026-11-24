@@ -1027,6 +1027,11 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_FILTER_TAG_REMOVE] = {"タグ {name} を外す", "Remove tag {name}", "移除标签 {name}"},
     [UI_TEXT_FILTER_MORE] = {"+{n}", "+{n}", "+{n}"},
     [UI_TEXT_FILTER_MORE_NAME] = {"ほか {n} 個のタグ", "{n} more tags", "另外 {n} 个标签"},
+    /* タグが 2 つ以上のときの 2 択（#1249）。群の名前と、行に描く短い字。読み上げの名前と説明は、
+     * タグの面と同じ UI_TEXT_TAG_ALL / UI_TEXT_TAG_ANY。 */
+    [UI_TEXT_FILTER_MATCH_GROUP] = {"タグの条件", "Tag match", "标签条件"},
+    [UI_TEXT_FILTER_MATCH_ALL] = {"すべて含む", "All", "全部"},
+    [UI_TEXT_FILTER_MATCH_ANY] = {"いずれか", "Any", "任一"},
     [UI_TEXT_EMPTY_FAVORITES] = {"お気に入りはありません。\nノートの星で追加できます。",
                                  "No favorites yet.\nAdd one with the star beside a note.",
                                  "还没有收藏。\n点击笔记旁的星标即可添加。"},
