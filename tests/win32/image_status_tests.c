@@ -13141,25 +13141,30 @@ static void history_row_fonts(struct folio_window *_Nonnull window, struct acces
 /* A theme row says the theme's name in the language's face. "ubuntu-aubergine" is all ASCII,
  * so it is drawn with the layer's tracking (1 DIP a character). The name starts 32 DIP in; the
  * samples take the 156 DIP at the row's right when the row is wide enough. */
+static void theme_filter(struct folio_window *_Nonnull window, const wchar_t *_Nonnull text)
+{
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(input != nullptr && SetWindowTextW(input, text), "the theme filter takes the text");
+    pump(window);
+}
+
+/* The list shows few rows in the test's window, so the name is typed into the filter: the named
+ * theme becomes the first row. The filter is emptied again afterwards. */
 static void theme_row_word_font(struct folio_window *_Nonnull window)
 {
     static const wchar_t name[] = L"ubuntu-aubergine";
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
     int dpi = (int)GetDpiForWindow(root);
+    theme_filter(window, name);
     struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
                                    .revision = folio_window_accessible_surface_revision(window)};
     struct accessible_item row;
     struct accessible_view view = {0};
-    HRESULT found =
-        folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &row);
-    while (found == S_OK)
-    {
-        require(folio_window_accessible_read(window, &row, &view) == S_OK, "read a theme row");
-        if (wcscmp((const wchar_t *)view.name, name) == 0)
-            break;
-        found = folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_NEXT, &row);
-    }
-    require(found == S_OK && !view.offscreen, "the theme list shows the named theme");
+    require(folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &row) ==
+                    S_OK &&
+                folio_window_accessible_read(window, &row, &view) == S_OK && !view.offscreen &&
+                wcscmp((const wchar_t *)view.name, name) == 0,
+            "the filtered theme list shows the named theme first");
     wchar_t face[LF_FACESIZE];
     ui_face_for(FOLIO_LANGUAGE_JA, face);
     wchar_t mono[LF_FACESIZE];
@@ -13172,6 +13177,7 @@ static void theme_row_word_font(struct folio_window *_Nonnull window)
     RECT band = {view.bounds.left + MulDiv(30, dpi, 96), view.bounds.top + inset,
                  view.bounds.right - MulDiv(160, dpi, 96), view.bounds.bottom - inset};
     int drawn = surface_ink_span(window, band);
+    theme_filter(window, L"");
     printf("theme-row-face drawn=%d expected=%d monospace=%d\n", drawn, expected, monospace);
     /* The ink never passes the advances and is at most the side bearings (2 DIP) short of
      * them, so a monospace drawing shows once the faces differ by 4 DIP (measured: 134 against
