@@ -1835,7 +1835,7 @@ static size_t about_focus_slot(const struct folio_window *_Nonnull self)
 /* 製品名だけ、主窓が既に持つ見出しの書体で題として示す。計測と描画が同じ書体を選ぶ。 */
 static HFONT about_text_font(const struct folio_window *_Nonnull self, size_t index)
 {
-    return about_texts[index].label == UI_TEXT_APP_LOGO ? help_heading_font(self) : self->mono_font;
+    return about_texts[index].label == UI_TEXT_APP_LOGO ? help_heading_font(self) : word_font(self);
 }
 
 /* outはdraw_unit_limit bytes。描画・計測・UIAが同じ1行を使う。 */
@@ -5084,8 +5084,13 @@ static void draw_settings_row(const struct folio_window *_Nonnull self, HDC devi
     label.left += scale(choice ? 32 : 0, dpi);
     label.right -= scale(4, dpi);
     SetTextColor(device, self->palette.current_text);
+    /* 言語の名前（日本語・English・简体中文）は、等幅のまま。日本語・英語の言葉の書体には
+     * 「简」が無く、1 つの名前の中で書体が混ざる。 */
+    bool language = settings_rows[index].kind == SETTINGS_ROW_LANGUAGE;
+    HGDIOBJ previous = SelectObject(device, language ? self->mono_font : word_font(self));
     draw_units(device, ui_text_line(settings_rows[index].label, folio_state_language(self->state)),
                label, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    SelectObject(device, previous);
 }
 
 static void draw_settings_rows(const struct folio_window *_Nonnull self, HDC device)
@@ -5827,17 +5832,20 @@ static void draw_about_dialog(const struct folio_window *_Nonnull self, HDC devi
 /* 設定の枠を共有する二つの副面。 */
 static void draw_settings_branch(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
+    HGDIOBJ previous = SelectObject(device, word_font(self)); /* 面の中の字は言葉 */
     if (about_surface(self))
         draw_about_dialog(self, device, bounds);
     else if (move_surface(self))
         draw_move_dialog(self, device, bounds);
     else
         draw_theme_dialog(self, device, bounds);
+    SelectObject(device, previous);
 }
 
 static void draw_settings_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     ui_part_draw_surface(device, &self->palette, bounds);
+    HGDIOBJ previous = SelectObject(device, word_font(self)); /* 面の中の字は言葉 */
     RECT title = surface_frame_rect(self, UI_PART_SURFACE_TITLE_TEXT);
     SetTextColor(device, self->palette.current_text);
     draw_units(device, ui_text_line(UI_TEXT_COMMAND_SETTINGS, folio_state_language(self->state)),
@@ -5845,6 +5853,7 @@ static void draw_settings_dialog(const struct folio_window *_Nonnull self, HDC d
     draw_surface_button(self, device, ACCESSIBLE_SURFACE_CLOSE);
     draw_settings_rows(self, device);
     draw_settings_footer(self, device);
+    SelectObject(device, previous);
 }
 
 /* 履歴の面の案内 1 行（ADR 0038 の決定 12）。設定画面の案内と同じ位置に出す。 */
@@ -7531,14 +7540,15 @@ static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
     RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
     struct command_surface_metrics metrics = {.width = bounds.right - bounds.left,
                                               .dpi = GetDpiForWindow(self->handle),
-                                              .font = self->mono_font,
+                                              .font = word_font(self),
                                               .language = folio_state_language(self->state)};
     if (surface_metrics_current(self, &metrics))
         return true;
     HDC device = GetDC(self->command_layer);
     if (device == nullptr)
         return false;
-    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    /* 描く側（draw_settings_dialog・draw_settings_branch）と同じ、言葉の書体で測る。 */
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     SetTextCharacterExtra(device, scale(base_tracking, metrics.dpi));
     bool ready = band_outcomes_height(device, metrics.language, bounds, &metrics.notice);
     metrics.motion_help = settings_motion_help_height(self, device, bounds);
