@@ -2084,6 +2084,12 @@ static RECT tag_bottom_rect(const struct folio_window *_Nonnull self)
     return bounds;
 }
 
+/* 右下の「閉じる」と、その左の間。左に置く字を測る幅と描く幅は、どちらもここから引く。 */
+static int surface_done_reserve(UINT dpi)
+{
+    return scale(base_done_width, dpi) + scale(8, dpi);
+}
+
 /* 右下の「閉じる」。絞り込みの面はいちばん下の行の右、設定の面は下の固定の部分の右下。 */
 static RECT surface_done_rect(const struct folio_window *_Nonnull self)
 {
@@ -2130,8 +2136,17 @@ static RECT tag_status_rect(const struct folio_window *_Nonnull self)
     if (tag_filter_surface(self))
     {
         bounds.bottom = tag_bottom_rect(self).bottom;
-        bounds.right = surface_done_rect(self).left - scale(8, GetDpiForWindow(self->handle));
+        bounds.right -= surface_done_reserve(GetDpiForWindow(self->handle));
     }
+    return bounds;
+}
+
+/* 設定の面の状態の行の矩形。右下の「閉じる」に重ねない（点から要素を引く道が、釦に届く）。 */
+static RECT settings_status_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    bounds.top = bounds.bottom - settings_footer_height(self);
+    bounds.right -= surface_done_reserve(GetDpiForWindow(self->handle));
     return bounds;
 }
 
@@ -5015,7 +5030,7 @@ static void draw_settings_footer(const struct folio_window *_Nonnull self, HDC d
         line.top += wrapped_text(device, text, line, true);
     line.top += wrapped_text(device, ui_text_line(UI_TEXT_SETTINGS_GUIDANCE, language), line, true);
     line.top = line.bottom - self->settings_metrics.settings_band;
-    line.right = surface_done_rect(self).left - scale(8, GetDpiForWindow(self->handle));
+    line.right -= surface_done_reserve(GetDpiForWindow(self->handle));
     if (settings_has_notice(self))
     {
         SetTextColor(device, self->palette.current_text);
@@ -5608,7 +5623,7 @@ static void tag_footer_notice(const struct folio_window *_Nonnull self, char *_N
 static void draw_tag_bottom(const struct folio_window *_Nonnull self, HDC device)
 {
     RECT line = tag_bottom_rect(self);
-    line.right = surface_done_rect(self).left - scale(8, GetDpiForWindow(self->handle));
+    line.right -= surface_done_reserve(GetDpiForWindow(self->handle));
     char text[ui_text_unit_limit];
     tag_footer_summary(self, text, sizeof text);
     SetTextColor(device, self->palette.current_text);
@@ -7792,12 +7807,13 @@ static bool prepare_tag_metrics(struct folio_window *_Nonnull self)
     tag_footer_summary(self, text, sizeof text);
     RECT count = bounds;
     if (tag_filter_surface(self))
-        count.right -= scale(base_done_width + 8, dpi);
+        count.right -= surface_done_reserve(dpi);
     int summary = text[0] == '\0' ? 0 : wrapped_text(device, text, count, false);
     int fixed = self->settings_metrics.tag_button_height + notice + summary + scale(8, dpi);
     if (tag_filter_surface(self))
     {
-        /* いちばん下の行は、釦の高さより低くしない。知らせがあれば、その下にも間を取る。 */
+        /* いちばん下の行は、釦の高さより低くしない。釦の行の下と、いちばん下の行の上に、
+         * 間を 8 ずつ取る。 */
         int bottom = summary > scale(ui_part_height, dpi) ? summary : scale(ui_part_height, dpi);
         self->settings_metrics.tag_bottom_height = bottom;
         fixed = self->settings_metrics.tag_button_height + notice + bottom + scale(16, dpi);
@@ -7885,7 +7901,7 @@ static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
     /* 設定の面は、知らせのために空けてある下の帯の右に「閉じる」を置く（#1283）。知らせは
      * その左に描くので、狭くした幅で測り直す。帯は、釦の高さより低くしない。 */
     RECT beside = bounds;
-    beside.right -= scale(base_done_width + 8, metrics.dpi);
+    beside.right -= surface_done_reserve(metrics.dpi);
     ready = band_outcomes_height(device, metrics.language, beside, &metrics.settings_band) && ready;
     if (metrics.settings_band < scale(ui_part_height, metrics.dpi))
         metrics.settings_band = scale(ui_part_height, metrics.dpi);
@@ -18584,7 +18600,7 @@ static RECT surface_status_rect(const struct folio_window *_Nonnull self)
     if (choice_surface(self))
         return theme_footer_rect(self);
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
-        return settings_footer_rect(self);
+        return settings_status_rect(self);
     if (about_surface(self))
         return about_notice_rect(self);
     RECT bounds = {0};
