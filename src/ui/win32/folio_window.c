@@ -20737,7 +20737,11 @@ static int menu_width(const struct folio_window *_Nonnull self)
         char hint[draw_unit_limit];
         menu_label(self, at, label);
         menu_hint(self, at, hint);
-        int measured = measure_utf8(device, label) + measure_utf8(device, hint);
+        /* 描く側（menu_draw_row）と同じ分け方: 添えるキーは等幅、名前は言葉の書体。 */
+        int measured = measure_utf8(device, hint);
+        SelectObject(device, word_font(self));
+        measured += measure_utf8(device, label);
+        SelectObject(device, self->mono_font);
         if (measured > width)
             width = measured;
     }
@@ -20913,6 +20917,8 @@ static void menu_draw_row(const struct folio_window *_Nonnull self, HDC device, 
     draw_utf8(device, hint, keys);
     ink.label.right = keys.left - scale(16, dpi);
     SetTextColor(device, ink.text);
+    /* 名前は言葉の書体（添えるキーは、上で等幅のまま描いた）。下線の場所も、同じ書体で測る。 */
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     draw_utf8(device, label, ink.label);
     if (self->focus_cues || self->focus_cues_always)
     {
@@ -20920,6 +20926,7 @@ static void menu_draw_row(const struct folio_window *_Nonnull self, HDC device, 
         SetDCBrushColor(device, ink.text);
         FillRect(device, &underline, (HBRUSH)GetStockObject(DC_BRUSH));
     }
+    SelectObject(device, previous);
 }
 
 static void menu_draw_arrows(const struct folio_window *_Nonnull self, HDC device)

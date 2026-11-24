@@ -11771,6 +11771,59 @@ static void text_menu_edit_rows(struct folio_window *_Nonnull window, HWND _Nonn
     require(!text_menu_row(window, 0).enabled, "nothing to undo in an unchanged note");
 }
 
+/* A menu row says its name in the language's face; the key beside it stays monospace. The row
+ * is read from the surface's own window: the name's ink is as wide as the language's face makes
+ * "name (key)". The band ends just past the name (it starts 16 DIP in), before the key that is
+ * drawn at the row's right. */
+static void menu_row_word_font(struct folio_window *_Nonnull window, size_t slot)
+{
+    HWND layer = folio_window_accessible_window(window, ACCESSIBLE_SURFACE);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    struct accessible_view row = text_menu_row(window, slot);
+    wchar_t label[128];
+    require(swprintf(label, 128, L"%ls (%ls)", (const wchar_t *)row.name,
+                     (const wchar_t *)row.access_key) > 0,
+            "the menu row's label fits");
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    wchar_t mono[LF_FACESIZE];
+    int mono_size = ui_face_mono(mono, 11);
+    struct header_font words = {face, 11, FW_NORMAL}, values = {mono, mono_size, FW_NORMAL};
+    int expected = header_text_width(root, label, words);
+    int monospace = header_text_width(root, label, values);
+    MapWindowPoints(nullptr, layer, (POINT *)&row.bounds, 2);
+    RECT client;
+    GetClientRect(layer, &client);
+    HDC source = GetDC(layer), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(layer, dc, PW_CLIENTONLY), "render the menu's own window");
+    int inset = MulDiv(6, (int)GetDpiForWindow(root), 96);
+    RECT band = {row.bounds.left + inset, row.bounds.top + inset,
+                 row.bounds.left + MulDiv(16, (int)GetDpiForWindow(root), 96) + expected + 4,
+                 row.bounds.bottom - inset};
+    COLORREF ground = GetPixel(dc, band.left, band.top);
+    int first = band.right, last = band.left;
+    for (int x = band.left; x < band.right; ++x)
+    {
+        if (line_ink(dc, (RECT){x, band.top, x + 1, band.bottom}, ground) != 0)
+        {
+            first = x < first ? x : first;
+            last = x;
+        }
+    }
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(layer, source);
+    int drawn = last >= first ? last - first + 1 : 0;
+    printf("menu-word-face drawn=%d expected=%d monospace=%d\n", drawn, expected, monospace);
+    require(monospace - expected >= 5 || expected - monospace >= 5,
+            "the row's label tells the two faces apart");
+    require(drawn >= expected - 3 && drawn <= expected + 3,
+            "a menu row's name is drawn in the language's face");
+}
+
 /* The reading view's menu: Copy, Copy as Markdown | Edit here | Select all (#1012). */
 static void text_menu_view_rows(struct folio_window *_Nonnull window, HWND _Nonnull body)
 {
@@ -11784,6 +11837,7 @@ static void text_menu_view_rows(struct folio_window *_Nonnull window, HWND _Nonn
                 wcscmp((const wchar_t *)here.name, L"ここを編集") == 0 && markdown.enabled &&
                 here.enabled,
             "viewing offers Copy, Copy as Markdown, Edit here and Select all (#1012)");
+    menu_row_word_font(window, 1);
 }
 
 /* #1012 review: when the reading view no longer agrees with the source map (here one more
