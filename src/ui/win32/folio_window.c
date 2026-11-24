@@ -114,7 +114,7 @@
 #include <windows.h>
 #include <windowsx.h>
 
-constexpr size_t surface_button_count = 30;
+constexpr size_t surface_button_count = 31;
 constexpr size_t surface_pointer_count = surface_button_count + 2;
 constexpr UINT_PTR surface_tooltip_base = 256;
 /* 1 回の描画・測定で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行（ui_text_unit_limit）・
@@ -673,6 +673,7 @@ constexpr int base_pane_bottom = 32;
 constexpr int base_mono_font = 11;
 /* 言葉の書体の大きさ。左の欄の数の単位と同じ 11（#1222）。 */
 constexpr int base_word_font = 11;
+constexpr int base_done_width = 100; /* 右下の「閉じる」の幅（副面の「戻る」と同じ） */
 constexpr int base_tracking = 1;
 /* SetTextCharacterExtra が失敗したときの戻り値（wingdi.h に名前が無い）。 */
 constexpr int tracking_unavailable = 0x8000000;
@@ -2061,18 +2062,91 @@ static RECT theme_back_rect(const struct folio_window *_Nonnull self)
     return back;
 }
 
+/* 絞り込みの面は、下の部分の並びが違う（#1283）: 上から、操作の釦の行（すべて含む・いずれか
+ * 含む・解除）／案内と知らせ／いちばん下の行（左に件数、右に「閉じる」）。編集と全体管理の
+ * 面は、これまでどおり（件数・案内・知らせ／釦の行）。 */
+static bool tag_filter_surface(const struct folio_window *_Nonnull self)
+{
+    return self->command_surface == COMMAND_SURFACE_TAG_FILTER;
+}
+
+/* 行の下から面の下までの、固定の部分の上端。 */
+static int tag_foot_top(const struct folio_window *_Nonnull self)
+{
+    return surface_frame_rect(self, UI_PART_SURFACE_CONTENT).bottom -
+           self->settings_metrics.tags_footer;
+}
+
+static RECT tag_bottom_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    bounds.top = bounds.bottom - self->settings_metrics.tag_bottom_height;
+    return bounds;
+}
+
+/* 右下の「閉じる」と、その左の間。左に置く字を測る幅と描く幅は、どちらもここから引く。 */
+static int surface_done_reserve(UINT dpi)
+{
+    return scale(base_done_width, dpi) + scale(8, dpi);
+}
+
+/* 右下の「閉じる」。絞り込みの面はいちばん下の行の右、設定の面は下の固定の部分の右下。 */
+static RECT surface_done_rect(const struct folio_window *_Nonnull self)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    bounds.top = bounds.bottom - scale(ui_part_height, dpi);
+    bounds.left = bounds.right - scale(base_done_width, dpi);
+    return bounds;
+}
+
 static RECT tag_buttons_rect(const struct folio_window *_Nonnull self)
 {
     RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    if (tag_filter_surface(self))
+    {
+        bounds.top = tag_foot_top(self);
+        bounds.bottom = bounds.top + self->settings_metrics.tag_button_height;
+        return bounds;
+    }
     bounds.top = bounds.bottom - self->settings_metrics.tag_button_height;
     return bounds;
 }
 
+/* 字の行（案内・知らせ。編集と全体管理の面は、件数も）の場所。 */
 static RECT tag_footer_rect(const struct folio_window *_Nonnull self)
 {
     RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
-    bounds.top = bounds.bottom - self->settings_metrics.tags_footer;
-    bounds.bottom = tag_buttons_rect(self).top - scale(8, GetDpiForWindow(self->handle));
+    int gap = scale(8, GetDpiForWindow(self->handle));
+    if (tag_filter_surface(self))
+    {
+        bounds.top = tag_buttons_rect(self).bottom + gap;
+        bounds.bottom = tag_bottom_rect(self).top - gap;
+        return bounds;
+    }
+    bounds.top = tag_foot_top(self);
+    bounds.bottom = tag_buttons_rect(self).top - gap;
+    return bounds;
+}
+
+/* 読み上げの状態の行の矩形。絞り込みの面は、案内・知らせから、いちばん下の件数の行まで。 */
+static RECT tag_status_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds = tag_footer_rect(self);
+    if (tag_filter_surface(self))
+    {
+        bounds.bottom = tag_bottom_rect(self).bottom;
+        bounds.right -= surface_done_reserve(GetDpiForWindow(self->handle));
+    }
+    return bounds;
+}
+
+/* 設定の面の状態の行の矩形。右下の「閉じる」に重ねない（点から要素を引く道が、釦に届く）。 */
+static RECT settings_status_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    bounds.top = bounds.bottom - settings_footer_height(self);
+    bounds.right -= surface_done_reserve(GetDpiForWindow(self->handle));
     return bounds;
 }
 
@@ -2081,7 +2155,7 @@ static RECT tag_rows_rect(const struct folio_window *_Nonnull self)
     RECT bounds = theme_input_rect(self);
     UINT dpi = GetDpiForWindow(self->handle);
     bounds.top = bounds.bottom + scale(8, dpi);
-    int bottom = tag_footer_rect(self).top - scale(8, dpi);
+    int bottom = tag_foot_top(self) - scale(8, dpi);
     int height = bottom > bounds.top ? bottom - bounds.top : 0;
     int row = scale(base_command_row_height, dpi);
     bounds.bottom = bounds.top + height / row * row;
@@ -4943,6 +5017,7 @@ static RECT settings_footer_rect(const struct folio_window *_Nonnull self)
 static void draw_settings_footer(const struct folio_window *_Nonnull self, HDC device)
 {
     RECT line = settings_footer_rect(self);
+    draw_surface_button(self, device, ACCESSIBLE_SURFACE_DONE);
     enum folio_language language = folio_state_language(self->state);
     SetTextColor(device, self->palette.current_text);
     line.top +=
@@ -4954,7 +5029,8 @@ static void draw_settings_footer(const struct folio_window *_Nonnull self, HDC d
     if (ui_text_format(&version, text, sizeof text) == UI_TEXT_FORMAT_READY)
         line.top += wrapped_text(device, text, line, true);
     line.top += wrapped_text(device, ui_text_line(UI_TEXT_SETTINGS_GUIDANCE, language), line, true);
-    line.top = line.bottom - self->settings_metrics.notice;
+    line.top = line.bottom - self->settings_metrics.settings_band;
+    line.right -= surface_done_reserve(GetDpiForWindow(self->handle));
     if (settings_has_notice(self))
     {
         SetTextColor(device, self->palette.current_text);
@@ -5543,14 +5619,33 @@ static void tag_footer_notice(const struct folio_window *_Nonnull self, char *_N
         tag_notice_text(self, out, capacity);
 }
 
+/* 絞り込みの面のいちばん下の行: 左に件数（行の中で上下の中央）、右に「閉じる」（#1283）。 */
+static void draw_tag_bottom(const struct folio_window *_Nonnull self, HDC device)
+{
+    RECT line = tag_bottom_rect(self);
+    line.right -= surface_done_reserve(GetDpiForWindow(self->handle));
+    char text[ui_text_unit_limit];
+    tag_footer_summary(self, text, sizeof text);
+    SetTextColor(device, self->palette.current_text);
+    int height = wrapped_text(device, text, line, false);
+    line.top += (line.bottom - line.top - height) / 2;
+    (void)wrapped_text(device, text, line, true);
+    draw_surface_button(self, device, ACCESSIBLE_SURFACE_DONE);
+}
+
 static void draw_tag_footer(const struct folio_window *_Nonnull self, HDC device)
 {
     RECT line = tag_footer_rect(self);
     enum folio_language language = folio_state_language(self->state);
     char text[ui_text_unit_limit];
-    tag_footer_summary(self, text, sizeof text);
-    SetTextColor(device, self->palette.current_text);
-    line.top += wrapped_text(device, text, line, true);
+    if (tag_filter_surface(self))
+        draw_tag_bottom(self, device);
+    else
+    {
+        tag_footer_summary(self, text, sizeof text);
+        SetTextColor(device, self->palette.current_text);
+        line.top += wrapped_text(device, text, line, true);
+    }
     enum ui_text hint = tag_footer_hint(self);
     SetTextColor(device, self->palette.dialog_secondary);
     if (self->settings_metrics.tag_hint_visible)
@@ -7710,8 +7805,19 @@ static bool prepare_tag_metrics(struct folio_window *_Nonnull self)
     int guidance =
         wrapped_text(device, ui_text_line(hint, folio_state_language(self->state)), bounds, false);
     tag_footer_summary(self, text, sizeof text);
-    int summary = text[0] == '\0' ? 0 : wrapped_text(device, text, bounds, false);
+    RECT count = bounds;
+    if (tag_filter_surface(self))
+        count.right -= surface_done_reserve(dpi);
+    int summary = text[0] == '\0' ? 0 : wrapped_text(device, text, count, false);
     int fixed = self->settings_metrics.tag_button_height + notice + summary + scale(8, dpi);
+    if (tag_filter_surface(self))
+    {
+        /* いちばん下の行は、釦の高さより低くしない。釦の行の下と、いちばん下の行の上に、
+         * 間を 8 ずつ取る。 */
+        int bottom = summary > scale(ui_part_height, dpi) ? summary : scale(ui_part_height, dpi);
+        self->settings_metrics.tag_bottom_height = bottom;
+        fixed = self->settings_metrics.tag_button_height + notice + bottom + scale(16, dpi);
+    }
     int available =
         bounds.bottom - theme_input_rect(self).bottom - scale(base_command_row_height + 16, dpi);
     self->settings_metrics.tag_hint_visible = available >= fixed + guidance;
@@ -7792,8 +7898,15 @@ static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
     SetTextCharacterExtra(device, scale(base_tracking, metrics.dpi));
     bool ready = band_outcomes_height(device, metrics.language, bounds, &metrics.notice);
     metrics.motion_help = settings_motion_help_height(self, device, bounds);
+    /* 設定の面は、知らせのために空けてある下の帯の右に「閉じる」を置く（#1283）。知らせは
+     * その左に描くので、狭くした幅で測り直す。帯は、釦の高さより低くしない。 */
+    RECT beside = bounds;
+    beside.right -= surface_done_reserve(metrics.dpi);
+    ready = band_outcomes_height(device, metrics.language, beside, &metrics.settings_band) && ready;
+    if (metrics.settings_band < scale(ui_part_height, metrics.dpi))
+        metrics.settings_band = scale(ui_part_height, metrics.dpi);
     metrics.settings_footer =
-        metrics.notice + surface_footer_text_height(self, device, bounds, false);
+        metrics.settings_band + surface_footer_text_height(self, device, bounds, false);
     metrics.themes_footer = metrics.notice +
                             surface_footer_text_height(self, device, bounds, true) +
                             scale(ui_part_height + 8, metrics.dpi);
@@ -12319,6 +12432,8 @@ static size_t tag_focus_slot(enum tag_surface_focus focus)
         return ACCESSIBLE_SURFACE_TAG_PRIMARY;
     case TAG_SURFACE_SECONDARY:
         return ACCESSIBLE_SURFACE_TAG_SECONDARY;
+    case TAG_SURFACE_DONE:
+        return ACCESSIBLE_SURFACE_DONE;
     }
     return SIZE_MAX;
 }
@@ -12386,8 +12501,10 @@ static bool tag_tab(struct folio_window *_Nonnull self)
         return management_tab(self);
     const enum tag_surface_focus edit[] = {TAG_SURFACE_ROWS, TAG_SURFACE_ADD, TAG_SURFACE_APPLY,
                                            TAG_SURFACE_CANCEL, TAG_SURFACE_CLOSE};
+    /* 絞り込みの面の巡回の最後は、右下の「閉じる」（#1283）。題の右の × は、押せるが巡回に
+     * 入れない（設定の面の × と同じ）。 */
     const enum tag_surface_focus filter[] = {TAG_SURFACE_ROWS, TAG_SURFACE_ALL, TAG_SURFACE_ANY,
-                                             TAG_SURFACE_CLEAR, TAG_SURFACE_CLOSE};
+                                             TAG_SURFACE_CLEAR, TAG_SURFACE_DONE};
     const enum tag_surface_focus *_Nonnull path =
         self->command_surface == COMMAND_SURFACE_TAG_EDIT ? edit : filter;
     size_t current = tag_focus_ordinal(self, path);
@@ -17701,6 +17818,8 @@ static bool surface_button_visible(const struct folio_window *_Nonnull self, siz
                self->command_surface == COMMAND_SURFACE_PALETTE;
     case ACCESSIBLE_SURFACE_BACK:
         return self->command_surface == COMMAND_SURFACE_THEMES || about_surface(self);
+    case ACCESSIBLE_SURFACE_DONE:
+        return tag_filter_surface(self) || self->command_surface == COMMAND_SURFACE_SETTINGS;
     case ACCESSIBLE_SURFACE_ABOUT_REPOSITORY:
     case ACCESSIBLE_SURFACE_ABOUT_RELEASES:
     case ACCESSIBLE_SURFACE_ABOUT_STORE:
@@ -18115,6 +18234,8 @@ static enum ui_text surface_button_label(const struct folio_window *_Nonnull sel
     }
     if (about_link_index(slot) < about_link_count)
         return about_links[about_link_index(slot)].label;
+    if (slot == ACCESSIBLE_SURFACE_DONE)
+        return UI_TEXT_TOOLTIP_CLOSE;
     return standard_surface_button_label(self, slot);
 }
 
@@ -18378,6 +18499,8 @@ static RECT accessible_surface_button_rect(const struct folio_window *_Nonnull s
         return tag_button_rect(self, slot);
     case ACCESSIBLE_SURFACE_BACK:
         return theme_back_rect(self);
+    case ACCESSIBLE_SURFACE_DONE:
+        return surface_done_rect(self);
     case ACCESSIBLE_SURFACE_THEME:
     case ACCESSIBLE_SURFACE_STORAGE:
     case ACCESSIBLE_SURFACE_ABOUT:
@@ -18471,13 +18594,13 @@ static RECT surface_status_rect(const struct folio_window *_Nonnull self)
     if (discovery_surface(self))
         return discovery_geometry(self).status;
     if (tag_surface(self))
-        return tag_footer_rect(self);
+        return tag_status_rect(self);
     if (command_band(self))
         return self->band.result;
     if (choice_surface(self))
         return theme_footer_rect(self);
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
-        return settings_footer_rect(self);
+        return settings_status_rect(self);
     if (about_surface(self))
         return about_notice_rect(self);
     RECT bounds = {0};
@@ -18925,13 +19048,19 @@ static void surface_settings_button_action(struct folio_window *_Nonnull self, s
     adopt_settings_row(self);
 }
 
-static HRESULT surface_button_action(struct folio_window *_Nonnull self, size_t slot)
+/* 押せない釦（無効な釦、変換中のタグの面の釦）。 */
+static bool surface_button_refused(const struct folio_window *_Nonnull self, size_t slot)
 {
     if (discovery_surface(self) && !discovery_button_enabled(self, slot))
-        return accessibility_node_disabled;
+        return true;
     if (management_surface(self) && !management_button_enabled(self, slot))
-        return accessibility_node_disabled;
-    if (tag_surface(self) && self->command_composing)
+        return true;
+    return tag_surface(self) && self->command_composing;
+}
+
+static HRESULT surface_button_action(struct folio_window *_Nonnull self, size_t slot)
+{
+    if (surface_button_refused(self, slot))
         return accessibility_node_disabled;
     switch ((enum accessible_surface_button)slot)
     {
@@ -18957,6 +19086,7 @@ static HRESULT surface_button_action(struct folio_window *_Nonnull self, size_t 
         break;
     case ACCESSIBLE_SURFACE_TAG_CANCEL:
     case ACCESSIBLE_SURFACE_CLOSE:
+    case ACCESSIBLE_SURFACE_DONE:
         close_command_surface(self);
         break;
     case ACCESSIBLE_SURFACE_BACK:
@@ -19109,9 +19239,9 @@ static HRESULT surface_root_action(struct folio_window *_Nonnull self,
 static HRESULT tag_button_focus(struct folio_window *_Nonnull self, size_t slot)
 {
     const enum tag_surface_focus values[] = {
-        TAG_SURFACE_CLOSE,  TAG_SURFACE_ADD,     TAG_SURFACE_APPLY,
-        TAG_SURFACE_CANCEL, TAG_SURFACE_ALL,     TAG_SURFACE_ANY,
-        TAG_SURFACE_CLEAR,  TAG_SURFACE_PRIMARY, TAG_SURFACE_SECONDARY};
+        TAG_SURFACE_CLOSE,     TAG_SURFACE_ADD, TAG_SURFACE_APPLY, TAG_SURFACE_CANCEL,
+        TAG_SURFACE_ALL,       TAG_SURFACE_ANY, TAG_SURFACE_CLEAR, TAG_SURFACE_PRIMARY,
+        TAG_SURFACE_SECONDARY, TAG_SURFACE_DONE};
     for (size_t at = 0; at < sizeof values / sizeof values[0]; ++at)
         if (tag_focus_slot(values[at]) == slot)
         {
