@@ -10673,6 +10673,44 @@ static void filter_mark_type(struct folio_window *_Nonnull window,
     filter_mark_settle(window, fixture);
 }
 
+/* #1267: the EDIT repaints its own line for every keystroke, over the mark. While a term is in
+ * the field the mark is there after each one: a second and a third character, and a deletion
+ * that leaves characters. The field ends with the one character it started with. */
+static void filter_mark_stays(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture,
+                              const struct filter_mark *_Nonnull mark)
+{
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
+    const wchar_t typed[] = {L'b', L'c', L'\b', L'\b'};
+    for (size_t at = 0; at < sizeof typed / sizeof typed[0]; ++at)
+    {
+        filter_mark_type(window, fixture, typed[at]);
+        int shown = filter_mark_shown(input, mark);
+        printf("filter-mark-stays key=%zu length=%d shown=%d of %d\n", at,
+               GetWindowTextLengthW(input), shown, mark->strokes);
+        require(GetWindowTextLengthW(input) >= 1 && shown == mark->strokes,
+                "the clear mark stays while the term changes and is not empty");
+    }
+    require(GetWindowTextLengthW(input) == 1, "the term is back to its first character");
+    /* Messages that change nothing must not thicken the mark: its edge is blended, so drawing
+     * it again over itself would darken the edge pixels (the learned colours would not match).
+     * Selecting, moving the caret and replacing the selection keep it too. */
+    for (int at = 0; at < 50; ++at)
+        SendMessageW(input, WM_MOUSEMOVE, 0, MAKELPARAM(4, 4));
+    require(filter_mark_shown(input, mark) == mark->strokes,
+            "pointer moves over the field leave the mark as it was drawn");
+    SendMessageW(input, EM_SETSEL, 0, -1);
+    require(filter_mark_shown(input, mark) == mark->strokes, "selecting all keeps the mark");
+    SendMessageW(input, EM_REPLACESEL, TRUE, (LPARAM)L"xy");
+    require(filter_mark_shown(input, mark) == mark->strokes,
+            "replacing the selection keeps the mark, read before any repaint is pumped");
+    SendMessageW(input, WM_KEYDOWN, VK_LEFT, 0);
+    SendMessageW(input, WM_KEYDOWN, VK_DELETE, 0);
+    require(GetWindowTextLengthW(input) == 1 && filter_mark_shown(input, mark) == mark->strokes,
+            "the Delete key keeps the mark while a character is left");
+    filter_mark_settle(window, fixture);
+}
+
 static void filter_mark_needs_a_term(struct native_fixture *_Nonnull fixture)
 {
     struct folio_window *window = nullptr;
@@ -10687,6 +10725,7 @@ static void filter_mark_needs_a_term(struct native_fixture *_Nonnull fixture)
     filter_mark_learn(input, &mark);
     require(GetWindowTextLengthW(input) == 1 && mark.strokes > 8,
             "a typed term shows the clear mark");
+    filter_mark_stays(window, fixture, &mark);
     filter_mark_type(window, fixture, L'\b');
     int bare = filter_mark_shown(input, &mark);
     require(GetWindowTextLengthW(input) == 0 && 2 * bare < mark.strokes,
