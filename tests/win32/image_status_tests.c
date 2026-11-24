@@ -9345,6 +9345,85 @@ static void breadcrumb_word_font(struct native_fixture *_Nonnull fixture,
  * the sentence (here the two key names) in the monospace face. The keys' part is right-aligned;
  * its leftmost drawn pixel sits one line width left of its rightmost one, and the 10 DIP beyond
  * that are empty (the note's part ends at least 24 DIP before it). */
+/* #1253: how wide the ink of a band of the main window is, from its first inked column to its
+ * last, as the window draws it. The band's top-left pixel is taken as the ground. */
+static int root_ink_width(struct folio_window *_Nonnull window, RECT band)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    RECT client;
+    GetClientRect(root, &client);
+    HDC source = GetDC(root), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(root, dc, PW_CLIENTONLY), "render the main window for an ink width");
+    COLORREF ground = GetPixel(dc, band.left, band.top);
+    int first = band.right, last = band.left;
+    for (int x = band.left; x < band.right; ++x)
+    {
+        if (line_ink(dc, (RECT){x, band.top, x + 1, band.bottom}, ground) != 0)
+        {
+            first = x < first ? x : first;
+            last = x;
+        }
+    }
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(root, source);
+    return last >= first ? last - first + 1 : 0;
+}
+
+/* #1253: a line of words drawn inside a band is as wide as the language's face makes it, not as
+ * wide as the monospace face would. Where the two faces differ by too little to tell at this
+ * DPI, the check only reports and answers false: the caller says whether that is acceptable. */
+static bool expect_word_face(struct folio_window *_Nonnull window, RECT band,
+                             const wchar_t *_Nonnull text, const char *_Nonnull what)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    wchar_t mono[LF_FACESIZE];
+    int mono_size = ui_face_mono(mono, 11);
+    struct header_font words = {face, 11, FW_NORMAL}, values = {mono, mono_size, FW_NORMAL};
+    int expected = header_text_width(root, text, words);
+    int monospace = header_text_width(root, text, values);
+    int drawn = root_ink_width(window, band);
+    printf("word-face %s drawn=%d expected=%d monospace=%d\n", what, drawn, expected, monospace);
+    if (monospace - expected < 5 && expected - monospace < 5)
+    {
+        return false;
+    }
+    require(drawn >= expected - 3 && drawn <= expected + 3, what);
+    return true;
+}
+
+/* #1253: the tag strip above the body says its words in the language's face. */
+static void tag_strip_word_font(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    struct accessible_item strip = {.kind = ACCESSIBLE_TAG_EDIT};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &strip, &view) == S_OK && !view.offscreen &&
+                view.name[0] != 0,
+            "the tag strip is visible and named");
+    MapWindowPoints(nullptr, root, (POINT *)&view.bounds, 2);
+    int inset = MulDiv(4, (int)GetDpiForWindow(root), 96);
+    RECT band = {view.bounds.left + inset, view.bounds.top + inset, view.bounds.right - inset,
+                 view.bounds.bottom - inset};
+    require(expect_word_face(window, band, (const wchar_t *)view.name,
+                             "the tag strip's words are drawn in the language's face"),
+            "the tag strip's text tells the two faces apart, so the check ran");
+    /* The guide marks its key names for drawing. The same sentence, as the new-note button's
+     * spoken help, carries no mark. */
+    struct accessible_item button = {.kind = ACCESSIBLE_NEW_NOTE};
+    require(folio_window_accessible_read(window, &button, &view) == S_OK &&
+                wcsstr((const wchar_t *)view.help, L"Ctrl+N") != nullptr,
+            "the new-note button's help names its key");
+    for (size_t at = 0; view.help[at] != 0; ++at)
+        require(view.help[at] != 1 && view.help[at] != 2,
+                "the marks around a key name never reach the new-note button's help");
+}
+
 static void status_keys_fonts(struct folio_window *_Nonnull window)
 {
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
@@ -9419,6 +9498,7 @@ static void header_count_units(struct native_fixture *_Nonnull fixture)
     word_font_parts(window);
     breadcrumb_word_font(fixture, window);
     status_keys_fonts(window);
+    tag_strip_word_font(window);
     invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
     pump(window);
     line.number = L"0 / 2";
@@ -14358,6 +14438,19 @@ static void outline_rows(struct folio_window *_Nonnull window)
     require(!column.offscreen && !IsRectEmpty(&column.bounds) &&
                 wcscmp((const wchar_t *)column.name, L"見出し") == 0,
             "the column is on screen and named");
+    /* #1253: the column's title is drawn in the language's face. Its band is the top 28 DIP. */
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    RECT title = column.bounds;
+    MapWindowPoints(nullptr, root, (POINT *)&title, 2);
+    title.left += MulDiv(4, dpi, 96);
+    title.right -= MulDiv(4, dpi, 96);
+    title.bottom = title.top + MulDiv(22, dpi, 96);
+    title.top += MulDiv(6, dpi, 96);
+    bool told = expect_word_face(window, title, L"見出し",
+                                 "the headings column's title is drawn in the language's face");
+    /* Three glyphs differ by six pixels at 96 DPI and by four at 120: the 96 DPI run decides. */
+    require(told || dpi != 96, "at 96 DPI the title tells the two faces apart, so the check ran");
     const wchar_t *const names[] = {L"設計メモ", L"背景", L"決めたこと", L"色", L"配置", L"余白"};
     const int levels[] = {1, 2, 2, 3, 3, 4};
     struct accessible_item item = outline_item_at(window, 0);

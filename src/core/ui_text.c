@@ -1338,9 +1338,10 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_EMPTY_BODY] = {"左の一覧からノートを選ぶか、新しいノートを作ります",
                             "Choose a note from the list on the left, or create a new note",
                             "从左侧列表选择笔记，或新建笔记"},
-    [UI_TEXT_EMPTY_KEYS] = {"すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
-                            "Search all notes: Ctrl+Shift+F / Help: F1",
-                            "搜索全部笔记: Ctrl+Shift+F ／ 帮助: F1"},
+    /* キーの名前は、キーの割り当ての表から差し込む（{from} は検索、{to} はヘルプ・#1253）。 */
+    [UI_TEXT_EMPTY_KEYS] = {"すべてのノートを検索: {from} ／ ヘルプ: {to}",
+                            "Search all notes: {from} / Help: {to}",
+                            "搜索全部笔记: {from} ／ 帮助: {to}"},
     [UI_TEXT_COMMAND_CAPTION] = {"{name}", "{name}", "{name}"},
     [UI_TEXT_COMMAND_INPUT_CAPTION] = {"{name}…", "{name}…", "{name}…"},
     [UI_TEXT_MENU_ACCESS_CAPTION] = {"{name} ({from})", "{name} ({from})", "{name} ({from})"},
