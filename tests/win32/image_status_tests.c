@@ -9412,12 +9412,17 @@ static void tag_strip_word_font(struct folio_window *_Nonnull window)
                 view.name[0] != 0,
             "the tag strip is visible and named");
     MapWindowPoints(nullptr, root, (POINT *)&view.bounds, 2);
-    int inset = MulDiv(4, (int)GetDpiForWindow(root), 96);
-    RECT band = {view.bounds.left + inset, view.bounds.top + inset, view.bounds.right - inset,
-                 view.bounds.bottom - inset};
-    require(expect_word_face(window, band, (const wchar_t *)view.name,
-                             "the tag strip's words are drawn in the language's face"),
-            "the tag strip's text tells the two faces apart, so the check ran");
+    int dpi = (int)GetDpiForWindow(root);
+    /* The note has no tags: the entry is the "+ Tag" button alone, not a field across the pane
+     * (#1263). Its name still says what it opens. The button's text sits 8 DIP inside the row,
+     * clear of the button's frame; its two faces are too close in width to tell apart, so only
+     * its presence is checked here. */
+    RECT band = {view.bounds.left + MulDiv(6, dpi, 96), view.bounds.top + MulDiv(8, dpi, 96),
+                 view.bounds.right - MulDiv(6, dpi, 96), view.bounds.bottom - MulDiv(8, dpi, 96)};
+    require(wcscmp((const wchar_t *)view.name, L"タグを追加…") == 0 &&
+                view.bounds.right - view.bounds.left < MulDiv(120, dpi, 96) &&
+                root_ink_width(window, band) > MulDiv(20, dpi, 96),
+            "a note without tags shows only the small, labelled button that adds them");
     /* The guide marks its key names for drawing. The same sentence, as the new-note button's
      * spoken help, carries no mark. */
     struct accessible_item button = {.kind = ACCESSIBLE_NEW_NOTE};
@@ -11359,6 +11364,51 @@ static void tags_metrics_regression(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+/* The note's tags stand above the body as luggage labels (#1263): a point at the left instead
+ * of a square corner, the name in the language's face, then the "+ Tag" button. The fixture's
+ * note carries [red, blue]. The row is 28 DIP high and a label 20, so a label starts 4 DIP
+ * below the row's top; its text starts 18 DIP in. */
+static void note_tag_labels(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    struct accessible_item entry = {.kind = ACCESSIBLE_TAG_EDIT};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &entry, &view) == S_OK && !view.offscreen &&
+                wcscmp((const wchar_t *)view.name, L"タグ 2 個を編集…") == 0,
+            "the tag row is visible and its name carries the count");
+    RECT row = view.bounds;
+    MapWindowPoints(nullptr, root, (POINT *)&row, 2);
+    int middle = (row.top + row.bottom) / 2;
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    struct header_font words = {face, 11, FW_NORMAL};
+    int red = header_text_width(root, L"red", words);
+    int blue = header_text_width(root, L"blue", words);
+    int ends = MulDiv(18 + 9, dpi, 96);
+    require(row.right - row.left > 2 * ends + red + blue + MulDiv(6, dpi, 96),
+            "the row holds both labels and the button after them");
+    RECT text = {row.left + MulDiv(15, dpi, 96), row.top + MulDiv(7, dpi, 96),
+                 row.left + MulDiv(18 + 8, dpi, 96) + red, row.bottom - MulDiv(7, dpi, 96)};
+    /* "red" is too short to tell the two faces apart by width (22 against 24 px at 120 DPI);
+     * the check is that the name stands where a label's text starts, as wide as the language's
+     * face makes it, less the side bearings. */
+    int drawn = root_ink_width(window, text);
+    printf("tag-label name drawn=%d expected=%d\n", drawn, red);
+    require(drawn >= red - MulDiv(4, dpi, 96) && drawn <= red + MulDiv(1, dpi, 96),
+            "a tag label shows its name where its text starts");
+    /* The point: on the middle line the label is inked from its left end; just under its top
+     * edge the first 4 DIP are cut away. Both bands start 4 px left of the label, on the pane. */
+    RECT tip = {row.left - 4, middle - 1, row.left + MulDiv(9, dpi, 96), middle + 1};
+    RECT corner = {row.left - 4, row.top + MulDiv(5, dpi, 96), row.left + MulDiv(4, dpi, 96),
+                   row.top + MulDiv(6, dpi, 96)};
+    int pointed = root_ink_width(window, tip);
+    int cut = root_ink_width(window, corner);
+    printf("tag-label tip=%d corner=%d\n", pointed, cut);
+    require(pointed >= MulDiv(6, dpi, 96) && cut == 0,
+            "a tag label has a point at its left, not a square corner");
+}
+
 static void run_tags_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -11392,6 +11442,7 @@ static void run_tags_case(struct native_fixture *_Nonnull fixture)
                 FOLIO_WINDOW_CREATED,
             "tag native window on dedicated desktop");
     pump(window);
+    note_tag_labels(window);
     tags_edit_roundtrip(window, fixture);
     tags_view_save(window, fixture);
     tags_keyboard(window, fixture);
