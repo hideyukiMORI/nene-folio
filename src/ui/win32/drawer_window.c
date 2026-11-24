@@ -1471,6 +1471,18 @@ static bool header_press_blocked(struct drawer_window *_Nonnull self, POINT poin
     return false;
 }
 
+/* 解除を押した点から動いていないあいだは、帯の押下を受けない。 */
+static bool header_press_blocked(struct drawer_window *_Nonnull self, POINT point)
+{
+    if (self->header_blocked && point.x == self->header_block_point.x &&
+        point.y == self->header_block_point.y)
+    {
+        return true;
+    }
+    self->header_blocked = false;
+    return false;
+}
+
 static bool press_header(struct drawer_window *_Nonnull self, POINT point)
 {
     if (header_press_blocked(self, point))
