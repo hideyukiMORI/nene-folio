@@ -2198,6 +2198,8 @@ static void expect_theme_restored(struct native_fixture *_Nonnull fixture,
             "cancellation restores the initial effective palette and theme");
 }
 
+static void theme_row_word_font(struct folio_window *_Nonnull window);
+
 static void theme_preview_cycle(struct folio_window *_Nonnull window,
                                 struct native_fixture *_Nonnull fixture,
                                 const struct theme_snapshot *_Nonnull snapshot, bool go_back)
@@ -2210,6 +2212,7 @@ static void theme_preview_cycle(struct folio_window *_Nonnull window,
             "invoke the public settings action");
     pump(window);
     surface_button(window, ACCESSIBLE_SURFACE_THEME);
+    theme_row_word_font(window);
     struct native_body_snapshot opened = {0};
     capture_native_body(window, &opened);
     preview_theme_candidate(window, fixture->state, snapshot->choice);
@@ -13135,6 +13138,51 @@ static void history_row_fonts(struct folio_window *_Nonnull window, struct acces
             "a history row draws its number monospace and its line in the language's face");
 }
 
+/* A theme row says the theme's name in the language's face. "ubuntu-aubergine" is all ASCII,
+ * so it is drawn with the layer's tracking (1 DIP a character). The name starts 32 DIP in; the
+ * samples take the 156 DIP at the row's right when the row is wide enough. */
+static void theme_row_word_font(struct folio_window *_Nonnull window)
+{
+    static const wchar_t name[] = L"ubuntu-aubergine";
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_item row;
+    struct accessible_view view = {0};
+    HRESULT found =
+        folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &row);
+    while (found == S_OK)
+    {
+        require(folio_window_accessible_read(window, &row, &view) == S_OK, "read a theme row");
+        if (wcscmp((const wchar_t *)view.name, name) == 0)
+            break;
+        found = folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_NEXT, &row);
+    }
+    require(found == S_OK && !view.offscreen, "the theme list shows the named theme");
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    wchar_t mono[LF_FACESIZE];
+    int mono_size = ui_face_mono(mono, 11);
+    struct header_font words = {face, 11, FW_NORMAL}, values = {mono, mono_size, FW_NORMAL};
+    int tracking = ((int)wcslen(name) - 1) * MulDiv(1, dpi, 96);
+    int expected = header_text_width(root, name, words) + tracking;
+    int monospace = header_text_width(root, name, values) + tracking;
+    int inset = MulDiv(6, dpi, 96), slack = MulDiv(3, dpi, 96);
+    RECT band = {view.bounds.left + MulDiv(30, dpi, 96), view.bounds.top + inset,
+                 view.bounds.right - MulDiv(160, dpi, 96), view.bounds.bottom - inset};
+    int drawn = surface_ink_span(window, band);
+    printf("theme-row-face drawn=%d expected=%d monospace=%d\n", drawn, expected, monospace);
+    /* The ink never passes the advances and is at most the side bearings (2 DIP) short of
+     * them, so a monospace drawing shows once the faces differ by 4 DIP (measured: 134 against
+     * 143 at 120 DPI). */
+    require(monospace - expected >= MulDiv(4, dpi, 96),
+            "the theme's name is wider in monospace by more than its bearings");
+    require(band.right - band.left > monospace, "the band holds either drawing");
+    require(drawn >= expected - 2 * slack && drawn <= expected + MulDiv(1, dpi, 96),
+            "a theme row's name is drawn in the language's face");
+}
+
 /* The settings row with this name, read through the surface's list. */
 static struct accessible_view settings_row_named(struct folio_window *_Nonnull window,
                                                  const wchar_t *_Nonnull name)
@@ -13193,7 +13241,8 @@ static void settings_row_fonts(struct folio_window *_Nonnull window)
     int narrow = MulDiv(2, dpi, 96);
     require(expected - other >= 2 * narrow || other - expected >= 2 * narrow,
             "the language's name tells the two faces apart");
-    require(drawn >= expected - narrow && drawn <= expected + narrow,
+    /* The ink is narrower than the advances by the side bearings, never wider. */
+    require(drawn >= expected - 2 * narrow && drawn <= expected + narrow,
             "a language row keeps the monospace face");
 }
 
@@ -18469,11 +18518,47 @@ static void about_language(struct native_fixture *_Nonnull fixture, enum folio_l
     folio_window_destroy(window);
 }
 
+/* The About lines are drawn and measured in the language's face. The licence line (the fifth)
+ * is one line: its ink is as wide as that face makes it. The notices line (the seventh) wraps:
+ * nothing is drawn between its measured rectangle and the heading under it. */
+static void about_text_fonts(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    struct accessible_item row = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                  .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_view lines[8] = {0};
+    HRESULT result =
+        folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_FIRST, &row);
+    for (size_t at = 0; at < 8; ++at)
+    {
+        require(result == S_OK && folio_window_accessible_read(window, &row, &lines[at]) == S_OK,
+                "read an About line for its face");
+        result = folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_NEXT, &row);
+    }
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    wchar_t mono[LF_FACESIZE];
+    int mono_size = ui_face_mono(mono, 11);
+    struct header_font words = {face, 11, FW_NORMAL}, values = {mono, mono_size, FW_NORMAL};
+    const wchar_t *licence = (const wchar_t *)lines[4].name;
+    int expected = header_text_width(root, licence, words);
+    int monospace = header_text_width(root, licence, values);
+    int drawn = surface_ink_span(window, lines[4].bounds);
+    int slack = MulDiv(3, dpi, 96);
+    printf("about-line-face drawn=%d expected=%d monospace=%d\n", drawn, expected, monospace);
+    require(monospace - expected >= 4 * slack, "the licence line is clearly wider in monospace");
+    require(drawn >= expected - 2 * slack && drawn <= expected + slack,
+            "an About line is drawn in the language's face");
+    surface_foot_fits(window, lines[6].bounds, lines[7].bounds);
+}
+
 static void about_surface_checks(struct folio_window *_Nonnull window)
 {
     about_open(window);
     about_cycle(window);
     about_texts(window, FOLIO_LANGUAGE_JA);
+    about_text_fonts(window);
     about_links(window, FOLIO_LANGUAGE_JA);
     about_failure(window, FOLIO_LANGUAGE_JA);
     about_pointer(window);

@@ -5087,10 +5087,10 @@ static void draw_settings_row(const struct folio_window *_Nonnull self, HDC devi
     /* 言語の名前（日本語・English・简体中文）は、等幅のまま。日本語・英語の言葉の書体には
      * 「简」が無く、1 つの名前の中で書体が混ざる。 */
     bool language = settings_rows[index].kind == SETTINGS_ROW_LANGUAGE;
-    HGDIOBJ words = SelectObject(device, language ? self->mono_font : word_font(self));
+    HGDIOBJ previous = SelectObject(device, language ? self->mono_font : word_font(self));
     draw_units(device, ui_text_line(settings_rows[index].label, folio_state_language(self->state)),
                label, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
-    SelectObject(device, words);
+    SelectObject(device, previous);
 }
 
 static void draw_settings_rows(const struct folio_window *_Nonnull self, HDC device)
