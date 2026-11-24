@@ -9357,8 +9357,8 @@ static int root_ink_width(struct folio_window *_Nonnull window, RECT band)
 
 /* #1253: a line of words drawn inside a band is as wide as the language's face makes it, not as
  * wide as the monospace face would. Where the two faces differ by too little to tell at this
- * DPI, the check only reports. */
-static void expect_word_face(struct folio_window *_Nonnull window, RECT band,
+ * DPI, the check only reports and answers false: the caller says whether that is acceptable. */
+static bool expect_word_face(struct folio_window *_Nonnull window, RECT band,
                              const wchar_t *_Nonnull text, const char *_Nonnull what)
 {
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
@@ -9371,10 +9371,12 @@ static void expect_word_face(struct folio_window *_Nonnull window, RECT band,
     int monospace = header_text_width(root, text, values);
     int drawn = root_ink_width(window, band);
     printf("word-face %s drawn=%d expected=%d monospace=%d\n", what, drawn, expected, monospace);
-    if (monospace - expected >= 5 || expected - monospace >= 5)
+    if (monospace - expected < 5 && expected - monospace < 5)
     {
-        require(drawn >= expected - 3 && drawn <= expected + 3, what);
+        return false;
     }
+    require(drawn >= expected - 3 && drawn <= expected + 3, what);
+    return true;
 }
 
 /* #1253: the tag strip above the body says its words in the language's face. */
@@ -9390,8 +9392,18 @@ static void tag_strip_word_font(struct folio_window *_Nonnull window)
     int inset = MulDiv(4, (int)GetDpiForWindow(root), 96);
     RECT band = {view.bounds.left + inset, view.bounds.top + inset, view.bounds.right - inset,
                  view.bounds.bottom - inset};
-    expect_word_face(window, band, (const wchar_t *)view.name,
-                     "the tag strip's words are drawn in the language's face");
+    require(expect_word_face(window, band, (const wchar_t *)view.name,
+                             "the tag strip's words are drawn in the language's face"),
+            "the tag strip's text tells the two faces apart, so the check ran");
+    /* The guide marks its key names for drawing. The same sentence, as the new-note button's
+     * spoken help, carries no mark. */
+    struct accessible_item button = {.kind = ACCESSIBLE_NEW_NOTE};
+    require(folio_window_accessible_read(window, &button, &view) == S_OK &&
+                wcsstr((const wchar_t *)view.help, L"Ctrl+N") != nullptr,
+            "the new-note button's help names its key");
+    for (size_t at = 0; view.help[at] != 0; ++at)
+        require(view.help[at] != 1 && view.help[at] != 2,
+                "the marks around a key name never reach the new-note button's help");
 }
 
 static void status_keys_fonts(struct folio_window *_Nonnull window)
@@ -13615,8 +13627,10 @@ static void outline_rows(struct folio_window *_Nonnull window)
     title.right -= MulDiv(4, dpi, 96);
     title.bottom = title.top + MulDiv(22, dpi, 96);
     title.top += MulDiv(6, dpi, 96);
-    expect_word_face(window, title, L"見出し",
-                     "the headings column's title is drawn in the language's face");
+    bool told = expect_word_face(window, title, L"見出し",
+                                 "the headings column's title is drawn in the language's face");
+    /* Three glyphs differ by six pixels at 96 DPI and by four at 120: the 96 DPI run decides. */
+    require(told || dpi != 96, "at 96 DPI the title tells the two faces apart, so the check ran");
     const wchar_t *const names[] = {L"設計メモ", L"背景", L"決めたこと", L"色", L"配置", L"余白"};
     const int levels[] = {1, 2, 2, 3, 3, 4};
     struct accessible_item item = outline_item_at(window, 0);

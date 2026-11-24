@@ -6656,16 +6656,18 @@ static void guide_lines(const struct folio_window *_Nonnull self,
 static int draw_guide_line(const struct folio_window *_Nonnull self, HDC device,
                            const char *_Nonnull const *_Nonnull line, RECT bounds)
 {
-    SelectObject(device, word_font(self));
-    if (status_line(self, device, line[0], nullptr) > bounds.right - bounds.left)
+    bool fits = status_line(self, device, line[0], nullptr) <= bounds.right - bounds.left;
+    SelectObject(device, word_font(self)); /* status_line は、等幅に戻して終わる */
+    if (!fits)
     {
-        SelectObject(device, word_font(self));
         return draw_units(device, line[1], bounds, DT_WORDBREAK | DT_NOPREFIX);
     }
-    SelectObject(device, word_font(self));
     TEXTMETRICW metrics = {0};
     GetTextMetricsW(device, &metrics);
-    RECT row = {bounds.left, bounds.top, bounds.right, bounds.top + metrics.tmHeight};
+    /* 案内の矩形の下端を超えない（折り返しの道が、矩形で切るのと同じ）。 */
+    int bottom = bounds.top + metrics.tmHeight;
+    RECT row = {bounds.left, bounds.top, bounds.right,
+                bottom < bounds.bottom ? bottom : bounds.bottom};
     (void)status_line(self, device, line[0], &row);
     return metrics.tmHeight;
 }
