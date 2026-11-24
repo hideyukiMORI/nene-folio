@@ -14348,7 +14348,36 @@ static bool filter_clear_at(const struct folio_window *_Nonnull self, HWND windo
  * ちらつくので、変わった 1 回だけ欄ごと描き直す（補正 6・#1246）。欄の字が変わる道（打鍵・貼り
  * 付け・変換中・プログラムからの書き換え）は、絞り込みの門（変換中・保存中は絞り直さない）を
  * 通らないものがあるので、欄がメッセージを処理し終えるたびに、ここ 1 か所で比べる。 */
-static void sync_filter_mark(struct folio_window *_Nonnull self, HWND window)
+/* 欄（EDIT）が、WM_PAINT を通さずに自分の行を塗り直すメッセージ。字を打つ・消す・貼る・選ぶ・
+ * 変換するたびに、欄は行の右端まで塗るので、その上の「×」が消える（#1267）。 */
+static bool filter_edit_repaints(UINT message)
+{
+    const UINT repainting[] = {WM_CHAR,
+                               WM_KEYDOWN,
+                               WM_PASTE,
+                               WM_CUT,
+                               WM_CLEAR,
+                               WM_UNDO,
+                               WM_SETTEXT,
+                               EM_REPLACESEL,
+                               EM_SETSEL,
+                               WM_MOUSEMOVE,
+                               WM_LBUTTONDOWN,
+                               WM_LBUTTONUP,
+                               WM_LBUTTONDBLCLK,
+                               WM_SETFOCUS,
+                               WM_KILLFOCUS,
+                               WM_IME_COMPOSITION,
+                               WM_IME_ENDCOMPOSITION};
+    for (size_t at = 0; at < sizeof repainting / sizeof repainting[0]; ++at)
+    {
+        if (repainting[at] == message)
+            return true;
+    }
+    return false;
+}
+
+static void sync_filter_mark(struct folio_window *_Nonnull self, HWND window, UINT message)
 {
     /* 字数は元の EDIT へ直に聞く。欄へ送ると、その処理の終わりでまたここへ来て終わらない。 */
     bool marked = self->filter_original != nullptr &&
@@ -14357,7 +14386,11 @@ static void sync_filter_mark(struct folio_window *_Nonnull self, HWND window)
     {
         self->filter_marked = marked;
         InvalidateRect(window, nullptr, TRUE);
+        return;
     }
+    /* 「×」が出たままのあいだ: 欄が自分で塗り直した後に、「×」を描き直す。 */
+    if (marked && filter_edit_repaints(message))
+        paint_filter_clear(self, window);
 }
 
 static bool filter_clear_pressed(struct folio_window *_Nonnull self, HWND window, LPARAM lparam)
@@ -14489,7 +14522,7 @@ static LRESULT CALLBACK filter_input_message(HWND window, UINT message, WPARAM w
     }
     if (message != WM_NCDESTROY)
     {
-        sync_filter_mark(self, window); /* 壊れた後の窓へは聞かない */
+        sync_filter_mark(self, window, message); /* 壊れた後の窓へは聞かない */
     }
     return result;
 }
