@@ -9827,6 +9827,34 @@ static void filter_tag_stale_press(struct folio_window *_Nonnull window,
     filter_settle(window, fixture);
 }
 
+/* #1247: a press on the second chip removes the second tag, not the first. */
+static void filter_tag_pointer_second(struct folio_window *_Nonnull window,
+                                      struct native_fixture *_Nonnull fixture)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    discovery_seed_tags(fixture);
+    filter_settle(window, fixture);
+    struct accessible_view view = {0};
+    RECT second = tag_chip_view(window, fixture, 1, &view);
+    require(wcsstr(view.name, L"blue") != nullptr, "the second chip is the second tag");
+    LPARAM position =
+        MAKELPARAM((second.left + second.right) / 2, (second.top + second.bottom) / 2);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, position);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
+    SendMessageW(drawer, WM_LBUTTONUP, 0, position);
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    filter_settle(window, fixture);
+    (void)tag_chip_view(window, fixture, 0, &view);
+    require(tag_condition_count(fixture) == 1 && wcsstr(view.name, L"red") != nullptr,
+            "a press on the second chip removes the second tag and leaves the first");
+    chip_click(window, ACCESSIBLE_FILTER_CLEAR);
+    filter_settle(window, fixture);
+    require(tag_condition_count(fixture) == 0, "the clear row removes the tag that is left");
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(1, 1));
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    pump(window);
+}
+
 /* #1247: a press anywhere on a tag chip removes that tag. The next chip slides under the
  * pointer, so a second press at the same point (a double click) does not remove it too. */
 static void filter_tag_pointer(struct folio_window *_Nonnull window,
@@ -10146,6 +10174,7 @@ static void filter_chip_row(struct folio_window *_Nonnull window,
     filter_settle(window, fixture);
     filter_tag_keyboard(window, fixture);
     filter_tag_stale_press(window, fixture);
+    filter_tag_pointer_second(window, fixture);
     filter_tag_pointer(window, fixture);
     filter_tag_fold(window, fixture);
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
