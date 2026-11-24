@@ -34,6 +34,7 @@ struct accessibility_host
     bool had_selection[6];
     uint64_t surface_revision;
     uint64_t outline_revision; /* #975: the headings column's rows as last published */
+    uint64_t filter_revision;  /* #1247: the tag chips of the filter row as last published */
     uint64_t revision;
     unsigned visibility;
     bool header_observed;
@@ -476,6 +477,23 @@ static void refresh_surface(struct accessibility_host *_Nonnull host)
     }
 }
 
+/* Forget the cached nodes of a numbered kind that no longer answer. */
+static void drop_stale(struct accessibility_host *_Nonnull host, enum accessible_kind kind)
+{
+    size_t index = 0;
+    while (index < host->count)
+    {
+        struct accessible_item item = accessibility_node_item(host->nodes[index]);
+        struct accessible_view view = {0};
+        if (item.kind == kind && FAILED(accessibility_host_read(host, &item, &view)))
+        {
+            remove_node(host, index);
+            continue;
+        }
+        index += 1;
+    }
+}
+
 /* #975: a row of the headings column belongs to one loaded note. When the note changes, the
  * cached rows stop answering and the list announces new children. */
 static void refresh_outline(struct accessibility_host *_Nonnull host)
@@ -486,20 +504,23 @@ static void refresh_outline(struct accessibility_host *_Nonnull host)
     if (host->outline_revision == revision)
         return;
     host->outline_revision = revision;
-    size_t index = 0;
-    while (index < host->count)
-    {
-        struct accessible_item item = accessibility_node_item(host->nodes[index]);
-        struct accessible_view view = {0};
-        if (item.kind == ACCESSIBLE_OUTLINE_ITEM &&
-            FAILED(accessibility_host_read(host, &item, &view)))
-        {
-            remove_node(host, index);
-            continue;
-        }
-        index += 1;
-    }
+    drop_stale(host, ACCESSIBLE_OUTLINE_ITEM);
     raise_structure(host, ACCESSIBLE_OUTLINE);
+}
+
+/* #1247: a tag chip of the filter row belongs to one revision of the tag condition and to a
+ * place on the row. When the condition or the row's fold changes, the cached chips stop
+ * answering and the group announces new children. */
+static void refresh_filter_tags(struct accessibility_host *_Nonnull host)
+{
+    if (host->owner == nullptr)
+        return;
+    uint64_t revision = folio_window_accessible_filter_revision(host->owner);
+    if (host->filter_revision == revision)
+        return;
+    host->filter_revision = revision;
+    drop_stale(host, ACCESSIBLE_FILTER_TAG);
+    raise_structure(host, ACCESSIBLE_FILTER_GROUP);
 }
 
 static void refresh_visibility(struct accessibility_host *_Nonnull host)
@@ -612,6 +633,7 @@ static void refresh_snapshot(struct accessibility_host *_Nonnull host)
     refresh_header(host);
     refresh_surface(host);
     refresh_outline(host);
+    refresh_filter_tags(host);
     annotate(host, ACCESSIBLE_FILTER, host->filter_name);
     annotate(host, ACCESSIBLE_BODY, host->body_name);
     for (size_t at = 0; at < command_input_count; ++at)

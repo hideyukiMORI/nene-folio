@@ -9700,10 +9700,469 @@ static void expect_tooltip_rect(struct folio_window *_Nonnull window, enum acces
     require(EqualRect(&tool.rect, &bounds), "the tooltip follows the part's rectangle");
 }
 
-/* Tag conditions light the opener chip and show the clear row. Lighting the favorites chip then
- * keeps the band's height. Its Japanese label is full-width, so the bold face does not widen the
- * chip and the opener stays (filter_chip_shift covers a label that widens). Clearing removes
- * both conditions. */
+/* #1247: one tag chip of the filter row, by its number, at the tag condition's revision. */
+static struct accessible_item tag_chip(const struct native_fixture *_Nonnull fixture, size_t slot)
+{
+    return (struct accessible_item){.kind = ACCESSIBLE_FILTER_TAG,
+                                    .slot = slot,
+                                    .revision = folio_state_tag_filter_revision(fixture->state)};
+}
+
+/* The chip's rectangle in the drawer's client pixels and its name. */
+static RECT tag_chip_view(struct folio_window *_Nonnull window,
+                          const struct native_fixture *_Nonnull fixture, size_t slot,
+                          struct accessible_view *_Nonnull view)
+{
+    struct accessible_item item = tag_chip(fixture, slot);
+    *view = (struct accessible_view){0};
+    require(folio_window_accessible_read(window, &item, view) == S_OK && !view->offscreen &&
+                !IsRectEmpty(&view->bounds),
+            "a placed tag chip answers");
+    RECT bounds = view->bounds;
+    MapWindowPoints(nullptr, folio_window_accessible_window(window, ACCESSIBLE_DRAWER),
+                    (POINT *)&bounds, 2);
+    return bounds;
+}
+
+static void filter_settle(struct folio_window *_Nonnull window,
+                          struct native_fixture *_Nonnull fixture)
+{
+    for (unsigned at = 0; at < 100 && folio_state_index_filter_pending(fixture->state); ++at)
+        folio_window_continue_idle_work(window);
+    InvalidateRect(folio_window_accessible_window(window, ACCESSIBLE_DRAWER), nullptr, FALSE);
+    pump(window);
+}
+
+static size_t tag_condition_count(const struct native_fixture *_Nonnull fixture)
+{
+    const struct note_tags *tags = folio_state_tag_filter(fixture->state);
+    return tags == nullptr ? 0 : note_tags_count(tags);
+}
+
+/* The tooltip of a tag chip: its own tool, the chip's rectangle, the sentence UIA names. */
+static void expect_tag_tooltip(struct folio_window *_Nonnull window,
+                               const struct native_fixture *_Nonnull fixture, size_t slot)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    HWND tooltip = status_tooltip(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    wchar_t text[1024] = {0};
+    TOOLINFOW tool = {.cbSize = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM),
+                      .hwnd = drawer,
+                      .uId = 0x200 + slot,
+                      .lpszText = text};
+    require(tooltip != nullptr && SendMessageW(tooltip, TTM_GETTOOLINFOW, 0, (LPARAM)&tool),
+            "each tag chip has a registered tooltip");
+    struct accessible_view view = {0};
+    RECT bounds = tag_chip_view(window, fixture, slot, &view);
+    require(EqualRect(&tool.rect, &bounds) && wcscmp(text, view.name) == 0,
+            "the tag chip's tooltip follows its rectangle and says its name");
+}
+
+/* #1247: the row's children as UIA walks them: favorites, each tag chip, the opener. */
+static void filter_tag_walk(struct folio_window *_Nonnull window,
+                            const struct native_fixture *_Nonnull fixture)
+{
+    struct accessible_item at = {.kind = ACCESSIBLE_FILTER_FAVORITES};
+    struct accessible_item next = {0};
+    require(folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_NEXT, &next) ==
+                    S_OK &&
+                accessible_item_equal(next, tag_chip(fixture, 0)),
+            "the favorites chip's next sibling is the first tag chip");
+    at = next;
+    require(folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_NEXT, &next) ==
+                    S_OK &&
+                accessible_item_equal(next, tag_chip(fixture, 1)),
+            "a tag chip's next sibling is the next tag chip");
+    struct accessible_item parent = {0};
+    require(folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_PARENT, &parent) ==
+                    S_OK &&
+                parent.kind == ACCESSIBLE_FILTER_GROUP &&
+                folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_FIRST,
+                                                 &parent) == S_FALSE,
+            "a tag chip is a child of the filter group and has no children");
+    at = next;
+    require(folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_NEXT, &next) ==
+                    S_OK &&
+                next.kind == ACCESSIBLE_TAG_FILTER,
+            "the last tag chip's next sibling is the opener");
+    at = next;
+    require(folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_NEXT, &next) ==
+                    S_FALSE &&
+                folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_PREVIOUS,
+                                                 &next) == S_OK &&
+                accessible_item_equal(next, tag_chip(fixture, 1)),
+            "the opener is last and steps back to the last tag chip");
+    at = tag_chip(fixture, 0);
+    require(folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_PREVIOUS, &next) ==
+                    S_OK &&
+                next.kind == ACCESSIBLE_FILTER_FAVORITES,
+            "the first tag chip steps back to the favorites chip");
+    at = (struct accessible_item){.kind = ACCESSIBLE_FILTER_GROUP};
+    struct accessible_item edge = {0};
+    require(folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_FIRST, &next) ==
+                    S_OK &&
+                next.kind == ACCESSIBLE_FILTER_FAVORITES &&
+                folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_LAST, &edge) ==
+                    S_OK &&
+                edge.kind == ACCESSIBLE_TAG_FILTER,
+            "the group's first child is the favorites chip and its last the opener");
+    struct accessible_view view = {0};
+    struct accessible_item stale = tag_chip(fixture, 0);
+    stale.revision -= 1;
+    struct accessible_item beyond = tag_chip(fixture, 2);
+    struct accessible_item more = {.kind = ACCESSIBLE_FILTER_MORE};
+    require(folio_window_accessible_read(window, &stale, &view) != S_OK &&
+                folio_window_accessible_read(window, &beyond, &view) != S_OK &&
+                (folio_window_accessible_read(window, &more, &view) != S_OK || view.offscreen),
+            "a chip of an earlier condition, a number past the chips and an unused +N do not "
+            "answer");
+    struct accessible_request invoke = {.item = stale, .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &invoke) != S_OK &&
+                tag_condition_count(fixture) == 2,
+            "invoking a chip of an earlier condition removes nothing");
+}
+
+static bool filter_focus_is(struct folio_window *_Nonnull window, struct accessible_item expected)
+{
+    struct accessible_item focus = {0};
+    return folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+           accessible_item_equal(focus, expected);
+}
+
+/* #1247: arrows walk the chips and wrap; Enter and Space remove the chip under the keyboard and
+ * the focus stays on a chip, then on the favorites chip when no tag is left. */
+static void filter_tag_keyboard(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture)
+{
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_FILTER_FAVORITES},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK, "focus the favorites chip");
+    pump(window);
+    favorite_key(window, VK_RIGHT);
+    require(filter_focus_is(window, tag_chip(fixture, 0)), "Right reaches the first tag chip");
+    struct accessible_view view = {0};
+    (void)tag_chip_view(window, fixture, 0, &view);
+    require(view.focused && view.focusable && view.enabled,
+            "the tag chip under the keyboard reports the focus");
+    favorite_key(window, VK_RIGHT);
+    require(filter_focus_is(window, tag_chip(fixture, 1)), "Right reaches the second tag chip");
+    favorite_key(window, VK_RIGHT);
+    require(filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_TAG_FILTER}),
+            "Right reaches the opener");
+    favorite_key(window, VK_RIGHT);
+    require(filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_FAVORITES}),
+            "Right wraps to the favorites chip");
+    favorite_key(window, VK_LEFT);
+    favorite_key(window, VK_LEFT);
+    require(filter_focus_is(window, tag_chip(fixture, 1)), "Left wraps and walks back");
+    favorite_key(window, VK_RETURN);
+    filter_settle(window, fixture);
+    struct accessible_view left = {0};
+    (void)tag_chip_view(window, fixture, 0, &left);
+    require(tag_condition_count(fixture) == 1 && wcsstr(left.name, L"red") != nullptr &&
+                filter_focus_is(window, tag_chip(fixture, 0)),
+            "Enter removes the tag under the keyboard and the focus moves to the chip that is "
+            "left");
+    favorite_key(window, VK_SPACE);
+    filter_settle(window, fixture);
+    require(
+        tag_condition_count(fixture) == 0 && !folio_state_conditions_active(fixture->state) &&
+            filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_FAVORITES}),
+        "Space removes the last tag and the focus moves to the favorites chip");
+    discovery_seed_tags(fixture);
+    filter_settle(window, fixture);
+    struct accessible_request first = {.item = tag_chip(fixture, 0),
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &first) == S_OK &&
+                filter_focus_is(window, tag_chip(fixture, 0)),
+            "UIA focuses the first tag chip");
+    favorite_key(window, VK_RETURN);
+    filter_settle(window, fixture);
+    (void)tag_chip_view(window, fixture, 0, &left);
+    require(tag_condition_count(fixture) == 1 && wcsstr(left.name, L"blue") != nullptr &&
+                left.focused && filter_focus_is(window, tag_chip(fixture, 0)),
+            "Enter on the first chip removes it and the focus stays where the next chip came");
+    favorite_key(window, VK_RETURN);
+    filter_settle(window, fixture);
+    require(tag_condition_count(fixture) == 0, "Enter removes the chip that came");
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+}
+
+/* The tooltip tool of a tag chip's number has no rectangle while no chip is placed there. */
+static bool tag_tooltip_empty(struct folio_window *_Nonnull window, size_t slot)
+{
+    HWND tooltip = status_tooltip(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    wchar_t text[1024] = {0};
+    TOOLINFOW tool = {.cbSize = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM),
+                      .hwnd = folio_window_accessible_window(window, ACCESSIBLE_DRAWER),
+                      .uId = 0x200 + slot,
+                      .lpszText = text};
+    return SendMessageW(tooltip, TTM_GETTOOLINFOW, 0, (LPARAM)&tool) && IsRectEmpty(&tool.rect);
+}
+
+/* #1247: the condition changes between the press and the release: the chip pressed is of the
+ * earlier condition, so the release removes nothing. */
+static void filter_tag_stale_press(struct folio_window *_Nonnull window,
+                                   struct native_fixture *_Nonnull fixture)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    discovery_seed_tags(fixture);
+    filter_settle(window, fixture);
+    struct accessible_view view = {0};
+    RECT first = tag_chip_view(window, fixture, 0, &view);
+    LPARAM position = MAKELPARAM(first.left + 4, (first.top + first.bottom) / 2);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, position);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
+    uint64_t pressed = folio_state_tag_filter_revision(fixture->state);
+    discovery_seed_tags(fixture); /* the same two tags, a new revision */
+    require(folio_state_tag_filter_revision(fixture->state) != pressed,
+            "seeding the tags again is a new revision of the condition");
+    SendMessageW(drawer, WM_LBUTTONUP, 0, position);
+    filter_settle(window, fixture);
+    require(tag_condition_count(fixture) == 2 && GetCapture() != drawer,
+            "a release after the condition changed removes nothing");
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(1, 1));
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    filter_settle(window, fixture);
+}
+
+/* #1247: a press on the second chip removes the second tag, not the first. */
+static void filter_tag_pointer_second(struct folio_window *_Nonnull window,
+                                      struct native_fixture *_Nonnull fixture)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    discovery_seed_tags(fixture);
+    filter_settle(window, fixture);
+    struct accessible_view view = {0};
+    RECT second = tag_chip_view(window, fixture, 1, &view);
+    require(wcsstr(view.name, L"blue") != nullptr, "the second chip is the second tag");
+    LPARAM position =
+        MAKELPARAM((second.left + second.right) / 2, (second.top + second.bottom) / 2);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, position);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
+    SendMessageW(drawer, WM_LBUTTONUP, 0, position);
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    filter_settle(window, fixture);
+    (void)tag_chip_view(window, fixture, 0, &view);
+    require(tag_condition_count(fixture) == 1 && wcsstr(view.name, L"red") != nullptr,
+            "a press on the second chip removes the second tag and leaves the first");
+    chip_click(window, ACCESSIBLE_FILTER_CLEAR);
+    filter_settle(window, fixture);
+    require(tag_condition_count(fixture) == 0, "the clear row removes the tag that is left");
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(1, 1));
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    pump(window);
+}
+
+/* #1247: a press anywhere on a tag chip removes that tag. The next chip slides under the
+ * pointer, so a second press at the same point (a double click) does not remove it too. */
+static void filter_tag_pointer(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    discovery_seed_tags(fixture);
+    filter_settle(window, fixture);
+    struct accessible_view view = {0};
+    RECT first = tag_chip_view(window, fixture, 0, &view);
+    LPARAM position = MAKELPARAM(first.right - 6, (first.top + first.bottom) / 2);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, position);
+    for (int press = 0; press < 2; ++press)
+    {
+        SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
+        SendMessageW(drawer, WM_LBUTTONUP, 0, position);
+        filter_settle(window, fixture);
+    }
+    (void)tag_chip_view(window, fixture, 0, &view);
+    require(tag_condition_count(fixture) == 1 && wcsstr(view.name, L"blue") != nullptr &&
+                GetCapture() != drawer,
+            "a press on the chip's mark removes that tag; a second press at the same point "
+            "removes nothing");
+    require(tag_tooltip_empty(window, 1) && !tag_tooltip_empty(window, 0),
+            "the removed chip's tooltip has no rectangle; the chip that is left keeps its own");
+    RECT second = tag_chip_view(window, fixture, 0, &view);
+    POINT same = {first.right - 6, (first.top + first.bottom) / 2};
+    require(PtInRect(&second, same), "the chip that is left came under the pressed point");
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(same.x - 1, same.y));
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, position);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
+    SendMessageW(drawer, WM_LBUTTONUP, 0, position);
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    filter_settle(window, fixture);
+    require(tag_condition_count(fixture) == 0 && !folio_state_conditions_active(fixture->state) &&
+                tag_tooltip_empty(window, 0),
+            "after the pointer moved and came back, a press at the same point removes the last "
+            "tag");
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+}
+
+/* #1247: twelve tag conditions, "label-00" to "label-11". */
+constexpr size_t fold_total = 12;
+
+static void filter_seed_fold(struct native_fixture *_Nonnull fixture)
+{
+    struct note_tag *made[fold_total] = {nullptr};
+    const struct note_tag *names[fold_total] = {nullptr};
+    for (size_t at = 0; at < fold_total; ++at)
+    {
+        char name[] = "label-00";
+        name[6] = (char)('0' + at / 10);
+        name[7] = (char)('0' + at % 10);
+        require(note_tag_create(name, 8, &made[at]) == NOTE_TAG_READY, "create a folded tag");
+        names[at] = made[at];
+    }
+    struct note_tags *tags = nullptr;
+    require(note_tags_create(names, fold_total, &tags) == NOTE_TAGS_READY &&
+                folio_state_set_tag_filter(fixture->state, tags, TAG_MATCH_ANY) ==
+                    FOLIO_STATE_READY,
+            "the list owns twelve tag conditions");
+    note_tags_destroy(tags);
+    for (size_t at = 0; at < fold_total; ++at)
+        note_tag_destroy(made[at]);
+}
+
+/* How many tag chips answer, counting from the first. */
+static size_t filter_tags_placed(struct folio_window *_Nonnull window,
+                                 const struct native_fixture *_Nonnull fixture)
+{
+    size_t shown = 0;
+    struct accessible_view view = {0};
+    struct accessible_item item = tag_chip(fixture, shown);
+    while (shown < fold_total && folio_window_accessible_read(window, &item, &view) == S_OK)
+    {
+        shown += 1;
+        item = tag_chip(fixture, shown);
+    }
+    return shown;
+}
+
+/* #1247: a tag with a long name is cut to a width that still shares a row with the opener, so
+ * two long tags keep to two rows and none is folded. */
+static void filter_tag_long(struct folio_window *_Nonnull window,
+                            struct native_fixture *_Nonnull fixture)
+{
+    static const char first[] = "a-very-long-tag-name-that-cannot-fit-the-row-one";
+    static const char second[] = "a-very-long-tag-name-that-cannot-fit-the-row-two";
+    struct note_tag *made[2] = {nullptr, nullptr};
+    require(note_tag_create(first, sizeof first - 1, &made[0]) == NOTE_TAG_READY &&
+                note_tag_create(second, sizeof second - 1, &made[1]) == NOTE_TAG_READY,
+            "create two long tags");
+    const struct note_tag *names[] = {made[0], made[1]};
+    struct note_tags *tags = nullptr;
+    require(note_tags_create(names, 2, &tags) == NOTE_TAGS_READY &&
+                folio_state_set_tag_filter(fixture->state, tags, TAG_MATCH_ANY) ==
+                    FOLIO_STATE_READY,
+            "the list owns two long tag conditions");
+    note_tags_destroy(tags);
+    note_tag_destroy(made[0]);
+    note_tag_destroy(made[1]);
+    filter_settle(window, fixture);
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_DRAWER));
+    RECT group = chip_bounds(window, ACCESSIBLE_FILTER_GROUP);
+    RECT opener = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    struct accessible_view one = {0}, two = {0}, more = {0};
+    RECT left = tag_chip_view(window, fixture, 0, &one);
+    RECT right = tag_chip_view(window, fixture, 1, &two);
+    struct accessible_item folded = {.kind = ACCESSIBLE_FILTER_MORE};
+    require(filter_tags_placed(window, fixture) == 2 &&
+                (folio_window_accessible_read(window, &folded, &more) != S_OK || more.offscreen) &&
+                group.bottom - group.top == 2 * MulDiv(21, dpi, 96) + MulDiv(5, dpi, 96) &&
+                right.top == opener.top && right.right < opener.left &&
+                opener.right <= group.right && left.right <= group.right,
+            "two long tags are cut, not folded: the second shares its row with the opener");
+    require(wcsstr(one.name, L"row-one") != nullptr && wcsstr(two.name, L"row-two") != nullptr,
+            "a cut chip still names its whole tag");
+    printf("filter-tag-long first=%ld second=%ld opener=%ld..%ld\n", left.right - left.left,
+           right.right - right.left, opener.left, opener.right);
+    chip_click(window, ACCESSIBLE_FILTER_CLEAR);
+    filter_settle(window, fixture);
+    require(tag_condition_count(fixture) == 0, "the clear row removes the long tags");
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_DRAWER), WM_MOUSELEAVE, 0, 0);
+    pump(window);
+}
+
+/* +N names how many tags it folds; its help and its tooltip list them. */
+static void filter_fold_names(struct folio_window *_Nonnull window, size_t shown, RECT more)
+{
+    struct accessible_item folded = {.kind = ACCESSIBLE_FILTER_MORE};
+    struct accessible_view view = {0};
+    wchar_t number[8] = {0};
+    require(swprintf(number, 8, L"%zu", fold_total - shown) > 0, "the folded count fits");
+    require(folio_window_accessible_read(window, &folded, &view) == S_OK &&
+                wcsstr(view.name, number) != nullptr && wcsstr(view.help, L"label-11") != nullptr &&
+                wcsstr(view.help, L"label-00") == nullptr,
+            "+N names how many tags it folds and lists the folded ones");
+    HWND tooltip = status_tooltip(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    wchar_t text[1024] = {0};
+    TOOLINFOW tool = {.cbSize = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM),
+                      .hwnd = folio_window_accessible_window(window, ACCESSIBLE_DRAWER),
+                      .uId = ACCESSIBLE_FILTER_MORE,
+                      .lpszText = text};
+    require(SendMessageW(tooltip, TTM_GETTOOLINFOW, 0, (LPARAM)&tool) &&
+                EqualRect(&tool.rect, &more) && wcscmp(text, view.help) == 0,
+            "the +N tooltip lists the folded tags over the chip");
+}
+
+/* +N opens the tag surface; Esc closes it; the clear row removes every tag. */
+static void filter_fold_open(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    struct accessible_request invoke = {.item = {.kind = ACCESSIBLE_FILTER_MORE},
+                                        .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &invoke) == S_OK, "invoke +N");
+    pump(window);
+    require(IsWindowVisible(folio_window_accessible_window(window, ACCESSIBLE_SURFACE)),
+            "+N opens the tag surface");
+    favorite_key(window, VK_ESCAPE);
+    require(!IsWindowVisible(folio_window_accessible_window(window, ACCESSIBLE_SURFACE)),
+            "Esc closes the tag surface");
+    chip_click(window, ACCESSIBLE_FILTER_CLEAR);
+    filter_settle(window, fixture);
+    require(tag_condition_count(fixture) == 0 && !folio_state_conditions_active(fixture->state),
+            "the clear row removes the twelve tags");
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(1, 1));
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+}
+
+/* #1247: twelve tags do not fit two rows: the last ones fold into "+N", which names how many it
+ * folds, lists them as its help and tooltip, and opens the tag surface. */
+static void filter_tag_fold(struct folio_window *_Nonnull window,
+                            struct native_fixture *_Nonnull fixture)
+{
+    filter_seed_fold(fixture);
+    filter_settle(window, fixture);
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_DRAWER));
+    RECT group = chip_bounds(window, ACCESSIBLE_FILTER_GROUP);
+    RECT more = chip_bounds(window, ACCESSIBLE_FILTER_MORE);
+    RECT opener = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    size_t shown = filter_tags_placed(window, fixture);
+    require(shown > 0 && shown < fold_total, "some of the twelve tags are placed, some folded");
+    struct accessible_view view = {0};
+    RECT last = tag_chip_view(window, fixture, shown - 1, &view);
+    require(group.bottom - group.top == 2 * MulDiv(21, dpi, 96) + MulDiv(5, dpi, 96) &&
+                more.top == opener.top && more.right < opener.left && opener.right <= group.right &&
+                (last.top < more.top || last.right < more.left),
+            "the chips keep to two rows: the placed tags, then +N, then the opener");
+    filter_fold_names(window, shown, more);
+    struct accessible_item at = tag_chip(fixture, shown - 1);
+    struct accessible_item next = {0};
+    require(folio_window_accessible_navigate(window, &at, ACCESSIBLE_NAVIGATION_NEXT, &next) ==
+                    S_OK &&
+                next.kind == ACCESSIBLE_FILTER_MORE,
+            "the last placed tag chip's next sibling is +N");
+    printf("filter-tag-fold shown=%zu hidden=%zu more=%ld..%ld opener=%ld..%ld\n", shown,
+           fold_total - shown, more.left, more.right, opener.left, opener.right);
+    filter_fold_open(window, fixture);
+}
+
+/* Two tag conditions put two lit tag chips between the favorites chip and the opener, which
+ * stays unlit, and show the clear row. Lighting the favorites chip then keeps the band's height.
+ * Its Japanese label is full-width, so the bold face does not widen the chip and the chips stay
+ * (filter_chip_shift covers a label that widens). Clearing removes both conditions. */
 static void filter_chip_tags(struct folio_window *_Nonnull window,
                              struct native_fixture *_Nonnull fixture)
 {
@@ -9711,18 +10170,29 @@ static void filter_chip_tags(struct folio_window *_Nonnull window,
     RECT resting = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
     COLORREF frame = drawer_pixel(window, resting.left, resting.top);
     discovery_seed_tags(fixture);
-    for (unsigned at = 0; at < 100 && folio_state_index_filter_pending(fixture->state); ++at)
-        folio_window_continue_idle_work(window);
-    InvalidateRect(drawer, nullptr, FALSE);
-    pump(window);
+    filter_settle(window, fixture);
     RECT lit = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    RECT star = chip_bounds(window, ACCESSIBLE_FILTER_FAVORITES);
     struct accessible_item opener = {.kind = ACCESSIBLE_TAG_FILTER};
     struct accessible_view view = {0};
+    struct accessible_view red = {0}, blue = {0};
+    RECT first = tag_chip_view(window, fixture, 0, &red);
+    RECT second = tag_chip_view(window, fixture, 1, &blue);
     require(folio_window_accessible_read(window, &opener, &view) == S_OK &&
                 wcsstr(view.name, L"2") != nullptr &&
-                lit.right - lit.left > resting.right - resting.left &&
-                drawer_pixel(window, lit.left, lit.top) != frame,
-            "two tag conditions light the opener chip and add their number");
+                lit.right - lit.left == resting.right - resting.left &&
+                drawer_pixel(window, lit.left, lit.top) == frame,
+            "two tag conditions keep the opener's size and frame; its name counts them");
+    require(wcsstr(red.name, L"red") != nullptr && wcsstr(blue.name, L"blue") != nullptr &&
+                first.top == star.top && first.left > star.right &&
+                first.bottom - first.top == star.bottom - star.top &&
+                (second.top > first.top || second.left > first.right) &&
+                (lit.top > second.top || lit.left > second.right) &&
+                drawer_pixel(window, first.left, first.top) != frame,
+            "each tag condition is a lit chip after the favorites chip, before the opener");
+    expect_tag_tooltip(window, fixture, 0);
+    expect_tag_tooltip(window, fixture, 1);
+    filter_tag_walk(window, fixture);
     int tree = chip_bounds(window, ACCESSIBLE_TREE).top;
     expect_tooltip_rect(window, ACCESSIBLE_TAG_FILTER);
     chip_click(window, ACCESSIBLE_FILTER_FAVORITES);
@@ -9766,17 +10236,20 @@ static void filter_chip_shift(struct native_fixture *_Nonnull fixture)
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
     pump(window);
     RECT star = chip_bounds(window, ACCESSIBLE_FILTER_FAVORITES);
-    RECT opener = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    struct accessible_view view = {0};
+    RECT opener = tag_chip_view(window, fixture, 0, &view);
     int tree = chip_bounds(window, ACCESSIBLE_TREE).top;
-    expect_tooltip_rect(window, ACCESSIBLE_TAG_FILTER);
+    expect_tag_tooltip(window, fixture, 0);
     chip_click(window, ACCESSIBLE_FILTER_FAVORITES);
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
     pump(window);
     RECT lit = chip_bounds(window, ACCESSIBLE_FILTER_FAVORITES);
-    RECT moved = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    RECT moved = tag_chip_view(window, fixture, 0, &view);
     require(lit.right - lit.left > star.right - star.left && moved.left > opener.left &&
                 moved.top == opener.top && chip_bounds(window, ACCESSIBLE_TREE).top == tree,
-            "a bold English label widens the lit chip and moves the opener on the same row");
+            "a bold English label widens the lit chip and moves the tag chip on the same row");
+    expect_tag_tooltip(window, fixture, 0);
+    expect_tag_tooltip(window, fixture, 1);
     expect_tooltip_rect(window, ACCESSIBLE_TAG_FILTER);
     expect_tooltip_rect(window, ACCESSIBLE_FILTER_FAVORITES);
     chip_click(window, ACCESSIBLE_FILTER_CLEAR);
@@ -9843,6 +10316,14 @@ static void filter_chip_row(struct folio_window *_Nonnull window,
     filter_clear_keyboard(window, fixture);
     filter_clear_twice(window, fixture);
     filter_chip_tags(window, fixture);
+    discovery_seed_tags(fixture);
+    filter_settle(window, fixture);
+    filter_tag_keyboard(window, fixture);
+    filter_tag_stale_press(window, fixture);
+    filter_tag_pointer_second(window, fixture);
+    filter_tag_pointer(window, fixture);
+    filter_tag_fold(window, fixture);
+    filter_tag_long(window, fixture);
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
     pump(window);
     printf("filter-chips star=%ld lit=%ld opener=%ld tree=%d lowered=%d\n", star.right - star.left,
