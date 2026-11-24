@@ -5554,6 +5554,9 @@ static void draw_tag_dialog(const struct folio_window *_Nonnull self, HDC device
 {
     bool edit = self->command_surface == COMMAND_SURFACE_TAG_EDIT;
     ui_part_draw_surface(device, &self->palette, bounds);
+    /* 面の中の字（題・札・行・下の行・釦）は、言葉の書体（#1258）。測る側は prepare_tag_metrics。
+     */
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     draw_floating_header(self, device,
                          management_surface(self)
                              ? UI_TEXT_TAG_MANAGE_TITLE
@@ -5569,6 +5572,7 @@ static void draw_tag_dialog(const struct folio_window *_Nonnull self, HDC device
         draw_tag_rows(self, device);
     draw_management_detail(self, device, input);
     draw_tag_footer(self, device);
+    SelectObject(device, previous);
 }
 
 static HRESULT prepare_theme_candidates(const struct folio_window *_Nonnull self)
@@ -7396,7 +7400,8 @@ static bool prepare_tag_metrics(struct folio_window *_Nonnull self)
     HDC device = GetDC(self->command_layer);
     if (device == nullptr)
         return false;
-    HGDIOBJ old = SelectObject(device, self->mono_font);
+    /* 描く側（draw_tag_dialog）と同じ、言葉の書体で測る（#1258）。 */
+    HGDIOBJ old = SelectObject(device, word_font(self));
     UINT dpi = GetDpiForWindow(self->handle);
     SetTextCharacterExtra(device, scale(base_tracking, dpi));
     RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
