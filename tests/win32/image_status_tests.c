@@ -2676,6 +2676,7 @@ static void settings_edit_preserved(struct folio_window *_Nonnull window,
 }
 
 static void settings_row_fonts(struct folio_window *_Nonnull window);
+static void japanese_row_face(struct folio_window *_Nonnull window);
 
 static void settings_edit_cycle(struct folio_window *_Nonnull window,
                                 struct native_fixture *_Nonnull fixture,
@@ -2714,6 +2715,9 @@ static void settings_edit_cycle(struct folio_window *_Nonnull window,
         values.language = languages[index];
         expect_settings_values(fixture, &values);
         settings_edit_preserved(window, fixture, history, &opened);
+        /* In a Chinese window the Japanese row still says its name in the Japanese face. */
+        if (languages[index] == FOLIO_LANGUAGE_ZH_HANS)
+            japanese_row_face(window);
     }
     surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
     expect_native_body(window, &closed);
@@ -13451,8 +13455,21 @@ struct language_row
     enum folio_language other;
 };
 
-static struct accessible_view settings_row_named(struct folio_window *_Nonnull window,
-                                                 const wchar_t *_Nonnull name);
+/* The thresholds come from how far the two samples are apart, not from fixed numbers: the
+ * fallback faces differ between machines, and "日本語" is only 60 to 110 thousandths apart
+ * between the Japanese and the Chinese face. The drawing is within a quarter of that distance
+ * of its own sample and at least half of it away from the other one. */
+static void require_face(const struct ink_profile *_Nonnull drawn,
+                         const struct ink_profile *_Nonnull own,
+                         const struct ink_profile *_Nonnull other, const char *_Nonnull message)
+{
+    int between = profile_distance(own, other);
+    int close = profile_distance(drawn, own);
+    int apart = profile_distance(drawn, other);
+    printf("language-row-face %s: between=%d own=%d other=%d\n", message, between, close, apart);
+    require(between >= 40, "the two samples tell the faces apart");
+    require(close * 4 <= between && apart * 2 >= between, message);
+}
 
 static void language_row_face(struct folio_window *_Nonnull window, struct language_row expected)
 {
@@ -13473,16 +13490,18 @@ static void language_row_face(struct folio_window *_Nonnull window, struct langu
         root, expected.name, (struct header_font){mono, mono_size, FW_NORMAL}, &drawn);
     struct ink_profile strange = reference_profile(
         root, expected.name, (struct header_font){foreign, 11, FW_NORMAL}, &drawn);
-    int close = profile_distance(&drawn, &same);
-    int apart = profile_distance(&drawn, &monospace);
-    int mixed = profile_distance(&drawn, &strange);
-    printf("language-row-face language=%u dpi=%d ink=%d same=%d monospace=%d other=%d\n",
-           (unsigned)expected.language, dpi, drawn.total, close, apart, mixed);
+    printf("language-row-face language=%u dpi=%d ink=%d\n", (unsigned)expected.language, dpi,
+           drawn.total);
     require(drawn.total > 0, "the language row shows its name");
-    require(close <= 40, "a language row's name is drawn in that language's face");
-    require(apart >= 200, "a language row's name is not drawn in the monospace face");
-    require(expected.other == expected.language || mixed >= 200,
-            "a language row's name is not drawn in another language's face");
+    require_face(&drawn, &same, &monospace, "a language row's name is not monospace");
+    if (expected.other != expected.language)
+        require_face(&drawn, &same, &strange, "a language row's name is in its own face");
+}
+
+static void japanese_row_face(struct folio_window *_Nonnull window)
+{
+    language_row_face(window,
+                      (struct language_row){L"日本語", FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_ZH_HANS});
 }
 
 /* A settings row says its words in the language's face. Each language row says its name in
