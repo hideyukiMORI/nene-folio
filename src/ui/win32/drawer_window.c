@@ -4,6 +4,8 @@
 #include "accessible_request.h"
 #include "accessible_view.h"
 
+#include "chip_flow.h"
+#include "drawer_filter_band.h"
 #include "drawer_header_button.h"
 #include "drawer_layout.h"
 #include "drawer_menu_item.h"
@@ -13,7 +15,7 @@
 #include "icon_paint.h"
 #include "menu_request.h"
 #include "note_ref.h"
-#include "tag_filter_text.h"
+#include "note_tags.h"
 #include "ui_face.h"
 #include "ui_part.h"
 #include "ui_pointer.h"
@@ -37,11 +39,20 @@ struct drawer_window
     uint64_t accessible_revision;
     UINT accessible_dpi;
     int accessible_height;
+    int accessible_band; /* 配置を作ったときの固定帯の高さ（札の行で動く・#1199） */
+    /* 最後に描いた札の行の配置。変わったら主窓へ知らせる（高さが同じでも札は動く） */
+    struct drawer_filter_band painted_band;
+    /* 「× 解除」を押した点。解除が消えると同じ場所に「＋」の当たりが来るので、ポインタが
+     * 動くまで、その点での次の押下を受けない（星の連続押下と同じ守り・ADR0091）。 */
+    bool header_blocked;
+    POINT header_block_point;
     struct folio_palette palette;
     HFONT _Nullable category_font;
     HFONT _Nullable note_font;
     HFONT _Nullable mono_font;
-    HFONT _Nullable unit_font; /* 見出しの行の数の単位（言語ごとの face・細字） */
+    /* 見出しの行の数の単位と、絞り込みの札の字（言語ごとの face・細字 11） */
+    HFONT _Nullable unit_font;
+    HFONT _Nullable chip_lit_font; /* 点いた札の字（同じ face・太字 11） */
     bool favorite_pressed;
     struct note_ref favorite_target;
     uint64_t favorite_revision;
@@ -80,8 +91,13 @@ constexpr int base_header_indent = 16;
 /* 常設の「すべてのノートを検索」の欄が占める帯（ADR 0024 の決定 6）。欄そのものは主窓の子で、
  * ここは行を置かない余白として数える。 */
 constexpr int base_filter_height = 36;
-constexpr int base_scope_height = 32;
-constexpr int base_tag_filter_height = 32;
+/* 絞り込みの札の行（ADR0122）。札の高さ・余白は ui_part の F 様式。 */
+constexpr int base_chip_top = 2;      /* 検索の欄の帯の下から、札の上端まで */
+constexpr int base_chip_gap = 5;      /* 札の間と、札の行の間 */
+constexpr int base_chip_bottom = 4;   /* 札の行の下に空ける間 */
+constexpr int base_clear_height = 18; /* 「× 解除」の行 */
+constexpr int base_clear_bottom = 2;  /* 解除の行の下に空ける間 */
+constexpr int chip_rows = 2;          /* 札を並べてよい行の数 */
 constexpr int base_category_band_height = 36;
 constexpr int base_filter_inset = 16; /* 欄の左右の余白（窓の縁 16・#349） */
 constexpr int base_filter_margin = 4; /* 欄の上下に空ける間 */
@@ -142,6 +158,7 @@ static void release_fonts(struct drawer_window *_Nonnull self)
     release_font(&self->note_font);
     release_font(&self->mono_font);
     release_font(&self->unit_font);
+    release_font(&self->chip_lit_font);
 }
 
 /* 文字の書体は言語ごとの face（ADR 0032 の決定 4）。番号の等幅は ui_face_mono（#1217）。
@@ -157,49 +174,12 @@ static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
     int mono_size = ui_face_mono(mono, base_mono_font);
     self->mono_font = create_font(dpi, mono_size, FW_NORMAL, mono);
     self->unit_font = create_font(dpi, base_mono_font, FW_NORMAL, face);
+    self->chip_lit_font = create_font(dpi, base_mono_font, FW_BOLD, face);
 }
 
-/* 固定の検索欄・カテゴリ帯。行配置/clip/hit/scrollはこの高さを共用する。 */
-static int band_height(const struct drawer_window *_Nonnull self)
-{
-    return scale(base_filter_height + base_scope_height + base_tag_filter_height +
-                     base_category_band_height,
-                 GetDpiForWindow(self->handle));
-}
-
-static RECT scope_group_rect(const struct drawer_window *_Nonnull self)
-{
-    UINT dpi = GetDpiForWindow(self->handle);
-    RECT client;
-    GetClientRect(self->handle, &client);
-    int inset = scale(base_filter_inset, dpi);
-    int right = client.right > inset ? client.right - inset : inset;
-    int top = scale(base_filter_height, dpi);
-    return (RECT){inset, top, right, top + scale(ui_part_height, dpi)};
-}
-
-static RECT scope_item_rect(const struct drawer_window *_Nonnull self, enum note_scope scope)
-{
-    RECT bounds = scope_group_rect(self);
-    int middle = bounds.left + (bounds.right - bounds.left) / 2;
-    switch (scope)
-    {
-    case NOTE_SCOPE_ALL:
-        bounds.right = middle;
-        break;
-    case NOTE_SCOPE_FAVORITES:
-        bounds.left = middle;
-        break;
-    }
-    return bounds;
-}
-
-static RECT tag_filter_rect(const struct drawer_window *_Nonnull self)
-{
-    RECT bounds = scope_group_rect(self);
-    OffsetRect(&bounds, 0, scale(base_scope_height, GetDpiForWindow(self->handle)));
-    return bounds;
-}
+/* 固定の検索欄・札の行・カテゴリ帯。行配置/clip/hit/scrollはこの高さを共用する。札の行は
+ * 状態（条件が効いているか・札が何行か）で高さが動く（#1199）。 */
+static int band_height(const struct drawer_window *_Nonnull self);
 
 static RECT new_category_rect(const struct drawer_window *_Nonnull self)
 {
@@ -422,58 +402,217 @@ static bool control_focused(const struct drawer_window *_Nonnull self, enum acce
            SendMessageW(GetParent(self->handle), folio_message_focus_cues, 0, 0) != 0;
 }
 
-static void draw_scope_item(const struct drawer_window *_Nonnull self, HDC device,
-                            enum note_scope scope)
+static enum accessible_kind header_kind(enum drawer_header_button button);
+
+static bool favorites_lit(const struct drawer_window *_Nonnull self)
 {
-    bool all = scope == NOTE_SCOPE_ALL;
-    enum accessible_kind kind = all ? ACCESSIBLE_SCOPE_ALL : ACCESSIBLE_SCOPE_FAVORITES;
-    enum drawer_header_button button =
-        all ? DRAWER_HEADER_SCOPE_ALL : DRAWER_HEADER_SCOPE_FAVORITES;
+    return folio_state_note_scope(self->state) == NOTE_SCOPE_FAVORITES;
+}
+
+static bool tags_lit(const struct drawer_window *_Nonnull self)
+{
+    const struct note_tags *_Nullable tags = folio_state_tag_filter(self->state);
+    return tags != nullptr && note_tags_count(tags) > 0;
+}
+
+/* 札の字の幅。点いた札は太字で測る（描く書体と同じ）。 */
+static int chip_text_width(const struct drawer_window *_Nonnull self, HDC device,
+                           const char *_Nonnull text, bool lit)
+{
+    SelectObject(device, lit ? self->chip_lit_font : self->unit_font);
+    return utf8_width(device, text);
+}
+
+/* お気に入りの札の幅: 余白・星・字・余白。点いた札は太字の分だけ広い。 */
+static int favorites_chip_width(const struct drawer_window *_Nonnull self, HDC device, UINT dpi)
+{
+    int icon = scale(ui_part_chip_icon, dpi) + scale(ui_part_chip_icon_gap, dpi);
+    const char *text = ui_text_line(UI_TEXT_TITLE_FAVORITES, folio_state_language(self->state));
+    return 2 * scale(ui_part_chip_padding, dpi) + icon +
+           chip_text_width(self, device, text, favorites_lit(self));
+}
+
+/* タグの面を開く札の字。「# タグ」、タグの条件があるときは数を付ける（「# タグ 2」）。
+ * 条件の中身（すべて含む／いずれか）は、読み上げの名前とタグの面が持つ。 */
+static void tags_chip_text(const struct drawer_window *_Nonnull self, char *_Nonnull out)
+{
+    const struct note_tags *_Nullable tags = folio_state_tag_filter(self->state);
+    size_t count = tags == nullptr ? 0 : note_tags_count(tags);
+    struct ui_text_request request = {.id = count == 0 ? UI_TEXT_FILTER_TAGS
+                                                       : UI_TEXT_FILTER_TAGS_COUNT,
+                                      .language = folio_state_language(self->state),
+                                      .n = count};
+    if (ui_text_format(&request, out, ui_text_unit_limit) != UI_TEXT_FORMAT_READY)
+    {
+        out[0] = '\0';
+    }
+}
+
+/* 開く札の幅: 余白・字・▾・余白。 */
+static int tags_chip_width(const struct drawer_window *_Nonnull self, HDC device, UINT dpi)
+{
+    char text[ui_text_unit_limit];
+    tags_chip_text(self, text);
+    return 2 * scale(ui_part_chip_padding, dpi) +
+           chip_text_width(self, device, text, tags_lit(self)) + scale(ui_part_chip_icon_gap, dpi) +
+           scale(ui_part_chip_icon, dpi);
+}
+
+static int clear_width(const struct drawer_window *_Nonnull self, HDC device, UINT dpi)
+{
+    const char *text = ui_text_line(UI_TEXT_FILTER_CLEAR, folio_state_language(self->state));
+    return 2 * scale(ui_part_chip_padding, dpi) + chip_text_width(self, device, text, false);
+}
+
+/* 札の行の左端と、使える幅。 */
+static RECT chip_row(const struct drawer_window *_Nonnull self, UINT dpi)
+{
+    RECT client = {0, 0, 0, 0};
+    GetClientRect(self->handle, &client);
+    int inset = scale(base_filter_inset, dpi);
+    int right = client.right > 2 * inset ? client.right - inset : inset;
+    int top = scale(base_filter_height, dpi) + scale(base_chip_top, dpi);
+    return (RECT){inset, top, right, top};
+}
+
+static RECT chip_rect(RECT row, struct chip_flow_place place, int height)
+{
+    return (RECT){row.left + place.left, row.top + place.top, row.left + place.left + place.width,
+                  row.top + place.top + height};
+}
+
+/* 「× 解除」の行を、札の行の下の右端に置く。条件が効いていないときは置かない。 */
+static void place_clear(const struct drawer_window *_Nonnull self,
+                        struct drawer_filter_band *_Nonnull band, int width, UINT dpi)
+{
+    if (!folio_state_conditions_active(self->state))
+    {
+        return;
+    }
+    int left = band->group.right - width;
+    band->clear = (RECT){left > band->group.left ? left : band->group.left, band->bottom,
+                         band->group.right, band->bottom + scale(base_clear_height, dpi)};
+    band->bottom = band->clear.bottom + scale(base_clear_bottom, dpi);
+}
+
+/* 絞り込みの札の行の配置。字の幅を測って、中核の chip_flow_arrange に並べさせる（ADR0122）。 */
+static struct drawer_filter_band filter_band(const struct drawer_window *_Nonnull self)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT row = chip_row(self, dpi);
+    int height = scale(ui_part_chip_height, dpi);
+    HDC device = GetDC(self->handle);
+    int saved = SaveDC(device);
+    int widths[1] = {favorites_chip_width(self, device, dpi)};
+    struct chip_flow_input input = {.widths = widths,
+                                    .count = 1,
+                                    .opener_width = tags_chip_width(self, device, dpi),
+                                    .available = row.right - row.left,
+                                    .height = height,
+                                    .gap = scale(base_chip_gap, dpi),
+                                    .row_gap = scale(base_chip_gap, dpi),
+                                    .rows = chip_rows};
+    int clear = clear_width(self, device, dpi);
+    RestoreDC(device, saved);
+    ReleaseDC(self->handle, device);
+    struct chip_flow_place places[1] = {{0, 0, 0}};
+    struct chip_flow_result flow = chip_flow_arrange(&input, places);
+    struct drawer_filter_band band = {.favorites = chip_rect(row, places[0], height),
+                                      .tags = chip_rect(row, flow.opener, height)};
+    band.group = (RECT){row.left, row.top, row.right,
+                        row.top + flow.rows * height + (flow.rows - 1) * input.row_gap};
+    band.bottom = band.group.bottom + scale(base_chip_bottom, dpi);
+    place_clear(self, &band, clear, dpi);
+    return band;
+}
+
+static bool same_band(const struct drawer_filter_band *_Nonnull left,
+                      const struct drawer_filter_band *_Nonnull right)
+{
+    return left->bottom == right->bottom && EqualRect(&left->favorites, &right->favorites) &&
+           EqualRect(&left->tags, &right->tags) && EqualRect(&left->clear, &right->clear);
+}
+
+static int band_height(const struct drawer_window *_Nonnull self)
+{
+    return filter_band(self).bottom +
+           scale(base_category_band_height, GetDpiForWindow(self->handle));
+}
+
+/* 札 1 つの状態。hover・押下・focus・無効は、帯のほかの釦と同じ元から取る。 */
+static struct ui_part_paint chip_part(const struct drawer_window *_Nonnull self,
+                                      enum drawer_header_button button, RECT bounds)
+{
+    HWND parent = GetParent(self->handle);
+    enum accessible_kind kind = header_kind(button);
     bool pressed = self->header_pressed == button;
-    struct ui_part_paint part = {
-        .bounds = scope_item_rect(self, scope),
-        .style = UI_PART_STYLE_CHOICE,
+    return (struct ui_part_paint){
+        .bounds = bounds,
+        .style = UI_PART_STYLE_CHIP,
         .dpi = GetDpiForWindow(self->handle),
-        .grouped = true,
-        .leading_rule = !all,
         .labeled = true,
         .hovered = self->header_hover == button && !pressed,
         .pressed = (pressed && self->header_inside) ||
-                   SendMessageW(GetParent(self->handle), folio_message_part_pressed, kind, 0) != 0,
-        .selected = folio_state_note_scope(self->state) == scope,
+                   SendMessageW(parent, folio_message_part_pressed, kind, 0) != 0,
         .focused = control_focused(self, kind),
-        .disabled =
-            SendMessageW(GetParent(self->handle), folio_message_pointer_blocked, 0, 0) != 0};
-    struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
-    SelectObject(device, self->category_font);
-    SetTextColor(device, ink.text);
-    draw_utf8(device,
-              ui_text_line(all ? UI_TEXT_SCOPE_ALL : UI_TEXT_TITLE_FAVORITES,
-                           folio_state_language(self->state)),
-              ink.label, DT_CENTER | DT_END_ELLIPSIS);
+        .disabled = SendMessageW(parent, folio_message_pointer_blocked, 0, 0) != 0};
 }
 
-static void draw_tag_filter(const struct drawer_window *_Nonnull self, HDC device)
+/* お気に入りの札。点いているときは、塗った星・太字・字の色の枠（塗らない。タグの札と同じく
+ * ✓ は置かない・ADR0122 の決定 2）。 */
+static void draw_favorites_chip(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
 {
-    bool pressed = self->header_pressed == DRAWER_HEADER_TAG_FILTER;
-    struct ui_part_paint part = {
-        .bounds = tag_filter_rect(self),
-        .style = UI_PART_STYLE_COMMAND,
-        .dpi = GetDpiForWindow(self->handle),
-        .labeled = true,
-        .hovered = self->header_hover == DRAWER_HEADER_TAG_FILTER && !pressed,
-        .pressed = (pressed && self->header_inside) ||
-                   SendMessageW(GetParent(self->handle), folio_message_part_pressed,
-                                ACCESSIBLE_TAG_FILTER, 0) != 0,
-        .focused = control_focused(self, ACCESSIBLE_TAG_FILTER),
-        .disabled =
-            SendMessageW(GetParent(self->handle), folio_message_pointer_blocked, 0, 0) != 0};
+    UINT dpi = GetDpiForWindow(self->handle);
+    bool lit = favorites_lit(self);
+    struct ui_part_paint part = chip_part(self, DRAWER_HEADER_FAVORITES, bounds);
+    part.selected = lit;
+    part.has_icon = true;
+    part.icon = lit ? ICON_PAINT_STAR : ICON_PAINT_STAR_OUTLINE;
+    struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
+    RECT label = ink.label;
+    label.right = bounds.right - scale(ui_part_chip_padding, dpi);
+    SelectObject(device, lit ? self->chip_lit_font : self->unit_font);
+    SetTextColor(device, ink.text);
+    draw_utf8(device, ui_text_line(UI_TEXT_TITLE_FAVORITES, folio_state_language(self->state)),
+              label, DT_END_ELLIPSIS);
+}
+
+/* タグの面を開く札。タグの条件があるときは点く。 */
+static void draw_tags_chip(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
+{
+    bool lit = tags_lit(self);
+    struct ui_part_paint part = chip_part(self, DRAWER_HEADER_TAG_FILTER, bounds);
+    part.selected = lit;
     struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
     char text[ui_text_unit_limit];
-    tag_filter_text_format(self->state, text, sizeof text);
-    SelectObject(device, self->category_font);
+    tags_chip_text(self, text);
+    UINT dpi = GetDpiForWindow(self->handle);
+    int size = scale(ui_part_chip_icon, dpi);
+    RECT label = ink.label;
+    label.right = bounds.right - scale(ui_part_chip_padding, dpi);
+    RECT open = {label.right - size, (bounds.top + bounds.bottom - size) / 2, label.right,
+                 (bounds.top + bounds.bottom - size) / 2 + size};
+    icon_paint_fill(device, open, ICON_PAINT_FOLD_COLLAPSE, ink.text); /* 面が開く印の ▾ */
+    label.right = open.left - scale(ui_part_chip_icon_gap, dpi);
+    SelectObject(device, lit ? self->chip_lit_font : self->unit_font);
     SetTextColor(device, ink.text);
-    draw_utf8(device, text, ink.label, DT_END_ELLIPSIS);
+    draw_utf8(device, text, label, DT_END_ELLIPSIS);
+}
+
+/* 「× 解除」。枠を持たない札（字だけ）。条件が効いていないときは描かない。 */
+static void draw_clear(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
+{
+    if (IsRectEmpty(&bounds))
+    {
+        return;
+    }
+    struct ui_part_paint part = chip_part(self, DRAWER_HEADER_CLEAR, bounds);
+    part.grouped = true;
+    struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
+    SelectObject(device, self->unit_font);
+    SetTextColor(device, ink.text);
+    draw_utf8(device, ui_text_line(UI_TEXT_FILTER_CLEAR, folio_state_language(self->state)),
+              ink.label, DT_END_ELLIPSIS);
 }
 
 /* カテゴリ＋は C 様式。状態の表現は主窓の部品と同じ ui_part の 1 本を通る。 */
@@ -515,10 +654,10 @@ static void draw_header(const struct drawer_window *_Nonnull self, HDC device)
 {
     SetTextCharacterExtra(device, 0);
     draw_filter_frame(self, device);
-    ui_part_frame_group(device, &self->palette, scope_group_rect(self));
-    draw_scope_item(self, device, NOTE_SCOPE_ALL);
-    draw_scope_item(self, device, NOTE_SCOPE_FAVORITES);
-    draw_tag_filter(self, device);
+    struct drawer_filter_band band = filter_band(self);
+    draw_favorites_chip(self, device, band.favorites);
+    draw_tags_chip(self, device, band.tags);
+    draw_clear(self, device, band.clear);
     draw_category_band(self, device);
 }
 
@@ -845,6 +984,14 @@ static void paint(struct drawer_window *_Nonnull self)
         DeleteDC(memory);
     }
     EndPaint(self->handle, &painting);
+    /* 札の行の配置が変わったら、主窓に説明（tooltip）の矩形と focus を合わせ直させる（#1199）。
+     * 高さが同じでも、札が点くと幅が変わって隣の札が動く。 */
+    struct drawer_filter_band band = filter_band(self);
+    if (!same_band(&band, &self->painted_band))
+    {
+        self->painted_band = band;
+        PostMessageW(GetParent(self->handle), folio_message_drawer_band, 0, 0);
+    }
 }
 
 /* ノート行のクリックは主窓へ渡す。「編集中なら保存 → 選択 → 同じモードで開く」の順は
@@ -1068,14 +1215,14 @@ static RECT header_button_rect(const struct drawer_window *_Nonnull self,
     {
     case DRAWER_HEADER_NONE:
         return (RECT){0, 0, 0, 0};
+    case DRAWER_HEADER_FAVORITES:
+        return filter_band(self).favorites;
     case DRAWER_HEADER_TAG_FILTER:
-        return tag_filter_rect(self);
+        return filter_band(self).tags;
+    case DRAWER_HEADER_CLEAR:
+        return filter_band(self).clear;
     case DRAWER_HEADER_NEW_CATEGORY:
         return new_category_rect(self);
-    case DRAWER_HEADER_SCOPE_ALL:
-        return scope_item_rect(self, NOTE_SCOPE_ALL);
-    case DRAWER_HEADER_SCOPE_FAVORITES:
-        return scope_item_rect(self, NOTE_SCOPE_FAVORITES);
     }
     return (RECT){0, 0, 0, 0};
 }
@@ -1086,12 +1233,12 @@ static enum accessible_kind header_kind(enum drawer_header_button button)
     {
     case DRAWER_HEADER_NONE:
         return ACCESSIBLE_DRAWER;
-    case DRAWER_HEADER_SCOPE_ALL:
-        return ACCESSIBLE_SCOPE_ALL;
-    case DRAWER_HEADER_SCOPE_FAVORITES:
-        return ACCESSIBLE_SCOPE_FAVORITES;
+    case DRAWER_HEADER_FAVORITES:
+        return ACCESSIBLE_FILTER_FAVORITES;
     case DRAWER_HEADER_TAG_FILTER:
         return ACCESSIBLE_TAG_FILTER;
+    case DRAWER_HEADER_CLEAR:
+        return ACCESSIBLE_FILTER_CLEAR;
     case DRAWER_HEADER_NEW_CATEGORY:
         return ACCESSIBLE_NEW_CATEGORY;
     }
@@ -1100,9 +1247,8 @@ static enum accessible_kind header_kind(enum drawer_header_button button)
 
 static enum drawer_header_button header_at(const struct drawer_window *_Nonnull self, POINT point)
 {
-    const enum drawer_header_button buttons[] = {
-        DRAWER_HEADER_SCOPE_ALL, DRAWER_HEADER_SCOPE_FAVORITES, DRAWER_HEADER_TAG_FILTER,
-        DRAWER_HEADER_NEW_CATEGORY};
+    const enum drawer_header_button buttons[] = {DRAWER_HEADER_FAVORITES, DRAWER_HEADER_TAG_FILTER,
+                                                 DRAWER_HEADER_CLEAR, DRAWER_HEADER_NEW_CATEGORY};
     for (size_t at = 0; at < sizeof buttons / sizeof buttons[0]; ++at)
     {
         RECT bounds = header_button_rect(self, buttons[at]);
@@ -1112,8 +1258,24 @@ static enum drawer_header_button header_at(const struct drawer_window *_Nonnull 
     return DRAWER_HEADER_NONE;
 }
 
+/* 解除を押した点から動いていないあいだは、帯の押下を受けない。 */
+static bool header_press_blocked(struct drawer_window *_Nonnull self, POINT point)
+{
+    if (self->header_blocked && point.x == self->header_block_point.x &&
+        point.y == self->header_block_point.y)
+    {
+        return true;
+    }
+    self->header_blocked = false;
+    return false;
+}
+
 static bool press_header(struct drawer_window *_Nonnull self, POINT point)
 {
+    if (header_press_blocked(self, point))
+    {
+        return true; /* 押下を消費する。行へも渡さない */
+    }
     enum drawer_header_button pressed = header_at(self, point);
     if (pressed == DRAWER_HEADER_NONE)
     {
@@ -1376,9 +1538,12 @@ static void run_header(struct drawer_window *_Nonnull self, enum drawer_header_b
     {
     case DRAWER_HEADER_NONE:
         return;
+    case DRAWER_HEADER_FAVORITES:
     case DRAWER_HEADER_TAG_FILTER:
+    case DRAWER_HEADER_CLEAR:
     {
-        struct accessible_request request = {.item = {.kind = ACCESSIBLE_TAG_FILTER},
+        /* 札・開く札・解除は、キーボード・読み上げと同じ 1 本の実行の道を通す。 */
+        struct accessible_request request = {.item = {.kind = header_kind(button)},
                                              .action = ACCESSIBLE_ACTION_INVOKE};
         (void)accessibility_host_action(self->accessibility, &request);
         return;
@@ -1387,14 +1552,6 @@ static void run_header(struct drawer_window *_Nonnull self, enum drawer_header_b
         SendMessageW(GetParent(self->handle), folio_message_drawer_menu, DRAWER_MENU_NEW_CATEGORY,
                      (LPARAM)&target);
         return;
-    case DRAWER_HEADER_SCOPE_ALL:
-    case DRAWER_HEADER_SCOPE_FAVORITES:
-    {
-        struct accessible_request request = {.item = {.kind = header_kind(button)},
-                                             .action = ACCESSIBLE_ACTION_SELECT};
-        (void)accessibility_host_action(self->accessibility, &request);
-        return;
-    }
     }
 }
 
@@ -1418,6 +1575,8 @@ static void release(struct drawer_window *_Nonnull self, POINT point)
     if (PtInRect(&button, point))
     {
         self->header_hover = DRAWER_HEADER_NONE;
+        self->header_blocked = pressed == DRAWER_HEADER_CLEAR;
+        self->header_block_point = point;
         run_header(self, pressed);
     }
 }
@@ -1757,9 +1916,10 @@ static HRESULT accessible_layout(struct drawer_window *_Nonnull self)
     GetClientRect(self->handle, &client);
     UINT dpi = GetDpiForWindow(self->handle);
     uint64_t revision = folio_state_index_revision(self->state);
+    int band = band_height(self);
     if (self->accessible_layout == nullptr || revision == UINT64_MAX ||
         self->accessible_revision != revision || self->accessible_dpi != dpi ||
-        self->accessible_height != client.bottom)
+        self->accessible_height != client.bottom || self->accessible_band != band)
     {
         drawer_layout_destroy(self->accessible_layout);
         self->accessible_layout = nullptr;
@@ -1770,6 +1930,7 @@ static HRESULT accessible_layout(struct drawer_window *_Nonnull self)
         self->accessible_revision = revision;
         self->accessible_dpi = dpi;
         self->accessible_height = client.bottom;
+        self->accessible_band = band;
     }
     drawer_layout_scroll(self->accessible_layout, folio_state_drawer_scroll(self->state));
     return S_OK;
@@ -1856,13 +2017,14 @@ static void accessible_row_view(struct drawer_window *_Nonnull self, struct draw
 static RECT accessible_fixed_rect(const struct drawer_window *_Nonnull self,
                                   enum accessible_kind kind)
 {
-    if (kind == ACCESSIBLE_SCOPE_GROUP)
-        return scope_group_rect(self);
-    if (kind == ACCESSIBLE_SCOPE_ALL || kind == ACCESSIBLE_SCOPE_FAVORITES)
-        return scope_item_rect(self, kind == ACCESSIBLE_SCOPE_ALL ? NOTE_SCOPE_ALL
-                                                                  : NOTE_SCOPE_FAVORITES);
+    if (kind == ACCESSIBLE_FILTER_GROUP)
+        return filter_band(self).group;
+    if (kind == ACCESSIBLE_FILTER_FAVORITES)
+        return filter_band(self).favorites;
     if (kind == ACCESSIBLE_TAG_FILTER)
-        return tag_filter_rect(self);
+        return filter_band(self).tags;
+    if (kind == ACCESSIBLE_FILTER_CLEAR)
+        return filter_band(self).clear;
     if (kind == ACCESSIBLE_NEW_CATEGORY)
     {
         return new_category_rect(self);

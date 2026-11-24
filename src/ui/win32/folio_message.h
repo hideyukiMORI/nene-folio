@@ -67,4 +67,7 @@ constexpr UINT folio_message_open_link = WM_APP + 25;
  * 壊れている）: 主窓は取り込まず、「読めません」の 1 行だけを出す。
  * 送るのは、欄の WM_DROPFILES（閲覧表示）と、RichEdit の OLE の投下（編集表示。#1195）。 */
 constexpr UINT folio_message_files_dropped = WM_APP + 26;
+/* 左の欄の固定帯の高さが変わった（絞り込みの札の行・#1199）。主窓が説明の矩形と focus を
+ * 合わせ直す。左の欄が描いた後に post する。 */
+constexpr UINT folio_message_drawer_band = WM_APP + 27;
 #endif

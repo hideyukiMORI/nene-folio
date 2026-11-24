@@ -10114,6 +10114,7 @@ static void verify_conditions_clearing(void)
     struct folio_state *state = ready_state(&adapter);
     struct note_tags *both = selected_tags(2);
     uint64_t revision = folio_state_tag_filter_revision(state);
+    require(!folio_state_conditions_active(state), "a fresh index has no condition");
     require(folio_state_clear_conditions(state) == FOLIO_STATE_READY &&
                 !folio_state_filtering(state) && folio_state_note_scope(state) == NOTE_SCOPE_ALL,
             "clearing with no condition leaves an unfiltered index");
@@ -10127,6 +10128,7 @@ static void verify_conditions_clearing(void)
     require(folio_state_tag_filter_revision(state) != revision,
             "setting tags advances the revision");
     revision = folio_state_tag_filter_revision(state);
+    require(folio_state_conditions_active(state), "tags alone are a condition");
     folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
     require(folio_state_tag_filter_revision(state) == revision,
             "the scope does not touch the tag conditions' revision");
@@ -10138,6 +10140,10 @@ static void verify_conditions_clearing(void)
                 (after == nullptr || note_tags_count(after) == 0) &&
                 folio_state_tag_match_mode(state) == TAG_MATCH_ALL,
             "the scope is ALL, no tag is selected and the mode is back to ALL");
+    require(!folio_state_conditions_active(state), "a text term alone is not a condition");
+    folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
+    require(folio_state_conditions_active(state), "the favorites scope alone is a condition");
+    folio_state_set_note_scope(state, NOTE_SCOPE_ALL);
     require(same_text(folio_state_index_filter_term(state), "needle") &&
                 folio_state_index_filter_count(state) == 1,
             "the text term stays and still filters");

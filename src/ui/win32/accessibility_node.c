@@ -43,16 +43,16 @@ static bool has_invoke(enum accessible_kind kind)
            accessible_item_menu(kind) || kind == ACCESSIBLE_NEW_NOTE ||
            kind == ACCESSIBLE_NEW_CATEGORY || kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_SAVE ||
            kind == ACCESSIBLE_HELP || kind == ACCESSIBLE_FIND || kind == ACCESSIBLE_TAG_EDIT ||
-           kind == ACCESSIBLE_TAG_FILTER || kind == ACCESSIBLE_SURFACE_CHOICE ||
-           kind == ACCESSIBLE_SURFACE_BUTTON || kind == ACCESSIBLE_OUTLINE_ITEM;
+           kind == ACCESSIBLE_TAG_FILTER || kind == ACCESSIBLE_FILTER_CLEAR ||
+           kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_BUTTON ||
+           kind == ACCESSIBLE_OUTLINE_ITEM;
 }
 
 static bool has_selection(enum accessible_kind kind)
 {
     return kind == ACCESSIBLE_TREE || kind == ACCESSIBLE_LAYOUT_GROUP ||
            kind == ACCESSIBLE_MODE_GROUP || kind == ACCESSIBLE_SURFACE_LIST ||
-           kind == ACCESSIBLE_SURFACE_TABS || kind == ACCESSIBLE_SCOPE_GROUP ||
-           kind == ACCESSIBLE_OUTLINE;
+           kind == ACCESSIBLE_SURFACE_TABS || kind == ACCESSIBLE_OUTLINE;
 }
 
 static bool has_selection_item(enum accessible_kind kind)
@@ -61,8 +61,14 @@ static bool has_selection_item(enum accessible_kind kind)
            kind == ACCESSIBLE_LAYOUT_BOTH || kind == ACCESSIBLE_LAYOUT_NOTE ||
            kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT ||
            kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_LANGUAGE ||
-           kind == ACCESSIBLE_SURFACE_TAB || kind == ACCESSIBLE_SCOPE_ALL ||
-           kind == ACCESSIBLE_SCOPE_FAVORITES || kind == ACCESSIBLE_OUTLINE_ITEM;
+           kind == ACCESSIBLE_SURFACE_TAB || kind == ACCESSIBLE_OUTLINE_ITEM;
+}
+
+/* Toggle: 面の切り替え、ノートの星、左の欄のお気に入りの札（#1199）。 */
+static bool has_toggle(enum accessible_kind kind)
+{
+    return kind == ACCESSIBLE_SURFACE_TOGGLE || kind == ACCESSIBLE_NOTE ||
+           kind == ACCESSIBLE_FILTER_FAVORITES;
 }
 
 static bool has_scroll(enum accessible_kind kind)
@@ -306,8 +312,7 @@ static IUnknown *_Nullable pattern_for(struct accessibility_node *_Nonnull node,
         {UIA_ExpandCollapsePatternId, (IUnknown *)&node->expand, has_expand(kind)},
         {UIA_ScrollPatternId, (IUnknown *)&node->scroll, has_scroll(kind)},
         {UIA_ScrollItemPatternId, (IUnknown *)&node->scroll_item, has_scroll_item(node->item)},
-        {UIA_TogglePatternId, (IUnknown *)&node->toggle,
-         kind == ACCESSIBLE_SURFACE_TOGGLE || kind == ACCESSIBLE_NOTE},
+        {UIA_TogglePatternId, (IUnknown *)&node->toggle, has_toggle(kind)},
         {UIA_RangeValuePatternId, (IUnknown *)&node->range,
          (kind == ACCESSIBLE_SPLITTER || kind == ACCESSIBLE_MINIMAP)}};
     for (size_t index = 0; index < sizeof patterns / sizeof patterns[0]; ++index)
@@ -371,9 +376,9 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_FIND] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_NEW_NOTE] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_NEW_CATEGORY] = UIA_ButtonControlTypeId,
-    [ACCESSIBLE_SCOPE_GROUP] = UIA_GroupControlTypeId,
-    [ACCESSIBLE_SCOPE_ALL] = UIA_RadioButtonControlTypeId,
-    [ACCESSIBLE_SCOPE_FAVORITES] = UIA_RadioButtonControlTypeId,
+    [ACCESSIBLE_FILTER_GROUP] = UIA_GroupControlTypeId,
+    [ACCESSIBLE_FILTER_FAVORITES] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_FILTER_CLEAR] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_TREE] = UIA_TreeControlTypeId,
     [ACCESSIBLE_CATEGORY] = UIA_TreeItemControlTypeId,
     [ACCESSIBLE_NOTE] = UIA_TreeItemControlTypeId,
@@ -837,8 +842,6 @@ static struct accessible_item selection_container(struct accessible_item item)
     enum accessible_kind kind = item.kind;
     if (kind == ACCESSIBLE_OUTLINE_ITEM)
         return (struct accessible_item){.kind = ACCESSIBLE_OUTLINE};
-    if (kind == ACCESSIBLE_SCOPE_ALL || kind == ACCESSIBLE_SCOPE_FAVORITES)
-        return (struct accessible_item){.kind = ACCESSIBLE_SCOPE_GROUP};
     if (kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT)
     {
         return (struct accessible_item){.kind = ACCESSIBLE_MODE_GROUP};
@@ -1236,6 +1239,8 @@ static ULONG STDMETHODCALLTYPE toggle_release(IToggleProvider *_Nonnull self)
 static HRESULT STDMETHODCALLTYPE toggle_run(IToggleProvider *_Nonnull self)
 {
     struct accessibility_node *node = toggle_owner(self);
+    if (node->item.kind == ACCESSIBLE_FILTER_FAVORITES)
+        return perform(node, ACCESSIBLE_ACTION_INVOKE); /* 札はコマンドと同じ 1 本の道 */
     return perform(node, node->item.kind == ACCESSIBLE_NOTE ? ACCESSIBLE_ACTION_TOGGLE_FAVORITE
                                                             : ACCESSIBLE_ACTION_SELECT);
 }
@@ -1615,8 +1620,7 @@ static void raise_toggle(struct accessibility_node *_Nonnull node,
 {
     bool before_toggle = node->item.kind == ACCESSIBLE_NOTE ? before->favorite : before->selected;
     bool after_toggle = node->item.kind == ACCESSIBLE_NOTE ? after->favorite : after->selected;
-    if ((node->item.kind == ACCESSIBLE_SURFACE_TOGGLE || node->item.kind == ACCESSIBLE_NOTE) &&
-        before_toggle != after_toggle)
+    if (has_toggle(node->item.kind) && before_toggle != after_toggle)
     {
         VARIANT old_value = {.vt = VT_I4, .lVal = before_toggle ? ToggleState_On : ToggleState_Off};
         VARIANT new_value = {.vt = VT_I4, .lVal = after_toggle ? ToggleState_On : ToggleState_Off};

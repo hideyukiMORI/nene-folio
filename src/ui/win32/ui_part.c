@@ -40,9 +40,16 @@ static COLORREF resting_ink(const struct folio_palette *_Nonnull palette, enum u
     case UI_PART_STYLE_PRIMARY:
         return palette->unsaved_ink;
     case UI_PART_STYLE_ICON:
+    case UI_PART_STYLE_CHIP:
         return palette->header_text;
     }
     return palette->current_text;
+}
+
+/* 点いた札。塗らずに、字と枠の色・太さで示す（ADR0122 の決定 2）。 */
+static bool chip_lit(const struct ui_part_paint *_Nonnull part)
+{
+    return part->style == UI_PART_STYLE_CHIP && part->selected && !part->disabled;
 }
 
 static COLORREF part_ink(const struct folio_palette *_Nonnull palette,
@@ -56,7 +63,11 @@ static COLORREF part_ink(const struct folio_palette *_Nonnull palette,
     {
         return palette->primary_hover_ink;
     }
-    return part_lit(part) ? palette->selected_text : resting_ink(palette, part->style);
+    if (part_lit(part))
+    {
+        return palette->selected_text;
+    }
+    return chip_lit(part) ? palette->current_text : resting_ink(palette, part->style);
 }
 
 /* 区切りの 1px を除いた、部品の中身の矩形。 */
@@ -107,9 +118,25 @@ static void draw_primary(HDC device, const struct folio_palette *_Nonnull palett
     }
 }
 
+/* 札の枠。静止は 1px の border、点いた札は字の色（高コントラストでは 2px・ADR0122 の決定 5）。
+ * 枠を持たない札（grouped。「× 解除」）は描かない。 */
+static void draw_chip_frame(HDC device, const struct folio_palette *_Nonnull palette,
+                            const struct ui_part_paint *_Nonnull part)
+{
+    if (part->style != UI_PART_STYLE_CHIP || part->grouped)
+    {
+        return;
+    }
+    bool high = palette->contrast == FOLIO_CONTRAST_HIGH;
+    COLORREF resting = high ? palette->category_text : palette->border;
+    int width = chip_lit(part) && high ? ui_part_focus_width(part->dpi) : 1;
+    frame(device, part->bounds, width, chip_lit(part) ? palette->current_text : resting);
+}
+
 static void draw_surface(HDC device, const struct folio_palette *_Nonnull palette,
                          const struct ui_part_paint *_Nonnull part)
 {
+    draw_chip_frame(device, palette, part);
     if (part->style == UI_PART_STYLE_PRIMARY)
     {
         draw_primary(device, palette, part);
@@ -146,9 +173,13 @@ static void draw_hover(HDC device, const struct folio_palette *_Nonnull palette,
         return;
     }
     RECT body = part_body(part);
-    if (part->style == UI_PART_STYLE_COMMAND && !part->grouped)
+    bool framed = part->style == UI_PART_STYLE_COMMAND || part->style == UI_PART_STYLE_CHIP;
+    if (framed && !part->grouped)
     {
-        InflateRect(&body, -1, -1);
+        /* 枠の内側。点いた札の高コントラストの枠は 2px なので、その内側（ADR0122 の決定 5）。 */
+        bool thick = chip_lit(part) && palette->contrast == FOLIO_CONTRAST_HIGH;
+        int inset = thick ? ui_part_focus_width(part->dpi) : 1;
+        InflateRect(&body, -inset, -inset);
     }
     frame(device, body, 1, palette->hover_line);
 }
@@ -197,10 +228,12 @@ static void draw_focus(HDC device, const struct folio_palette *_Nonnull palette,
 
 static RECT icon_box(const struct ui_part_paint *_Nonnull part, RECT body)
 {
-    int size = scaled(part->style == UI_PART_STYLE_ICON ? ui_part_glyph : ui_part_icon, part->dpi);
+    bool chip = part->style == UI_PART_STYLE_CHIP;
+    int base = part->style == UI_PART_STYLE_ICON ? ui_part_glyph : ui_part_icon;
+    int size = scaled(chip ? ui_part_chip_icon : base, part->dpi);
     int top = (body.top + body.bottom - size) / 2;
-    int left = part->labeled ? body.left + scaled(ui_part_padding, part->dpi)
-                             : (body.left + body.right - size) / 2;
+    int padding = scaled(chip ? ui_part_chip_padding : ui_part_padding, part->dpi);
+    int left = part->labeled ? body.left + padding : (body.left + body.right - size) / 2;
     return (RECT){left, top, left + size, top + size};
 }
 
@@ -212,6 +245,13 @@ static RECT label_rect(const struct ui_part_paint *_Nonnull part, RECT body)
     }
     /* 幅は字の実測から決めるので、右の余白は字の測り誤差の逃げに使い、省略記号の境界にしない。 */
     RECT label = body;
+    if (part->style == UI_PART_STYLE_CHIP)
+    {
+        label.left += scaled(ui_part_chip_padding, part->dpi);
+        label.left +=
+            part->has_icon ? scaled(ui_part_chip_icon + ui_part_chip_icon_gap, part->dpi) : 0;
+        return label;
+    }
     label.left += scaled(ui_part_padding, part->dpi);
     label.left += part->has_icon ? scaled(ui_part_icon + ui_part_icon_gap, part->dpi) : 0;
     return label;
