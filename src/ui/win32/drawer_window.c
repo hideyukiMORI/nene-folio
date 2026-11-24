@@ -100,13 +100,16 @@ constexpr int base_header_indent = 16;
  * ここは行を置かない余白として数える。 */
 constexpr int base_filter_height = 36;
 /* 絞り込みの札の行（ADR0122）。札の高さ・余白は ui_part の F 様式。 */
-constexpr int base_chip_top = 2;         /* 検索の欄の帯の下から、札の上端まで */
-constexpr int base_chip_gap = 5;         /* 札の間と、札の行の間 */
-constexpr int base_chip_bottom = 4;      /* 札の行の下に空ける間 */
-constexpr int base_clear_height = 18;    /* 「× 解除」の行 */
-constexpr int base_clear_bottom = 2;     /* 解除の行の下に空ける間 */
-constexpr int chip_rows = 2;             /* 札を並べてよい行の数 */
-constexpr int base_tag_chip_limit = 132; /* タグの札の幅の上限。長い名前は … で切る（#1247） */
+constexpr int base_chip_top = 2;      /* 検索の欄の帯の下から、札の上端まで */
+constexpr int base_chip_gap = 5;      /* 札の間と、札の行の間 */
+constexpr int base_chip_bottom = 4;   /* 札の行の下に空ける間 */
+constexpr int base_clear_height = 18; /* 「× 解除」の行 */
+constexpr int base_clear_bottom = 2;  /* 解除の行の下に空ける間 */
+constexpr int chip_rows = 2;          /* 札を並べてよい行の数 */
+/* タグの札の幅の上限と下限（#1247）。長い名前は … で切る。上限は、札が「+N」・開く札と同じ行に
+ * 入る幅までさらに狭める（狭めないと、長い名前の札 1 つで 2 行に入らず、全部が畳まれる）。 */
+constexpr int base_tag_chip_limit = 132;
+constexpr int base_tag_chip_floor = 48;
 /* 札の字を 1 行に組み立てる大きさ（「# 」＋タグ名 ＋ 終端で足りる）。 */
 constexpr size_t chip_text_limit = 512;
 constexpr int base_category_band_height = 36;
@@ -484,16 +487,24 @@ static void tag_chip_text(const struct drawer_window *_Nonnull self, size_t slot
     }
 }
 
-/* タグの札の幅: 余白・字（太字）・×・余白。上限を超える名前は、描くときに … で切る。 */
+/* タグの札の幅: 余白・字（太字）・×・余白。上限は呼び出し側が掛ける。 */
 static int tag_chip_width(const struct drawer_window *_Nonnull self, HDC device, UINT dpi,
                           size_t slot)
 {
     char text[chip_text_limit];
     tag_chip_text(self, slot, text);
-    int width = 2 * scale(ui_part_chip_padding, dpi) + chip_text_width(self, device, text, true) +
-                scale(ui_part_chip_icon_gap, dpi) + scale(ui_part_chip_icon, dpi);
+    return 2 * scale(ui_part_chip_padding, dpi) + chip_text_width(self, device, text, true) +
+           scale(ui_part_chip_icon_gap, dpi) + scale(ui_part_chip_icon, dpi);
+}
+
+/* タグの札の幅の上限: 行の幅から「+N」と開く札と、その間 2 つを引いた残り（上限と下限の間）。 */
+static int tag_chip_limit(const struct chip_flow_input *_Nonnull input, UINT dpi)
+{
+    int room = input->available - input->opener_width - input->more_width - 2 * input->gap;
     int limit = scale(base_tag_chip_limit, dpi);
-    return width < limit ? width : limit;
+    int floor = scale(base_tag_chip_floor, dpi);
+    limit = room < limit ? room : limit;
+    return limit > floor ? limit : floor;
 }
 
 /* 畳んだタグの札の字「+N」。 */
@@ -564,10 +575,6 @@ static struct drawer_filter_band filter_band(const struct drawer_window *_Nonnul
     int saved = SaveDC(device);
     size_t tags = tag_condition_count(self);
     int widths[1 + note_tags_max_count] = {favorites_chip_width(self, device, dpi)};
-    for (size_t slot = 0; slot < tags && slot < note_tags_max_count; ++slot)
-    {
-        widths[1 + slot] = tag_chip_width(self, device, dpi, slot);
-    }
     struct chip_flow_input input = {.widths = widths,
                                     .count = 1 + tags,
                                     .opener_width = tags_chip_width(self, device, dpi),
@@ -577,6 +584,12 @@ static struct drawer_filter_band filter_band(const struct drawer_window *_Nonnul
                                     .gap = scale(base_chip_gap, dpi),
                                     .row_gap = scale(base_chip_gap, dpi),
                                     .rows = chip_rows};
+    int limit = tag_chip_limit(&input, dpi);
+    for (size_t slot = 0; slot < tags && slot < note_tags_max_count; ++slot)
+    {
+        int width = tag_chip_width(self, device, dpi, slot);
+        widths[1 + slot] = width < limit ? width : limit;
+    }
     int clear = clear_width(self, device, dpi);
     RestoreDC(device, saved);
     ReleaseDC(self->handle, device);

@@ -9957,6 +9957,51 @@ static size_t filter_tags_placed(struct folio_window *_Nonnull window,
     return shown;
 }
 
+/* #1247: a tag with a long name is cut to a width that still shares a row with the opener, so
+ * two long tags keep to two rows and none is folded. */
+static void filter_tag_long(struct folio_window *_Nonnull window,
+                            struct native_fixture *_Nonnull fixture)
+{
+    static const char first[] = "a-very-long-tag-name-that-cannot-fit-the-row-one";
+    static const char second[] = "a-very-long-tag-name-that-cannot-fit-the-row-two";
+    struct note_tag *made[2] = {nullptr, nullptr};
+    require(note_tag_create(first, sizeof first - 1, &made[0]) == NOTE_TAG_READY &&
+                note_tag_create(second, sizeof second - 1, &made[1]) == NOTE_TAG_READY,
+            "create two long tags");
+    const struct note_tag *names[] = {made[0], made[1]};
+    struct note_tags *tags = nullptr;
+    require(note_tags_create(names, 2, &tags) == NOTE_TAGS_READY &&
+                folio_state_set_tag_filter(fixture->state, tags, TAG_MATCH_ANY) ==
+                    FOLIO_STATE_READY,
+            "the list owns two long tag conditions");
+    note_tags_destroy(tags);
+    note_tag_destroy(made[0]);
+    note_tag_destroy(made[1]);
+    filter_settle(window, fixture);
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_DRAWER));
+    RECT group = chip_bounds(window, ACCESSIBLE_FILTER_GROUP);
+    RECT opener = chip_bounds(window, ACCESSIBLE_TAG_FILTER);
+    struct accessible_view one = {0}, two = {0}, more = {0};
+    RECT left = tag_chip_view(window, fixture, 0, &one);
+    RECT right = tag_chip_view(window, fixture, 1, &two);
+    struct accessible_item folded = {.kind = ACCESSIBLE_FILTER_MORE};
+    require(filter_tags_placed(window, fixture) == 2 &&
+                (folio_window_accessible_read(window, &folded, &more) != S_OK || more.offscreen) &&
+                group.bottom - group.top == 2 * MulDiv(21, dpi, 96) + MulDiv(5, dpi, 96) &&
+                right.top == opener.top && right.right < opener.left &&
+                opener.right <= group.right && left.right <= group.right,
+            "two long tags are cut, not folded: the second shares its row with the opener");
+    require(wcsstr(one.name, L"row-one") != nullptr && wcsstr(two.name, L"row-two") != nullptr,
+            "a cut chip still names its whole tag");
+    printf("filter-tag-long first=%ld second=%ld opener=%ld..%ld\n", left.right - left.left,
+           right.right - right.left, opener.left, opener.right);
+    chip_click(window, ACCESSIBLE_FILTER_CLEAR);
+    filter_settle(window, fixture);
+    require(tag_condition_count(fixture) == 0, "the clear row removes the long tags");
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_DRAWER), WM_MOUSELEAVE, 0, 0);
+    pump(window);
+}
+
 /* +N names how many tags it folds; its help and its tooltip list them. */
 static void filter_fold_names(struct folio_window *_Nonnull window, size_t shown, RECT more)
 {
@@ -10198,6 +10243,7 @@ static void filter_chip_row(struct folio_window *_Nonnull window,
     filter_tag_pointer_second(window, fixture);
     filter_tag_pointer(window, fixture);
     filter_tag_fold(window, fixture);
+    filter_tag_long(window, fixture);
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
     pump(window);
     printf("filter-chips star=%ld lit=%ld opener=%ld tree=%d lowered=%d\n", star.right - star.left,
