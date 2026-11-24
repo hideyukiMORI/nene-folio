@@ -1839,7 +1839,7 @@ static size_t about_focus_slot(const struct folio_window *_Nonnull self)
 /* 製品名だけ、主窓が既に持つ見出しの書体で題として示す。計測と描画が同じ書体を選ぶ。 */
 static HFONT about_text_font(const struct folio_window *_Nonnull self, size_t index)
 {
-    return about_texts[index].label == UI_TEXT_APP_LOGO ? help_heading_font(self) : self->mono_font;
+    return about_texts[index].label == UI_TEXT_APP_LOGO ? help_heading_font(self) : word_font(self);
 }
 
 /* outはdraw_unit_limit bytes。描画・計測・UIAが同じ1行を使う。 */
@@ -5088,8 +5088,13 @@ static void draw_settings_row(const struct folio_window *_Nonnull self, HDC devi
     label.left += scale(choice ? 32 : 0, dpi);
     label.right -= scale(4, dpi);
     SetTextColor(device, self->palette.current_text);
+    /* 言語の名前（日本語・English・简体中文）は、等幅のまま。日本語・英語の言葉の書体には
+     * 「简」が無く、1 つの名前の中で書体が混ざる。 */
+    bool language = settings_rows[index].kind == SETTINGS_ROW_LANGUAGE;
+    HGDIOBJ previous = SelectObject(device, language ? self->mono_font : word_font(self));
     draw_units(device, ui_text_line(settings_rows[index].label, folio_state_language(self->state)),
                label, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    SelectObject(device, previous);
 }
 
 static void draw_settings_rows(const struct folio_window *_Nonnull self, HDC device)
@@ -5831,17 +5836,20 @@ static void draw_about_dialog(const struct folio_window *_Nonnull self, HDC devi
 /* 設定の枠を共有する二つの副面。 */
 static void draw_settings_branch(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
+    HGDIOBJ previous = SelectObject(device, word_font(self)); /* 面の中の字は言葉 */
     if (about_surface(self))
         draw_about_dialog(self, device, bounds);
     else if (move_surface(self))
         draw_move_dialog(self, device, bounds);
     else
         draw_theme_dialog(self, device, bounds);
+    SelectObject(device, previous);
 }
 
 static void draw_settings_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     ui_part_draw_surface(device, &self->palette, bounds);
+    HGDIOBJ previous = SelectObject(device, word_font(self)); /* 面の中の字は言葉 */
     RECT title = surface_frame_rect(self, UI_PART_SURFACE_TITLE_TEXT);
     SetTextColor(device, self->palette.current_text);
     draw_units(device, ui_text_line(UI_TEXT_COMMAND_SETTINGS, folio_state_language(self->state)),
@@ -5849,6 +5857,7 @@ static void draw_settings_dialog(const struct folio_window *_Nonnull self, HDC d
     draw_surface_button(self, device, ACCESSIBLE_SURFACE_CLOSE);
     draw_settings_rows(self, device);
     draw_settings_footer(self, device);
+    SelectObject(device, previous);
 }
 
 /* 履歴の面の案内 1 行（ADR 0038 の決定 12）。設定画面の案内と同じ位置に出す。 */
@@ -7728,14 +7737,15 @@ static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
     RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
     struct command_surface_metrics metrics = {.width = bounds.right - bounds.left,
                                               .dpi = GetDpiForWindow(self->handle),
-                                              .font = self->mono_font,
+                                              .font = word_font(self),
                                               .language = folio_state_language(self->state)};
     if (surface_metrics_current(self, &metrics))
         return true;
     HDC device = GetDC(self->command_layer);
     if (device == nullptr)
         return false;
-    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    /* 描く側（draw_settings_dialog・draw_settings_branch）と同じ、言葉の書体で測る。 */
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     SetTextCharacterExtra(device, scale(base_tracking, metrics.dpi));
     bool ready = band_outcomes_height(device, metrics.language, bounds, &metrics.notice);
     metrics.motion_help = settings_motion_help_height(self, device, bounds);
@@ -14517,20 +14527,28 @@ static RECT filter_clear_rect(const struct folio_window *_Nonnull self, HWND win
 /* 「×」は頭の draw_close と同じ面のパスで描く（ADR 0033 の決定 3・補正 9）。× を描く経路は 1 本。
  * 箱は filter_clear_rect が欄の高さに収め、倍率は icon_paint_fill が bounds から出す。
  * 欄が空のあいだは出さない（出ていれば押せば語が消えるという意味になる）。 */
-static void paint_filter_clear(const struct folio_window *_Nonnull self, HWND window)
+static void draw_filter_clear(const struct folio_window *_Nonnull self, HWND window)
 {
-    if (!filter_term_present(window))
-    {
-        return;
-    }
     HDC device = GetDC(window);
     if (device == nullptr)
     {
         return;
     }
-    icon_paint_fill(device, filter_clear_rect(self, window), ICON_PAINT_CLOSE,
-                    self->palette.header_text);
+    /* 先に欄の地（color_command_input と同じ色）で塗る。「×」の縁は半透明で合成するので、
+     * 消えていない所へ重ねて描くと、回を重ねるごとに濃く太くなる（#1267）。 */
+    RECT bounds = filter_clear_rect(self, window);
+    SetDCBrushColor(device, self->palette.window);
+    FillRect(device, &bounds, GetStockObject(DC_BRUSH));
+    icon_paint_fill(device, bounds, ICON_PAINT_CLOSE, self->palette.header_text);
     ReleaseDC(window, device);
+}
+
+static void paint_filter_clear(const struct folio_window *_Nonnull self, HWND window)
+{
+    if (filter_term_present(window))
+    {
+        draw_filter_clear(self, window);
+    }
 }
 
 /* 「×」を押したら語を空にする。解くのは欄を手で空にするのと同じ経路で、
@@ -14541,11 +14559,31 @@ static bool filter_clear_at(const struct folio_window *_Nonnull self, HWND windo
     return filter_term_present(window) && PtInRect(&bounds, point);
 }
 
+/* 欄（EDIT）が、WM_PAINT を通さずに自分の行を塗り直しうるメッセージ。字を打つ・消す・貼る・
+ * 選ぶ・変換するたびに、欄は行の右端まで塗るので、その上の「×」が消える（#1267）。WM_TIMER は、
+ * 押したまま選ぶときの自動の送り。塗らなかった回に描き直しても、draw_filter_clear は同じ絵に
+ * なる。字数を聞くメッセージは、ここに足さない（描く道が聞き直すと、終わらなくなる）。 */
+static bool filter_edit_repaints(UINT message)
+{
+    static const UINT repainting[] = {
+        WM_CHAR,   WM_SYSCHAR,   WM_KEYDOWN,     WM_PASTE,           WM_CUT,
+        WM_CLEAR,  WM_UNDO,      EM_UNDO,        WM_SETTEXT,         EM_REPLACESEL,
+        EM_SETSEL, WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP,       WM_LBUTTONDBLCLK,
+        WM_TIMER,  WM_SETFOCUS,  WM_KILLFOCUS,   WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION};
+    for (size_t at = 0; at < sizeof repainting / sizeof repainting[0]; ++at)
+    {
+        if (repainting[at] == message)
+            return true;
+    }
+    return false;
+}
+
 /* 「×」が出入りするのは、欄に字が入ったときと空になったときだけ。打つたびに欄を消して描き直すと
  * ちらつくので、変わった 1 回だけ欄ごと描き直す（補正 6・#1246）。欄の字が変わる道（打鍵・貼り
  * 付け・変換中・プログラムからの書き換え）は、絞り込みの門（変換中・保存中は絞り直さない）を
- * 通らないものがあるので、欄がメッセージを処理し終えるたびに、ここ 1 か所で比べる。 */
-static void sync_filter_mark(struct folio_window *_Nonnull self, HWND window)
+ * 通らないものがあるので、欄がメッセージを処理し終えるたびに、ここ 1 か所で比べる。出たままの
+ * あいだは、欄が自分で塗り直した後に「×」だけを描き直す（#1267）。 */
+static void sync_filter_mark(struct folio_window *_Nonnull self, HWND window, UINT message)
 {
     /* 字数は元の EDIT へ直に聞く。欄へ送ると、その処理の終わりでまたここへ来て終わらない。 */
     bool marked = self->filter_original != nullptr &&
@@ -14554,7 +14592,10 @@ static void sync_filter_mark(struct folio_window *_Nonnull self, HWND window)
     {
         self->filter_marked = marked;
         InvalidateRect(window, nullptr, TRUE);
+        return;
     }
+    if (marked && filter_edit_repaints(message))
+        draw_filter_clear(self, window);
 }
 
 static bool filter_clear_pressed(struct folio_window *_Nonnull self, HWND window, LPARAM lparam)
@@ -14686,7 +14727,7 @@ static LRESULT CALLBACK filter_input_message(HWND window, UINT message, WPARAM w
     }
     if (message != WM_NCDESTROY)
     {
-        sync_filter_mark(self, window); /* 壊れた後の窓へは聞かない */
+        sync_filter_mark(self, window, message); /* 壊れた後の窓へは聞かない */
     }
     return result;
 }
