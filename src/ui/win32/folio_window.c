@@ -11067,14 +11067,11 @@ static HRESULT filter_match_select(struct folio_window *_Nonnull self, enum acce
     {
         return S_OK;
     }
-    enum tag_match_mode mode = kind == ACCESSIBLE_FILTER_MATCH_ALL ? TAG_MATCH_ALL : TAG_MATCH_ANY;
-    struct note_tags *_Nullable copy = nullptr;
-    enum folio_state_outcome outcome = tag_set_outcome(note_tags_copy(tags, &copy));
-    if (outcome == FOLIO_STATE_READY)
-    {
-        outcome = folio_state_set_tag_filter(self->state, copy, mode);
-    }
-    note_tags_destroy(copy);
+    /* タグの面の切り替え（tag_filter_mode）と同じく、いまの集まりをそのまま渡す。
+     * application が、持ち替える前に自分で写す。 */
+    enum folio_state_outcome outcome = folio_state_set_tag_filter(
+        self->state, tags,
+        selected_match_kind(self) == ACCESSIBLE_FILTER_MATCH_ALL ? TAG_MATCH_ANY : TAG_MATCH_ALL);
     if (outcome != FOLIO_STATE_READY)
     {
         report_outcome(self, outcome);
@@ -19506,6 +19503,15 @@ static HRESULT outline_selected(const struct folio_window *_Nonnull self,
     return S_OK;
 }
 
+/* タグの条件の 2 択の群の選択（#1249）。群が無い（タグが 2 つ未満）あいだは、選択を答えない。
+ * 見えない要素を選択として知らせない（見出しの列と同じ）。 */
+static HRESULT match_selected(const struct folio_window *_Nonnull self,
+                              struct accessible_item *_Nonnull out)
+{
+    *out = (struct accessible_item){.kind = selected_match_kind(self)};
+    return filter_tag_count(self) < 2 ? S_FALSE : S_OK;
+}
+
 static bool accessible_selected_elsewhere(struct folio_window *_Nonnull self,
                                           const struct accessible_item *_Nonnull item,
                                           struct accessible_item *_Nonnull out,
@@ -19515,6 +19521,8 @@ static bool accessible_selected_elsewhere(struct folio_window *_Nonnull self,
         *result = surface_selected(self, item, out);
     else if (item->kind == ACCESSIBLE_OUTLINE)
         *result = outline_selected(self, out);
+    else if (item->kind == ACCESSIBLE_FILTER_MATCH_GROUP)
+        *result = match_selected(self, out);
     else
         return false;
     return true;
@@ -19540,11 +19548,6 @@ HRESULT folio_window_accessible_selected(struct folio_window *_Nonnull self,
         *out = (struct accessible_item){.kind = folio_state_pane_mode(self->state) == PANE_MODE_VIEW
                                                     ? ACCESSIBLE_VIEW
                                                     : ACCESSIBLE_EDIT};
-        return S_OK;
-    }
-    if (item->kind == ACCESSIBLE_FILTER_MATCH_GROUP)
-    {
-        *out = (struct accessible_item){.kind = selected_match_kind(self)};
         return S_OK;
     }
     struct note_ref selected;

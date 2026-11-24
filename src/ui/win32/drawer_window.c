@@ -547,6 +547,19 @@ static const char *_Nonnull match_text(const struct drawer_window *_Nonnull self
     return ui_text_line(line, folio_state_language(self->state));
 }
 
+/* 2 択の 1 つの釦。 */
+static enum drawer_header_button match_button(enum tag_match_mode mode)
+{
+    switch (mode)
+    {
+    case TAG_MATCH_ALL:
+        return DRAWER_HEADER_MATCH_ALL;
+    case TAG_MATCH_ANY:
+        return DRAWER_HEADER_MATCH_ANY;
+    }
+    return DRAWER_HEADER_MATCH_ALL;
+}
+
 /* 2 択の 1 つの幅。選んでいる方は太字なので、どちらも太字で測る（選び替えても幅が動かない）。 */
 static int match_width(const struct drawer_window *_Nonnull self, HDC device, UINT dpi,
                        enum tag_match_mode mode)
@@ -813,12 +826,9 @@ static void draw_match(const struct drawer_window *_Nonnull self, HDC device,
     {
         return;
     }
-    bool all = mode == TAG_MATCH_ALL;
     bool selected = folio_state_tag_match_mode(self->state) == mode;
-    struct ui_part_paint part = chip_part(
-        self,
-        (struct drawer_header_hit){all ? DRAWER_HEADER_MATCH_ALL : DRAWER_HEADER_MATCH_ANY, 0},
-        bounds);
+    struct ui_part_paint part =
+        chip_part(self, (struct drawer_header_hit){match_button(mode), 0}, bounds);
     part.grouped = true;
     part.selected = selected;
     struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
@@ -1567,6 +1577,14 @@ static bool press_header(struct drawer_window *_Nonnull self, POINT point)
     if (pressed.button == DRAWER_HEADER_NONE)
     {
         return false;
+    }
+    if (pressed.button == match_button(folio_state_tag_match_mode(self->state)))
+    {
+        /* 選んでいる方は、押しても何も起きない。押下の見た目にもしない（ADR0060 の決定 4）。
+         * focus だけ置く。 */
+        SendMessageW(GetParent(self->handle), folio_message_index_focus,
+                     (WPARAM)header_kind(pressed.button), 0);
+        return true;
     }
     RECT button = header_hit_rect(self, pressed);
     self->header_pressed = pressed.button;
@@ -2336,11 +2354,20 @@ static void accessible_row_view(struct drawer_window *_Nonnull self, struct draw
 static bool filter_part_rect(const struct drawer_window *_Nonnull self, enum accessible_kind kind,
                              RECT *_Nonnull out)
 {
-    struct drawer_filter_band band = filter_band(self);
     const enum accessible_kind kinds[] = {
         ACCESSIBLE_FILTER_GROUP, ACCESSIBLE_FILTER_FAVORITES,  ACCESSIBLE_TAG_FILTER,
         ACCESSIBLE_FILTER_MORE,  ACCESSIBLE_FILTER_MATCH_ALL,  ACCESSIBLE_FILTER_MATCH_ANY,
         ACCESSIBLE_FILTER_CLEAR, ACCESSIBLE_FILTER_MATCH_GROUP};
+    size_t at = 0;
+    while (at < sizeof kinds / sizeof kinds[0] && kinds[at] != kind)
+    {
+        ++at;
+    }
+    if (at == sizeof kinds / sizeof kinds[0])
+    {
+        return false; /* 帯の部品でなければ、配置を作らない（作るたびに字の幅を測る） */
+    }
+    struct drawer_filter_band band = filter_band(self);
     const RECT rects[] = {
         band.group,
         band.favorites,
@@ -2350,15 +2377,8 @@ static bool filter_part_rect(const struct drawer_window *_Nonnull self, enum acc
         band.match_any,
         band.clear,
         {band.match_all.left, band.match_all.top, band.match_any.right, band.match_any.bottom}};
-    for (size_t at = 0; at < sizeof kinds / sizeof kinds[0]; ++at)
-    {
-        if (kinds[at] == kind)
-        {
-            *out = rects[at];
-            return true;
-        }
-    }
-    return false;
+    *out = rects[at];
+    return true;
 }
 
 static RECT accessible_fixed_rect(const struct drawer_window *_Nonnull self,

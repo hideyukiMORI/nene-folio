@@ -10193,6 +10193,28 @@ static bool match_part_absent(struct folio_window *_Nonnull window, enum accessi
     return folio_window_accessible_read(window, &item, &view) != S_OK || view.offscreen;
 }
 
+/* Every pixel of a part of the drawer is the drawer's ground: nothing is drawn there. */
+static bool drawer_region_plain(struct folio_window *_Nonnull window, RECT region)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    RECT client;
+    GetClientRect(drawer, &client);
+    HDC source = GetDC(drawer), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(drawer, dc, PW_CLIENTONLY), "render the drawer for a plain region");
+    COLORREF ground = GetPixel(dc, region.left, region.top);
+    bool plain = true;
+    for (int y = region.top; y < region.bottom && plain; ++y)
+        for (int x = region.left; x < region.right && plain; ++x)
+            plain = GetPixel(dc, x, y) == ground;
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(drawer, source);
+    return plain;
+}
+
 static bool match_selected(struct folio_window *_Nonnull window, enum accessible_kind kind)
 {
     struct accessible_item item = {.kind = kind};
@@ -10246,6 +10268,18 @@ static void match_pair_select(struct folio_window *_Nonnull window,
                 match_selected(window, ACCESSIBLE_FILTER_MATCH_ALL) &&
                 EqualRect(&all, &all_after) && EqualRect(&any, &any_after),
             "a press selects the other mode, keeps the tags and does not move the pair");
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    LPARAM at = MAKELPARAM((all.left + all.right) / 2, (all.top + all.bottom) / 2);
+    uint64_t before = folio_state_tag_filter_revision(fixture->state);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, at);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, at);
+    bool captured = GetCapture() == drawer;
+    SendMessageW(drawer, WM_LBUTTONUP, 0, at);
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    filter_settle(window, fixture);
+    require(!captured && folio_state_tag_filter_revision(fixture->state) == before &&
+                folio_state_tag_match_mode(fixture->state) == TAG_MATCH_ALL,
+            "a press on the selected mode is not a press and changes nothing");
     struct accessible_request select = {.item = {.kind = ACCESSIBLE_FILTER_MATCH_ANY},
                                         .action = ACCESSIBLE_ACTION_SELECT};
     require(folio_window_accessible_action(window, &select) == S_OK, "UIA Select on any");
@@ -10269,7 +10303,18 @@ static void match_pair_keyboard(struct folio_window *_Nonnull window,
     favorite_key(window, VK_TAB);
     require(filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_MATCH_ANY}),
             "Tab from the chip row enters the pair on the selected mode");
+    RECT any = chip_bounds(window, ACCESSIBLE_FILTER_MATCH_ANY);
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_DRAWER));
+    int ring = MulDiv(2, dpi, 96);
+    /* Just inside the ring's left edge and above its bottom edge: no glyph is there. */
+    COLORREF edge = drawer_pixel(window, any.left + ring, any.bottom - 1);
+    COLORREF line = drawer_pixel(window, any.left + ring, any.bottom - ring - 1);
     favorite_key(window, VK_LEFT);
+    RECT all = chip_bounds(window, ACCESSIBLE_FILTER_MATCH_ALL);
+    require(drawer_pixel(window, all.left + ring, all.bottom - 1) == edge &&
+                drawer_pixel(window, all.left + ring, all.bottom - ring - 1) != line &&
+                drawer_pixel(window, any.left + ring, any.bottom - 1) == line,
+            "under the focus ring the selected mode still carries its line, inside the ring");
     require(
         filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_MATCH_ALL}) &&
             folio_state_tag_match_mode(fixture->state) == TAG_MATCH_ANY,
@@ -10305,6 +10350,13 @@ static void match_pair_vanishes(struct folio_window *_Nonnull window,
             !match_part_absent(window, ACCESSIBLE_FILTER_CLEAR) &&
             filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_FAVORITES}),
         "with one tag the pair is gone and its focus moves to the favorites chip");
+    struct accessible_item pair = {.kind = ACCESSIBLE_FILTER_MATCH_GROUP};
+    struct accessible_item chosen = {0};
+    RECT clear = chip_bounds(window, ACCESSIBLE_FILTER_CLEAR);
+    RECT left = chip_bounds(window, ACCESSIBLE_FILTER_GROUP);
+    require(drawer_region_plain(window, (RECT){left.left, clear.top, clear.left, clear.bottom}) &&
+                folio_window_accessible_selected(window, &pair, &chosen) != S_OK,
+            "with one tag nothing is drawn left of the clear button and no mode is reported");
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
     favorite_key(window, VK_TAB);
     favorite_key(window, VK_TAB);
@@ -10360,15 +10412,21 @@ static void filter_match_narrow(struct native_fixture *_Nonnull fixture)
         RECT group = chip_bounds(window, ACCESSIBLE_FILTER_GROUP);
         RECT any = chip_bounds(window, ACCESSIBLE_FILTER_MATCH_ANY);
         RECT clear = chip_bounds(window, ACCESSIBLE_FILTER_CLEAR);
-        bool beside = clear.top == any.top && clear.left > any.right;
+        int gap = MulDiv(
+            8, (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_DRAWER)), 96);
+        bool beside = clear.top == any.top && clear.left >= any.right + gap;
         bool below = clear.top >= any.bottom;
         require(any.right <= group.right && clear.right <= group.right && (beside || below),
                 "the pair and the clear button stay inside the narrow row without overlapping");
         printf("filter-match-narrow language=%u pair=%ld clear=%ld..%ld %s\n",
                (unsigned)languages[at], any.right - group.left, clear.left - group.left,
                clear.right - group.left, beside ? "beside" : "below");
-        require(folio_state_clear_conditions(fixture->state) == FOLIO_STATE_READY,
-                "clear the narrow pair fixture");
+        int tree = chip_bounds(window, ACCESSIBLE_TREE).top;
+        require(tree >= clear.bottom, "the tree starts below the clear button, on either row");
+        chip_click(window, ACCESSIBLE_FILTER_CLEAR);
+        filter_settle(window, fixture);
+        require(!folio_state_conditions_active(fixture->state),
+                "a press on the clear button clears, on either row");
         folio_window_destroy(window);
     }
     require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
