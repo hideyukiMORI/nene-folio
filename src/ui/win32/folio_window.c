@@ -239,6 +239,7 @@ struct folio_window
     WNDPROC _Nullable filter_original;
     bool filter_composing;
     bool filter_saving; /* 保存中のmodalから戻るfocus通知の再入だけを抑止する。 */
+    bool filter_marked; /* 欄の「×」を出している（欄に字がある）。変わったときだけ欄を描き直す。 */
     bool root_composing;
     /* 押された部品は 1 つの値で持つ（ACCESSIBLE_WINDOW = 押されていない・ADR0060 の決定 4）。
      * マウスはcapture中に矩形の内外を pressed_inside に写し、Space は離すまで押下の見た目にする。
@@ -607,7 +608,7 @@ static bool settings_row_choice(size_t index)
 constexpr int command_control_id = 1;
 constexpr int filter_control_id = 2;
 constexpr size_t filter_input_capacity = 128;
-/* 絞り込みが効いているあいだ欄の右端に出す「×」（ADR 0024 の 2026-09-22 の補正 6）。
+/* 欄に字があるあいだ欄の右端に出す「×」（ADR 0024 の 2026-09-22 の補正 6・#1246 の補正）。
  * 箱は欄の高さに収まる 20px の正方形で、24 の viewBox はここへ写る（ADR 0033 の補正 9）。 */
 constexpr int base_filter_clear_size = 20;
 constexpr size_t command_input_capacity = 256;
@@ -2640,7 +2641,7 @@ static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice
 }
 
 /* 常設の欄はドロワーの頭の帯に重ねる。寸法はドロワーが答える（ADR 0024 の決定 6）。
- * 右端は「×」のぶんだけ常に空ける。出るのは絞り込み中だけだが、余白を出し入れすると
+ * 右端は「×」のぶんだけ常に空ける。出るのは欄に字があるときだけだが、余白を出し入れすると
  * 打っている途中で本文が動くので、いつも同じ幅にしておく（補正 6）。 */
 
 static void arrange_filter_input(struct folio_window *_Nonnull self)
@@ -14117,7 +14118,14 @@ static void paint_input_placeholder(const struct folio_window *_Nonnull self, HW
     ReleaseDC(window, device);
 }
 
-/* 絞り込みが効いているあいだ欄の右端に出す「×」の矩形（欄の client 座標）。
+/* 「×」は語を空にする印なので、欄に字があるときだけ出す・押せる。お気に入りやタグの条件だけが
+ * 効いているときは出さない（空の欄の案内の字に重なり、押しても何も起きなかった・#1246）。 */
+static bool filter_term_present(HWND window)
+{
+    return GetWindowTextLengthW(window) != 0;
+}
+
+/* 欄に字があるあいだ欄の右端に出す「×」の矩形（欄の client 座標）。
  * 幅は EM_SETMARGINS で常に空けてあるので、本文と重ならない（補正 6）。 */
 static RECT filter_clear_rect(const struct folio_window *_Nonnull self, HWND window)
 {
@@ -14133,10 +14141,10 @@ static RECT filter_clear_rect(const struct folio_window *_Nonnull self, HWND win
 
 /* 「×」は頭の draw_close と同じ面のパスで描く（ADR 0033 の決定 3・補正 9）。× を描く経路は 1 本。
  * 箱は filter_clear_rect が欄の高さに収め、倍率は icon_paint_fill が bounds から出す。
- * 絞り込みが効いていないあいだは出さない（出ていれば押せば解けるという意味になる）。 */
+ * 欄が空のあいだは出さない（出ていれば押せば語が消えるという意味になる）。 */
 static void paint_filter_clear(const struct folio_window *_Nonnull self, HWND window)
 {
-    if (!folio_state_filtering(self->state))
+    if (!filter_term_present(window))
     {
         return;
     }
@@ -14155,7 +14163,23 @@ static void paint_filter_clear(const struct folio_window *_Nonnull self, HWND wi
 static bool filter_clear_at(const struct folio_window *_Nonnull self, HWND window, POINT point)
 {
     RECT bounds = filter_clear_rect(self, window);
-    return folio_state_filtering(self->state) && PtInRect(&bounds, point);
+    return filter_term_present(window) && PtInRect(&bounds, point);
+}
+
+/* 「×」が出入りするのは、欄に字が入ったときと空になったときだけ。打つたびに欄を消して描き直すと
+ * ちらつくので、変わった 1 回だけ欄ごと描き直す（補正 6・#1246）。欄の字が変わる道（打鍵・貼り
+ * 付け・変換中・プログラムからの書き換え）は、絞り込みの門（変換中・保存中は絞り直さない）を
+ * 通らないものがあるので、欄がメッセージを処理し終えるたびに、ここ 1 か所で比べる。 */
+static void sync_filter_mark(struct folio_window *_Nonnull self, HWND window)
+{
+    /* 字数は元の EDIT へ直に聞く。欄へ送ると、その処理の終わりでまたここへ来て終わらない。 */
+    bool marked = self->filter_original != nullptr &&
+                  CallWindowProcW(self->filter_original, window, WM_GETTEXTLENGTH, 0, 0) != 0;
+    if (marked != self->filter_marked)
+    {
+        self->filter_marked = marked;
+        InvalidateRect(window, nullptr, TRUE);
+    }
 }
 
 static bool filter_clear_pressed(struct folio_window *_Nonnull self, HWND window, LPARAM lparam)
@@ -14285,19 +14309,17 @@ static LRESULT CALLBACK filter_input_message(HWND window, UINT message, WPARAM w
                                                            folio_state_language(self->state)));
         paint_filter_clear(self, window);
     }
+    if (message != WM_NCDESTROY)
+    {
+        sync_filter_mark(self, window); /* 壊れた後の窓へは聞かない */
+    }
     return result;
 }
 
 /* 準備開始/取消/完成/失敗は同じ表示更新へ合流する。本文の投入は行わない。 */
-static void refresh_index_filter(struct folio_window *_Nonnull self, bool was_filtering)
+static void refresh_index_filter(struct folio_window *_Nonnull self)
 {
     settle_empty_drawer_focus(self);
-    /* 「×」が出入りするのは効き始めと解けたときだけ。打つたびに欄を消して描き直すと
-     * ちらつくので、変わった 1 回だけ欄ごと描き直す（補正 6）。 */
-    if (folio_state_filtering(self->state) != was_filtering)
-    {
-        InvalidateRect(self->filter_input, nullptr, TRUE);
-    }
     if (self->drawer != nullptr)
     {
         drawer_window_reveal_cursor(self->drawer);
@@ -14317,7 +14339,6 @@ static void filter_input_changed(struct folio_window *_Nonnull self)
     }
     wchar_t units[filter_input_capacity];
     int count = GetWindowTextW(self->filter_input, units, (int)filter_input_capacity);
-    bool was_filtering = folio_state_filtering(self->state);
     enum folio_state_outcome filtered = folio_state_set_index_filter(
         self->state, (const char16_t *)units, count > 0 ? (size_t)count : 0);
     if (filtered == FOLIO_STATE_OUT_OF_MEMORY)
@@ -14325,7 +14346,7 @@ static void filter_input_changed(struct folio_window *_Nonnull self)
         report_outcome(self, filtered);
         return;
     }
-    refresh_index_filter(self, was_filtering);
+    refresh_index_filter(self);
 }
 
 /* Ctrl+Shift+F は常設の欄へフォーカスを移し、いまの語を全選択する（ADR 0024 の決定 6）。 */
@@ -20737,7 +20758,6 @@ static enum folio_idle_work ready_idle_work(const struct folio_window *_Nonnull 
 static void continue_index_filter(struct folio_window *_Nonnull self)
 {
     folio_window_begin_dispatch(self);
-    bool was_filtering = folio_state_filtering(self->state);
     enum tag_catalog_status before = folio_state_tag_catalog_status(self->state);
     enum folio_state_outcome outcome = folio_state_continue_index_filter(self->state);
     if (tag_surface(self) && before != folio_state_tag_catalog_status(self->state))
@@ -20746,7 +20766,7 @@ static void continue_index_filter(struct folio_window *_Nonnull self)
         tag_action_finished(self, outcome);
     if (!folio_state_index_filter_pending(self->state))
     {
-        refresh_index_filter(self, was_filtering);
+        refresh_index_filter(self);
         if (part_enabled(self, ACCESSIBLE_TREE))
             refresh_after_input(self);
         if (outcome != FOLIO_STATE_READY && part_enabled(self, ACCESSIBLE_TREE))
