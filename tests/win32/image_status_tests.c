@@ -11407,6 +11407,18 @@ static void note_tag_labels(struct folio_window *_Nonnull window)
     printf("tag-label tip=%d corner=%d\n", pointed, cut);
     require(pointed >= MulDiv(6, dpi, 96) && cut == 0,
             "a tag label has a point at its left, not a square corner");
+    /* The second label starts one gap (6 DIP) after the first, with its own point; the button
+     * comes after both and the whole entry stays inside the pane. The point is searched in a
+     * band around where the first label's measured width puts it. */
+    int second = row.left + ends + red + MulDiv(6, dpi, 96);
+    RECT next = {second - MulDiv(4, dpi, 96), middle - 1, second + MulDiv(9, dpi, 96), middle + 1};
+    int following = root_ink_width(window, next);
+    RECT client;
+    GetClientRect(root, &client);
+    printf("tag-label second=%d right=%ld of %ld\n", following, row.right, client.right);
+    require(following >= MulDiv(5, dpi, 96), "the second tag has its own label after a gap");
+    require(row.right <= client.right - MulDiv(16, dpi, 96),
+            "the row's button ends inside the pane's edge");
 }
 
 static void run_tags_case(struct native_fixture *_Nonnull fixture)

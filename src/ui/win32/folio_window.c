@@ -6263,8 +6263,50 @@ static int tag_strip_widths(const struct folio_window *_Nonnull self, int limit,
     return add;
 }
 
-/* ノートのタグの行の配置（#1263）。左の欄の札と同じ並べ方（chip_flow）を 1 行で使う: 入るだけ
- * 荷札を置き、残りは「+N」、最後に「＋ タグ」の釦。行が隠れているあいだは、全部が空。 */
+/* ノートのタグの行の並び（行の左端からの相対）。左の欄の札と同じ並べ方（chip_flow）を 1 行で
+ * 使う: 入るだけ荷札を置き、残りは「+N」、最後に「＋ タグ」の釦。add に釦の幅を返す。 */
+static struct chip_flow_result tag_strip_flow(const struct folio_window *_Nonnull self,
+                                              int available,
+                                              struct chip_flow_place *_Nonnull places,
+                                              int *_Nonnull add)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    int gap = scale(base_tag_label_gap, dpi);
+    int widths[note_tags_max_count] = {0};
+    int more = 0;
+    *add = tag_strip_widths(self, scale(base_tag_label_limit, dpi), widths, &more);
+    size_t count = tag_strip_label_count(self);
+    struct chip_flow_result alone = {.shown = 0, .rows = 1, .opener = {.left = 0, .width = *add}};
+    if (count == 0)
+        return alone;
+    /* 1 つ目の荷札と釦は必ず置かれる。1 行に入るように、1 つ目の幅を行に合わせて切る。タグが
+     * 2 つ以上なら、畳んだときの「+N」の分も空けておく。 */
+    int room = available - *add - gap - (count > 1 ? more + gap : 0);
+    int least = scale(base_tag_label_least, dpi);
+    if (widths[0] > room)
+        widths[0] = room > least ? room : least;
+    struct chip_flow_input input = {.widths = widths,
+                                    .count = count,
+                                    .opener_width = *add,
+                                    .more_width = more,
+                                    .available = available,
+                                    .height = scale(base_tag_label_height, dpi),
+                                    .gap = gap,
+                                    .row_gap = 0,
+                                    .rows = 1};
+    struct chip_flow_result placed = chip_flow_arrange(&input, places);
+    if (placed.rows <= 1)
+        return placed;
+    /* 1 つ目の荷札を最小まで切っても 1 行に入らない幅。荷札は出さず、「+N」と釦だけを左から
+     * 置く（2 行目へ送られた分を、1 行目に重ねて描かない）。 */
+    return (struct chip_flow_result){.shown = 0,
+                                     .hidden = count,
+                                     .rows = 1,
+                                     .more = {.left = 0, .top = 0, .width = more},
+                                     .opener = {.left = more + gap, .top = 0, .width = *add}};
+}
+
+/* ノートのタグの行の配置（#1263）。行が隠れているあいだは、全部が空。 */
 static void tag_strip_arrange(const struct folio_window *_Nonnull self,
                               struct tag_strip_layout *_Nonnull out)
 {
@@ -6275,29 +6317,9 @@ static void tag_strip_arrange(const struct folio_window *_Nonnull self,
     UINT dpi = GetDpiForWindow(self->handle);
     int height = scale(base_tag_label_height, dpi);
     int top = row.top + (row.bottom - row.top - height) / 2;
-    int gap = scale(base_tag_label_gap, dpi);
-    int widths[note_tags_max_count] = {0};
-    int more = 0;
-    int add = tag_strip_widths(self, scale(base_tag_label_limit, dpi), widths, &more);
-    size_t count = tag_strip_label_count(self);
-    /* 1 つ目の荷札と釦は必ず置かれる。2 つが 1 行に入るように、1 つ目の幅を行に合わせて切る。 */
-    int room = row.right - row.left - add - gap;
-    int least = scale(base_tag_label_least, dpi);
-    if (count > 0 && widths[0] > room)
-        widths[0] = room > least ? room : least;
     struct chip_flow_place places[note_tags_max_count] = {0};
-    struct chip_flow_input input = {.widths = widths,
-                                    .count = count,
-                                    .opener_width = add,
-                                    .more_width = more,
-                                    .available = row.right - row.left,
-                                    .height = height,
-                                    .gap = gap,
-                                    .row_gap = 0,
-                                    .rows = 1};
-    struct chip_flow_result placed = {.shown = 0};
-    if (count > 0)
-        placed = chip_flow_arrange(&input, places);
+    int add = 0;
+    struct chip_flow_result placed = tag_strip_flow(self, row.right - row.left, places, &add);
     out->shown = placed.shown;
     out->hidden = placed.hidden;
     for (size_t at = 0; at < placed.shown; ++at)
@@ -6306,7 +6328,7 @@ static void tag_strip_arrange(const struct folio_window *_Nonnull self,
     if (placed.hidden > 0)
         out->more = (RECT){row.left + placed.more.left, top,
                            row.left + placed.more.left + placed.more.width, top + height};
-    int left = count > 0 ? row.left + placed.opener.left : row.left;
+    int left = row.left + placed.opener.left;
     int chip = scale(ui_part_chip_height, dpi);
     int right = left + add < row.right ? left + add : row.right;
     out->add = (RECT){left, row.top + (row.bottom - row.top - chip) / 2, right,
@@ -20885,6 +20907,21 @@ static bool current_unsaved(const struct folio_window *_Nonnull self, uint64_t r
     return true;
 }
 
+/* 荷札の行は、ノートの順で並べる。同じ集合でも、順番が違えば描き直す（note_tags_equal は順番を
+ * 見ない）。 */
+static bool tag_lists_same(const struct note_tags *_Nonnull left,
+                           const struct note_tags *_Nullable right)
+{
+    if (right == nullptr || note_tags_count(left) != note_tags_count(right))
+        return false;
+    for (size_t at = 0; at < note_tags_count(left); ++at)
+    {
+        if (!note_tag_equal(note_tags_at(left, at), note_tags_at(right, at)))
+            return false;
+    }
+    return true;
+}
+
 static void settle_tag_strip(struct folio_window *_Nonnull self, uint64_t revision)
 {
     if (!unsaved_needs_compare(self, revision))
@@ -20896,8 +20933,7 @@ static void settle_tag_strip(struct folio_window *_Nonnull self, uint64_t revisi
     if (outcome == FOLIO_STATE_READY)
         outcome = folio_state_note_tags(self->state, units, count, &tags);
     bool same = outcome == self->tag_strip_outcome &&
-                (tags == nullptr ||
-                 (self->tag_strip_tags != nullptr && note_tags_equal(tags, self->tag_strip_tags)));
+                (tags == nullptr || tag_lists_same(tags, self->tag_strip_tags));
     if (same)
     {
         note_tags_destroy(tags);
