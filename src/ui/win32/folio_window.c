@@ -4378,7 +4378,9 @@ static void draw_layout_command(const struct folio_window *_Nonnull self, HDC de
     draw_utf8(device, folio_command_label(row.command, language), line);
     line.left = line.right;
     line.right = row.bounds.right - scale(base_command_row_padding, dpi);
+    HGDIOBJ words = SelectObject(device, self->mono_font); /* キーの名前は等幅（#1262） */
     draw_utf8(device, folio_shortcut_command_hint(layout_buttons[index].command, language), line);
+    SelectObject(device, words);
 }
 
 static void draw_aliases(const struct folio_window *_Nonnull self, HDC device,
@@ -4424,7 +4426,9 @@ static void draw_command_row(const struct folio_window *_Nonnull self, HDC devic
     aliases.right -= scale(base_command_row_padding, dpi);
     aliases.left = aliases.right;
     SetTextColor(device, row.selected ? self->palette.selected_text : self->palette.header_text);
+    HGDIOBJ words = SelectObject(device, self->mono_font); /* 別名（`:w` など）は等幅（#1262） */
     draw_aliases(self, device, row.command, aliases);
+    SelectObject(device, words);
 }
 
 /* いまの向きを欄に示す（`/` で開けば次へ、`?` で開けば前へ・ADR 0023 の決定 4）。 */
@@ -4826,7 +4830,9 @@ static void draw_command_pages(const struct folio_window *_Nonnull self, HDC dev
     if (ui_text_format(&request, line, sizeof line) == UI_TEXT_FORMAT_READY)
     {
         SetTextColor(device, self->palette.current_text);
+        HGDIOBJ words = SelectObject(device, self->mono_font); /* 数字は等幅（#1262） */
         draw_utf8(device, line, command_pages_rect(self));
+        SelectObject(device, words);
     }
 }
 
@@ -5892,6 +5898,34 @@ static void history_row_text(const struct folio_window *_Nonnull self,
     }
 }
 
+/* 版の行の字面を描く。頭の版の番号と、その後ろの空白は等幅（番号の桁がそろう）、残り（本文の
+ * 最初の行・「読めません」）は、入ってきた書体＝言葉の書体のまま（#1262）。 */
+static void draw_history_text(const struct folio_window *_Nonnull self, HDC device,
+                              const char *_Nonnull text, RECT label)
+{
+    char number[history_line_capacity];
+    size_t split = 0;
+    while (text[split] >= '0' && text[split] <= '9')
+    {
+        number[split] = text[split];
+        split += 1;
+    }
+    while (text[split] == ' ')
+    {
+        number[split] = text[split];
+        split += 1;
+    }
+    number[split] = '\0';
+    HGDIOBJ words = SelectObject(device, self->mono_font);
+    draw_utf8(device, number, label);
+    label.left += measure_utf8(device, number);
+    SelectObject(device, words);
+    if (label.left < label.right)
+    {
+        draw_utf8(device, text + split, label);
+    }
+}
+
 /* 1 行分を描く。読めない版は薄い文字で、選べるが Enter は欄の 1 行で断られる（決定 12）。
  * 行が無ければ false（application が一覧を捨てた後など）。 */
 static bool draw_history_row(const struct folio_window *_Nonnull self, HDC device, RECT row,
@@ -5918,7 +5952,7 @@ static bool draw_history_row(const struct folio_window *_Nonnull self, HDC devic
     history_row_text(self, &view, text);
     COLORREF color = view.readable ? self->palette.current_text : self->palette.header_text;
     SetTextColor(device, selected ? self->palette.selected_text : color);
-    draw_utf8(device, text, label);
+    draw_history_text(self, device, text, label);
     return true;
 }
 
@@ -5994,15 +6028,31 @@ static void draw_palette_rows(const struct folio_window *_Nonnull self, HDC devi
 static void draw_help_surface(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     ui_part_draw_surface(device, &self->palette, bounds);
+    /* 題・コマンドの名前・群の見出し・札・知らせは言葉（#1262）。別名・キーの名前・ページの印は、
+     * 描く所で等幅に替える。キーの札の中身は、自分の書体（help_fonts）で描く。 */
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     draw_floating_header(self, device, UI_TEXT_COMMAND_HELP);
     if (command_keys(self))
     {
         draw_command_shortcuts(self, device, bounds);
         draw_command_guidance(self, device);
-        return;
     }
-    draw_palette_rows(self, device, bounds);
-    draw_input_field(self, device, self->command_input, command_input_rect(self));
+    else
+    {
+        draw_palette_rows(self, device, bounds);
+        draw_input_field(self, device, self->command_input, command_input_rect(self));
+    }
+    SelectObject(device, previous);
+}
+
+/* 履歴の面。題・行の名前・案内・知らせは言葉の書体、行の頭の版の番号は等幅（#1262）。 */
+static void draw_history_surface(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
+{
+    ui_part_draw_surface(device, &self->palette, bounds);
+    HGDIOBJ previous = SelectObject(device, word_font(self));
+    draw_floating_header(self, device, UI_TEXT_COMMAND_HISTORY);
+    draw_history_rows(self, device, bounds);
+    SelectObject(device, previous);
 }
 
 static void draw_command_surface(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
@@ -6061,9 +6111,7 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
         return;
     case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
-        ui_part_draw_surface(device, &self->palette, bounds);
-        draw_floating_header(self, device, UI_TEXT_COMMAND_HISTORY);
-        draw_history_rows(self, device, bounds);
+        draw_history_surface(self, device, bounds);
         return;
     }
 }

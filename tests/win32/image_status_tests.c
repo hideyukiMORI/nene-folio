@@ -1388,6 +1388,9 @@ static void expect_editor(struct folio_window *_Nonnull window,
             "canonical unsaved comparison matches the editor");
 }
 
+static void history_row_fonts(struct folio_window *_Nonnull window, struct accessible_item row);
+static void palette_row_word_font(struct folio_window *_Nonnull window);
+
 static void adopt_history(struct folio_window *_Nonnull window, struct folio_state *_Nonnull state,
                           size_t index, const char *_Nonnull expected)
 {
@@ -1403,6 +1406,7 @@ static void adopt_history(struct folio_window *_Nonnull window, struct folio_sta
     require(folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &row) ==
                 S_OK,
             "history exposes a first row");
+    history_row_fonts(window, row);
     for (size_t at = 0; at < index; ++at)
         require(folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_NEXT, &row) ==
                     S_OK,
@@ -2924,6 +2928,7 @@ static void palette_roundtrip(struct folio_window *_Nonnull window,
     capture_native_body(window, &snapshot);
     palette_query(window, L"write", S_OK);
     surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    palette_row_word_font(window);
     expect_native_body(window, &snapshot);
     verify_history_unchanged(fixture, history);
     palette_query(window, L"no-such-palette-command", S_FALSE);
@@ -12929,19 +12934,16 @@ static void text_menu_edit_rows(struct folio_window *_Nonnull window, HWND _Nonn
     require(!text_menu_row(window, 0).enabled, "nothing to undo in an unchanged note");
 }
 
-/* A menu row says its name in the language's face; the key beside it stays monospace. The row
- * is read from the surface's own window: the name's ink is as wide as the language's face makes
- * "name (key)". The band ends just past the name (it starts 16 DIP in), before the key that is
- * drawn at the row's right. */
-static void menu_row_word_font(struct folio_window *_Nonnull window, size_t slot)
+/* A row that starts with its name says the name in the language's face; what is drawn at the
+ * row's right (a key, an alias) stays monospace. The row is read from the surface's own window:
+ * the name's ink is as wide as the language's face makes it. The band ends just past the name
+ * (it starts `start` DIP into the row), before what is drawn at the right. bounds is a screen
+ * rectangle. The window must be in Japanese. */
+static void surface_label_word_font(struct folio_window *_Nonnull window, RECT bounds,
+                                    const wchar_t *_Nonnull label, int start)
 {
     HWND layer = folio_window_accessible_window(window, ACCESSIBLE_SURFACE);
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
-    struct accessible_view row = text_menu_row(window, slot);
-    wchar_t label[128];
-    require(swprintf(label, 128, L"%ls (%ls)", (const wchar_t *)row.name,
-                     (const wchar_t *)row.access_key) > 0,
-            "the menu row's label fits");
     wchar_t face[LF_FACESIZE];
     ui_face_for(FOLIO_LANGUAGE_JA, face);
     wchar_t mono[LF_FACESIZE];
@@ -12949,17 +12951,17 @@ static void menu_row_word_font(struct folio_window *_Nonnull window, size_t slot
     struct header_font words = {face, 11, FW_NORMAL}, values = {mono, mono_size, FW_NORMAL};
     int expected = header_text_width(root, label, words);
     int monospace = header_text_width(root, label, values);
-    MapWindowPoints(nullptr, layer, (POINT *)&row.bounds, 2);
+    MapWindowPoints(nullptr, layer, (POINT *)&bounds, 2);
     RECT client;
     GetClientRect(layer, &client);
     HDC source = GetDC(layer), dc = CreateCompatibleDC(source);
     HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
     HGDIOBJ old = SelectObject(dc, bitmap);
-    require(PrintWindow(layer, dc, PW_CLIENTONLY), "render the menu's own window");
+    require(PrintWindow(layer, dc, PW_CLIENTONLY), "render the surface's own window for a label");
     int inset = MulDiv(6, (int)GetDpiForWindow(root), 96);
-    RECT band = {row.bounds.left + inset, row.bounds.top + inset,
-                 row.bounds.left + MulDiv(16, (int)GetDpiForWindow(root), 96) + expected + 4,
-                 row.bounds.bottom - inset};
+    RECT band = {bounds.left + inset, bounds.top + inset,
+                 bounds.left + MulDiv(start, (int)GetDpiForWindow(root), 96) + expected + 4,
+                 bounds.bottom - inset};
     COLORREF ground = GetPixel(dc, band.left, band.top);
     int first = band.right, last = band.left;
     for (int x = band.left; x < band.right; ++x)
@@ -12975,13 +12977,109 @@ static void menu_row_word_font(struct folio_window *_Nonnull window, size_t slot
     DeleteDC(dc);
     ReleaseDC(layer, source);
     int drawn = last >= first ? last - first + 1 : 0;
-    printf("menu-word-face drawn=%d expected=%d monospace=%d\n", drawn, expected, monospace);
+    printf("label-word-face drawn=%d expected=%d monospace=%d\n", drawn, expected, monospace);
     /* The band ends just past the expected width, so a wider drawing would be cut and could
      * pass: the check holds only while the monospace drawing is the narrower one. */
     require(expected - monospace >= 5,
             "the row's label is clearly narrower in the monospace face, so the check can tell");
     require(drawn >= expected - 3 && drawn <= expected + 3,
-            "a menu row's name is drawn in the language's face");
+            "a row's name is drawn in the language's face");
+}
+
+/* A menu row's name is "name (key)"; it starts 16 DIP in. */
+static void menu_row_word_font(struct folio_window *_Nonnull window, size_t slot)
+{
+    struct accessible_view row = text_menu_row(window, slot);
+    wchar_t label[128];
+    require(swprintf(label, 128, L"%ls (%ls)", (const wchar_t *)row.name,
+                     (const wchar_t *)row.access_key) > 0,
+            "the menu row's label fits");
+    surface_label_word_font(window, row.bounds, label, 16);
+}
+
+/* The palette's rows say the command's name in the language's face (the aliases at the right
+ * stay monospace). The first row whose name is long enough to tell the faces apart is read; a
+ * row's name starts 12 DIP in. */
+static void palette_row_word_font(struct folio_window *_Nonnull window)
+{
+    struct accessible_request open = {.item = {.kind = ACCESSIBLE_HELP},
+                                      .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &open) == S_OK, "open the palette for its rows");
+    pump(window);
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_item row;
+    struct accessible_view view = {0};
+    HRESULT found =
+        folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &row);
+    while (found == S_OK)
+    {
+        require(folio_window_accessible_read(window, &row, &view) == S_OK, "read a palette row");
+        if (wcslen((const wchar_t *)view.name) >= 8 && !view.offscreen)
+            break;
+        found = folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_NEXT, &row);
+    }
+    require(found == S_OK, "the palette shows a row with a long name");
+    surface_label_word_font(window, view.bounds, (const wchar_t *)view.name, 12);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+/* A history row starts with the version's number in the monospace face (with the spaces after
+ * it), then says the note's first line in the language's face. The ink from the row's first
+ * inked column to its last is as wide as that mix. An all-ASCII run is drawn with the layer's
+ * tracking (1 DIP a character); the first line holds a non-ASCII character and is not. */
+static void history_row_fonts(struct folio_window *_Nonnull window, struct accessible_item row)
+{
+    HWND layer = folio_window_accessible_window(window, ACCESSIBLE_SURFACE);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &row, &view) == S_OK, "read a history row");
+    const wchar_t *text = (const wchar_t *)view.name;
+    wchar_t number[16] = {0};
+    size_t split = wcsspn(text, L"0123456789");
+    split += wcsspn(text + split, L" ");
+    require(split > 0 && split < 16 && text[split] != L'\0',
+            "a history row is a number and a line");
+    wmemcpy(number, text, split);
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    wchar_t mono[LF_FACESIZE];
+    int mono_size = ui_face_mono(mono, 11);
+    struct header_font words = {face, 11, FW_NORMAL}, values = {mono, mono_size, FW_NORMAL};
+    int expected = header_text_width(root, number, values) + (int)split * MulDiv(1, dpi, 96) +
+                   header_text_width(root, text + split, words);
+    int monospace = header_text_width(root, text, values);
+    MapWindowPoints(nullptr, layer, (POINT *)&view.bounds, 2);
+    RECT client;
+    GetClientRect(layer, &client);
+    HDC source = GetDC(layer), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(layer, dc, PW_CLIENTONLY), "render the history's own window");
+    int inset = MulDiv(6, dpi, 96);
+    RECT band = {view.bounds.left + inset, view.bounds.top + inset, view.bounds.right - inset,
+                 view.bounds.bottom - inset};
+    COLORREF ground = GetPixel(dc, band.right - 1, band.top);
+    int first = band.right, last = band.left;
+    for (int x = band.left; x < band.right; ++x)
+    {
+        if (line_ink(dc, (RECT){x, band.top, x + 1, band.bottom}, ground) != 0)
+        {
+            first = x < first ? x : first;
+            last = x;
+        }
+    }
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(layer, source);
+    int drawn = last >= first ? last - first + 1 : 0;
+    printf("history-row-face drawn=%d expected=%d monospace=%d\n", drawn, expected, monospace);
+    require(monospace - expected >= 10 || expected - monospace >= 10,
+            "the row's text tells the two faces apart");
+    require(drawn >= expected - 5 && drawn <= expected + 5,
+            "a history row draws its number monospace and its line in the language's face");
 }
 
 /* The reading view's menu: Copy, Copy as Markdown | Edit here | Select all (#1012). */
