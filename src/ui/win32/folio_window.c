@@ -2827,7 +2827,7 @@ static struct note_outline_paint outline_paint_for(const struct folio_window *_N
     return (struct note_outline_paint){.bounds = outline_rect(self),
                                        .focused = part_focus_shown(self, ACCESSIBLE_OUTLINE),
                                        .dpi = GetDpiForWindow(self->handle),
-                                       .font = self->mono_font,
+                                       .font = word_font(self), /* 題と見出しは言葉（#1253） */
                                        .palette = &self->palette,
                                        .title = title,
                                        .empty = empty};
@@ -6148,7 +6148,9 @@ static void draw_tag_strip(const struct folio_window *_Nonnull self, HDC device)
     char text[ui_text_unit_limit];
     tag_strip_text(self, text, sizeof text);
     SetTextColor(device, ink.text);
+    HGDIOBJ previous = SelectObject(device, word_font(self)); /* 言葉の書体（#1253） */
     draw_utf8(device, text, ink.label);
+    SelectObject(device, previous);
 }
 
 /* 本文操作帯の A 様式の群（帯 36 = 4+28+4）。幅は現在の言語の字面を頭と同じ等幅の書体と字間で
@@ -6586,9 +6588,12 @@ static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC devic
 
 /* 新しいノートの作成先の 1 行（ADR0060 の決定 12・13）。作成先の規則は Ctrl+N と同じ
  * folio_state_current_category。tooltip・UIA の HelpText・空状態の案内がこの 1 本を使う。
- * カテゴリが 0 件なら作れない理由。out は draw_unit_limit バイトの入れ物。 */
-static void new_note_destination(const struct folio_window *_Nonnull self, char *_Nonnull out)
+ * カテゴリが 0 件なら作れない理由。out は draw_unit_limit バイトの入れ物。marked のときは、
+ * キーの名前に印を付ける（案内を描く側だけが使う。下の帯と同じ印）。 */
+static void new_note_destination(const struct folio_window *_Nonnull self, char *_Nonnull out,
+                                 bool marked)
 {
+    char key[draw_unit_limit];
     enum folio_language language = folio_state_language(self->state);
     struct ui_text_request request = {.id = UI_TEXT_NEW_NOTE_NO_CATEGORY, .language = language};
     if (folio_state_category_count(self->state) > 0)
@@ -6596,7 +6601,8 @@ static void new_note_destination(const struct folio_window *_Nonnull self, char 
         request.id = UI_TEXT_TOOLTIP_NEW_NOTE;
         request.name =
             folio_state_category_name(self->state, folio_state_current_category(self->state));
-        request.from = folio_shortcut_command_hint(FOLIO_COMMAND_NEW, language);
+        request.from =
+            status_value(folio_shortcut_command_hint(FOLIO_COMMAND_NEW, language), key, marked);
     }
     if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
     {
@@ -6617,16 +6623,53 @@ static RECT guide_rect(const struct folio_window *_Nonnull self)
                   client.bottom - scale(base_pane_bottom, dpi)};
 }
 
-/* 空状態の案内の 4 行（見出し・本文・作成先・キー）。文言は ui_text が持つ。 */
+/* 空状態の案内の 4 行（見出し・本文・作成先・キー）。文言は ui_text が持ち、キーの名前は、キーの
+ * 割り当ての表から差し込む。text は、作成先とキーの行の入れ物。marked のときは、キーの名前に
+ * 印を付ける（描く側だけ）。 */
 static void guide_lines(const struct folio_window *_Nonnull self,
-                        const char *_Nonnull *_Nonnull out, char *_Nonnull destination)
+                        const char *_Nonnull *_Nonnull out, char (*_Nonnull text)[draw_unit_limit],
+                        bool marked)
 {
     enum folio_language language = folio_state_language(self->state);
-    new_note_destination(self, destination);
+    char search[draw_unit_limit];
+    char help[draw_unit_limit];
+    struct ui_text_request keys = {
+        .id = UI_TEXT_EMPTY_KEYS,
+        .language = language,
+        .from = status_value(folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_FILTER, language),
+                             search, marked),
+        .to =
+            status_value(folio_shortcut_command_hint(FOLIO_COMMAND_HELP, language), help, marked)};
+    new_note_destination(self, text[0], marked);
+    if (ui_text_format(&keys, text[1], draw_unit_limit) != UI_TEXT_FORMAT_READY)
+    {
+        text[1][0] = '\0';
+    }
     out[0] = ui_text_line(UI_TEXT_EMPTY_HEADING, language);
     out[1] = ui_text_line(UI_TEXT_EMPTY_BODY, language);
-    out[2] = destination;
-    out[3] = ui_text_line(UI_TEXT_EMPTY_KEYS, language);
+    out[2] = text[0];
+    out[3] = text[1];
+}
+
+/* 案内の 1 行（#1253）。言葉は言葉の書体、キーの名前（印の中）は等幅で、1 行に描く（下の帯と
+ * 同じ 1 本）。入らない幅では、印の無い同じ文を、言葉の書体で折り返す。返すのは描いた高さ。 */
+static int draw_guide_line(const struct folio_window *_Nonnull self, HDC device,
+                           const char *_Nonnull const *_Nonnull line, RECT bounds)
+{
+    bool fits = status_line(self, device, line[0], nullptr) <= bounds.right - bounds.left;
+    SelectObject(device, word_font(self)); /* status_line は、等幅に戻して終わる */
+    if (!fits)
+    {
+        return draw_units(device, line[1], bounds, DT_WORDBREAK | DT_NOPREFIX);
+    }
+    TEXTMETRICW metrics = {0};
+    GetTextMetricsW(device, &metrics);
+    /* 案内の矩形の下端を超えない（折り返しの道が、矩形で切るのと同じ）。 */
+    int bottom = bounds.top + metrics.tmHeight;
+    RECT row = {bounds.left, bounds.top, bounds.right,
+                bottom < bounds.bottom ? bottom : bounds.bottom};
+    (void)status_line(self, device, line[0], &row);
+    return metrics.tmHeight;
 }
 
 static void draw_guide(const struct folio_window *_Nonnull self, HDC device)
@@ -6635,18 +6678,23 @@ static void draw_guide(const struct folio_window *_Nonnull self, HDC device)
     {
         return;
     }
-    const char *lines[4] = {"", "", "", ""};
-    char destination[draw_unit_limit];
-    guide_lines(self, lines, destination);
+    const char *marked[4] = {"", "", "", ""};
+    const char *plain[4] = {"", "", "", ""};
+    char marked_text[2][draw_unit_limit];
+    char plain_text[2][draw_unit_limit];
+    guide_lines(self, marked, marked_text, true);
+    guide_lines(self, plain, plain_text, false);
     const COLORREF colors[4] = {self->palette.category_text, self->palette.current_text,
                                 self->palette.header_text, self->palette.header_text};
     RECT bounds = guide_rect(self);
     int gap = scale(base_guide_gap, GetDpiForWindow(self->handle));
     for (size_t index = 0; index < 4 && bounds.top < bounds.bottom; ++index)
     {
+        const char *line[2] = {marked[index], plain[index]};
         SetTextColor(device, colors[index]);
-        bounds.top += draw_units(device, lines[index], bounds, DT_WORDBREAK | DT_NOPREFIX) + gap;
+        bounds.top += draw_guide_line(self, device, line, bounds) + gap;
     }
+    SelectObject(device, self->mono_font); /* 右の欄の土台の書体へ戻す */
 }
 
 /* 新しいノートは A 様式の単独の釦。狭幅では絵だけに縮める（ADR0059 / ADR0060）。 */
@@ -12681,7 +12729,7 @@ static void part_tooltip(const struct folio_window *_Nonnull self, enum accessib
     if (kind == ACCESSIBLE_NEW_NOTE)
     {
         /* 表示のたびに作成先を組む（ADR0060 の決定 12）。字の有無に依らず同じ 1 行。 */
-        new_note_destination(self, out);
+        new_note_destination(self, out, false);
         return;
     }
     if (kind == ACCESSIBLE_HELP)
@@ -18834,8 +18882,8 @@ static void accessible_name(const struct folio_window *_Nonnull self, enum acces
 static void guide_help(const struct folio_window *_Nonnull self, char16_t *_Nonnull out)
 {
     const char *lines[4] = {"", "", "", ""};
-    char destination[draw_unit_limit];
-    guide_lines(self, lines, destination);
+    char text[2][draw_unit_limit];
+    guide_lines(self, lines, text, false);
     char joined[draw_unit_limit];
     joined[0] = '\0';
     size_t at = 0;
@@ -18894,7 +18942,7 @@ static void accessible_details(const struct folio_window *_Nonnull self, enum ac
     if (kind == ACCESSIBLE_NEW_NOTE)
     {
         char line[draw_unit_limit];
-        new_note_destination(self, line);
+        new_note_destination(self, line, false);
         (void)wide_units(line, out->help);
     }
     if (kind == ACCESSIBLE_LAYOUT_CHOOSER)

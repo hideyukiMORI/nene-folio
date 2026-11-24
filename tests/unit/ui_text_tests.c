@@ -15,6 +15,7 @@
  *   - この単位で新しく足した 5 つの ID（HELP_EX_SET_LANGUAGE・SETTINGS_LANGUAGE と 3 つの自称） */
 #include "folio_command.h"
 #include "folio_language.h"
+#include "folio_shortcut.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "unit_tests.h"
@@ -684,7 +685,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_NEW_NOTE_NO_CATEGORY] = "カテゴリがありません。先にカテゴリを作ります",
     [UI_TEXT_EMPTY_HEADING] = "ノートが選ばれていません",
     [UI_TEXT_EMPTY_BODY] = "左の一覧からノートを選ぶか、新しいノートを作ります",
-    [UI_TEXT_EMPTY_KEYS] = "すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
+    [UI_TEXT_EMPTY_KEYS] = "すべてのノートを検索: {from} ／ ヘルプ: {to}",
     [UI_TEXT_COMMAND_CAPTION] = "{name}",
     [UI_TEXT_COMMAND_INPUT_CAPTION] = "{name}…",
     [UI_TEXT_MENU_ACCESS_CAPTION] = "{name} ({from})",
@@ -1279,8 +1280,8 @@ static void verify_action_bar_texts(void)
         {"左の一覧からノートを選ぶか、新しいノートを作ります",
          "Choose a note from the list on the left, or create a new note",
          "从左侧列表选择笔记，或新建笔记"},
-        {"すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
-         "Search all notes: Ctrl+Shift+F / Help: F1", "搜索全部笔记: Ctrl+Shift+F ／ 帮助: F1"},
+        {"すべてのノートを検索: {from} ／ ヘルプ: {to}", "Search all notes: {from} / Help: {to}",
+         "搜索全部笔记: {from} ／ 帮助: {to}"},
     };
     for (size_t row = 0; row < sizeof ids / sizeof ids[0]; ++row)
     {
@@ -1327,6 +1328,20 @@ static void verify_action_bar_formats(void)
         require(ui_text_format(&request, line, sizeof line) == UI_TEXT_FORMAT_READY &&
                     same_text(line, "仕事 / メモ"),
                 "the saved breadcrumb name is the category and the note");
+        /* #1253: the guide's key line takes its key names from the binding table. The finished
+         * line is the one the catalogue used to spell out. */
+        const char *const keys[] = {"すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
+                                    "Search all notes: Ctrl+Shift+F / Help: F1",
+                                    "搜索全部笔记: Ctrl+Shift+F ／ 帮助: F1"};
+        request = (struct ui_text_request){
+            .id = UI_TEXT_EMPTY_KEYS,
+            .language = (enum folio_language)column,
+            .from = folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_FILTER,
+                                               (enum folio_language)column),
+            .to = folio_shortcut_command_hint(FOLIO_COMMAND_HELP, (enum folio_language)column)};
+        require(ui_text_format(&request, line, sizeof line) == UI_TEXT_FORMAT_READY &&
+                    same_text(line, keys[column]),
+                "the guide's key line names the search key and the help key from the bindings");
     }
 }
 
