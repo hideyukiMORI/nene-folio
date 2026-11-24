@@ -10877,9 +10877,37 @@ static void run_remaining_fixture(struct native_fixture *_Nonnull fixture, int a
         run_extended_fixture(fixture, argc, argv);
 }
 
+/* The lines under a surface's rows are measured in the face that draws them: between the foot's
+ * text and the buttons below it, nothing is drawn. A foot measured in a lower face would let its
+ * last lines run into that gap. The rectangles are screen rectangles, as UIA reports them. */
+static void surface_foot_fits(struct folio_window *_Nonnull window, RECT foot, RECT button)
+{
+    HWND layer = folio_window_accessible_window(window, ACCESSIBLE_SURFACE);
+    MapWindowPoints(nullptr, layer, (POINT *)&foot, 2);
+    MapWindowPoints(nullptr, layer, (POINT *)&button, 2);
+    RECT client;
+    GetClientRect(layer, &client);
+    HDC source = GetDC(layer), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(layer, dc, PW_CLIENTONLY), "render the surface's own window for its foot");
+    COLORREF ground = GetPixel(dc, foot.right - 1, foot.bottom);
+    size_t text = line_ink(dc, foot, ground);
+    size_t gap = line_ink(dc, (RECT){foot.left, foot.bottom, foot.right, button.top}, ground);
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(layer, source);
+    printf("surface-foot text=%zu gap-ink=%zu gap=%ld\n", text, gap, button.top - foot.bottom);
+    require(button.top - foot.bottom >= 4 && text > 0,
+            "the foot has text and a gap above the buttons, so the check can tell");
+    require(gap == 0, "the foot's lines stay inside the height measured for them");
+}
+
 /* A row of a surface says its words in the language's face. The row is read from the surface's
  * own window; nothing but the row's text is drawn right of its mark, so the ink from the first
- * inked column to the last is the text. */
+ * inked column to the last is the text. The text must hold a non-ASCII character (such a line
+ * is drawn without tracking, as it is measured here) and the window must be in Japanese. */
 static void surface_row_word_font(struct folio_window *_Nonnull window, struct accessible_view row,
                                   const wchar_t *_Nonnull text)
 {
@@ -10901,7 +10929,8 @@ static void surface_row_word_font(struct folio_window *_Nonnull window, struct a
     HGDIOBJ old = SelectObject(dc, bitmap);
     require(PrintWindow(layer, dc, PW_CLIENTONLY), "render the surface's own window");
     int inset = MulDiv(6, dpi, 96);
-    RECT band = {row.bounds.left + MulDiv(30, dpi, 96), row.bounds.top + inset,
+    /* The mark's box ends 28 DIP in, where the text starts. */
+    RECT band = {row.bounds.left + MulDiv(28, dpi, 96), row.bounds.top + inset,
                  row.bounds.right - inset, row.bounds.bottom - inset};
     COLORREF ground = GetPixel(dc, band.right - 1, band.top);
     int first = band.right, last = band.left;
@@ -11266,6 +11295,9 @@ static void tags_filter_roundtrip(struct folio_window *_Nonnull window,
     struct accessible_view row = {0};
     require(folio_window_accessible_read(window, &first, &row) == S_OK, "read the red tag's row");
     surface_row_word_font(window, row, (const wchar_t *)row.name);
+    surface_foot_fits(
+        window, tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0).bounds,
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_TAG_CLEAR).bounds);
     tags_toggle(window, L"red");
     tags_settle(window, fixture->state);
     require(folio_state_index_filter_count(fixture->state) == 1,
