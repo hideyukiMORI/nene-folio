@@ -2676,6 +2676,52 @@ static void settings_edit_preserved(struct folio_window *_Nonnull window,
 }
 
 static void settings_row_fonts(struct folio_window *_Nonnull window);
+static int surface_ink_span(struct folio_window *_Nonnull window, RECT band);
+
+/* #1283: Close is drawn (its label is inside its box) and a point in it finds the button, not
+ * the status line beside it. box is the button's screen rectangle. */
+static void surface_done_shown(struct folio_window *_Nonnull window, RECT box)
+{
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    int inset = MulDiv(4, dpi, 96);
+    RECT inner = {box.left + inset, box.top + inset, box.right - inset, box.bottom - inset};
+    require(surface_ink_span(window, inner) > MulDiv(12, dpi, 96),
+            "Close shows its label inside its box");
+    struct accessible_item found = {0};
+    POINT centre = {(box.left + box.right) / 2, (box.top + box.bottom) / 2};
+    require(folio_window_accessible_at(window, ACCESSIBLE_SURFACE, centre, &found) == S_OK &&
+                found.kind == ACCESSIBLE_SURFACE_BUTTON && found.slot == ACCESSIBLE_SURFACE_DONE,
+            "a point in Close finds the button");
+}
+
+/* #1283: the settings take effect at once; the surface is left with Close at the bottom right,
+ * under its rows and its lines. The × in the title stays. */
+static void settings_done(struct folio_window *_Nonnull window)
+{
+    uint64_t revision = folio_window_accessible_surface_revision(window);
+    struct accessible_item items[] = {
+        {.kind = ACCESSIBLE_SURFACE_BUTTON, .slot = ACCESSIBLE_SURFACE_DONE, .revision = revision},
+        {.kind = ACCESSIBLE_SURFACE_BUTTON, .slot = ACCESSIBLE_SURFACE_CLOSE, .revision = revision},
+        {.kind = ACCESSIBLE_SURFACE_LIST, .revision = revision},
+        {.kind = ACCESSIBLE_SURFACE, .revision = revision}};
+    struct accessible_view views[4] = {0};
+    for (size_t at = 0; at < 4; ++at)
+        require(folio_window_accessible_read(window, &items[at], &views[at]) == S_OK &&
+                    !views[at].offscreen,
+                "the settings surface shows Close, the title's close, its list and itself");
+    require(wcscmp((const wchar_t *)views[0].name, L"閉じる") == 0 && views[0].enabled,
+            "the bottom right button is named Close");
+    require(views[0].bounds.top >= views[2].bounds.bottom &&
+                views[0].bounds.bottom <= views[3].bounds.bottom &&
+                views[0].bounds.right <= views[3].bounds.right &&
+                views[0].bounds.top > views[1].bounds.bottom,
+            "Close sits under the rows, inside the surface, below the title's close");
+    surface_done_shown(window, views[0].bounds);
+    surface_button(window, ACCESSIBLE_SURFACE_DONE);
+    require(folio_window_accessible_read(window, &items[3], &views[3]) != S_OK ||
+                views[3].offscreen,
+            "Close closes the settings surface");
+}
 static void japanese_row_face(struct folio_window *_Nonnull window);
 
 static void settings_edit_cycle(struct folio_window *_Nonnull window,
@@ -2719,7 +2765,7 @@ static void settings_edit_cycle(struct folio_window *_Nonnull window,
         if (languages[index] == FOLIO_LANGUAGE_ZH_HANS)
             japanese_row_face(window);
     }
-    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    settings_done(window);
     expect_native_body(window, &closed);
     verify_history_unchanged(fixture, history);
 }
@@ -11413,9 +11459,16 @@ static void tags_filter_geometry(struct folio_window *_Nonnull window,
     struct accessible_view footer = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0);
     struct accessible_view button =
         tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_TAG_CLEAR);
-    require(input.bounds.bottom <= list.bounds.top && list.bounds.bottom <= footer.bounds.top &&
-                footer.bounds.bottom <= button.bounds.top && list.bounds.bottom > list.bounds.top,
+    struct accessible_view done =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DONE);
+    /* #1283: the rows, then the three filter controls, then the lines and the bottom row that
+     * holds the counts at its left and Close at its right. */
+    require(input.bounds.bottom <= list.bounds.top && list.bounds.bottom <= button.bounds.top &&
+                button.bounds.bottom <= footer.bounds.top && list.bounds.bottom > list.bounds.top,
             "minimum drawer filter retains separated input, one row and all actions");
+    require(footer.bounds.right <= done.bounds.left && done.bounds.bottom == footer.bounds.bottom &&
+                done.bounds.top >= button.bounds.bottom && done.bounds.top >= footer.bounds.top,
+            "Close sits at the bottom right, beside the counts and under the filter controls");
     char path[64];
     require(snprintf(path, sizeof path, "tags-filter-%zu.bmp", at) > 0, "filter screenshot path");
     tags_capture(root, path);
@@ -11464,9 +11517,51 @@ static void tags_filter_counts(struct folio_window *_Nonnull window,
             "the filter surface's status starts with the chosen tags and the matching notes");
 }
 
+/* #1283: the filter surface takes effect at once, so its way out is Close at the bottom right
+ * (no OK or Apply). It is the last stop of the Tab cycle: the field, the rows, All, Any, Clear,
+ * Close. Enter on it closes the surface and leaves the filter as it is. */
+static void tags_filter_done(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture)
+{
+    tags_open(window, ACCESSIBLE_TAG_FILTER);
+    tags_settle(window, fixture->state);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    SetFocus(input);
+    for (size_t step = 0; step < 5; ++step)
+        favorite_key(window, VK_TAB);
+    struct accessible_item focus = {0};
+    require(folio_window_accessible_focus(window, ACCESSIBLE_WINDOW, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_SURFACE_BUTTON && focus.slot == ACCESSIBLE_SURFACE_DONE,
+            "the fifth Tab reaches Close at the bottom right");
+    struct accessible_view done = tags_view(window, focus.kind, focus.slot);
+    require(wcscmp((const wchar_t *)done.name, L"閉じる") == 0 && done.focused,
+            "the bottom right button is named Close and holds the focus");
+    surface_done_shown(window, done.bounds);
+    /* The lines above the bottom row stay in the height measured for them (#1258): nothing is
+     * drawn in the 8 DIP between them and the bottom row. */
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    RECT foot = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0).bounds;
+    foot.bottom = done.bounds.top - MulDiv(8, dpi, 96);
+    surface_foot_fits(window, foot, done.bounds);
+    favorite_key(window, VK_TAB);
+    require(GetFocus() == input, "Tab after Close returns to the field");
+    favorite_key(window, VK_TAB);
+    favorite_key(window, VK_TAB);
+    require(folio_window_accessible_focus(window, ACCESSIBLE_WINDOW, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_SURFACE_BUTTON && focus.slot == ACCESSIBLE_SURFACE_TAG_ALL,
+            "the cycle still passes the filter controls");
+    for (size_t step = 0; step < 3; ++step)
+        favorite_key(window, VK_TAB);
+    size_t shown = folio_state_index_filter_count(fixture->state);
+    favorite_key(window, VK_RETURN);
+    require(!IsWindowVisible(input) && folio_state_index_filter_count(fixture->state) == shown,
+            "Enter on Close closes the filter surface and leaves the filter as it is");
+}
+
 static void tags_filter_roundtrip(struct folio_window *_Nonnull window,
                                   struct native_fixture *_Nonnull fixture)
 {
+    tags_filter_done(window, fixture);
     tags_open(window, ACCESSIBLE_TAG_FILTER);
     tags_settle(window, fixture->state);
     surface_button(window, ACCESSIBLE_SURFACE_TAG_ANY);
@@ -11478,9 +11573,6 @@ static void tags_filter_roundtrip(struct folio_window *_Nonnull window,
     struct accessible_view row = {0};
     require(folio_window_accessible_read(window, &first, &row) == S_OK, "read the red tag's row");
     surface_row_word_font(window, row, (const wchar_t *)row.name);
-    surface_foot_fits(
-        window, tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0).bounds,
-        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_TAG_CLEAR).bounds);
     tags_filter_counts(window, L"選択中 0 個 ・ 該当 3 件");
     tags_toggle(window, L"red");
     tags_settle(window, fixture->state);
@@ -13644,7 +13736,9 @@ static void settings_row_fonts(struct folio_window *_Nonnull window)
     int mono_size = ui_face_mono(mono, 11);
     struct header_font words = {face, 11, FW_NORMAL}, values = {mono, mono_size, FW_NORMAL};
     int inset = MulDiv(6, dpi, 96), slack = MulDiv(3, dpi, 96);
-    static const wchar_t toggle[] = L"お気に入りを先に表示";
+    /* The row is one that stays in view: the surface's fixed lines are a little higher since
+     * Close sits in their bottom band (#1283), and the test's window shows fewer rows. */
+    static const wchar_t toggle[] = L"ミニマップを表示";
     RECT row = settings_row_named(window, toggle).bounds;
     int expected = header_text_width(root, toggle, words);
     int other = header_text_width(root, toggle, values);

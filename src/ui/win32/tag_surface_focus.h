@@ -12,6 +12,7 @@ enum tag_surface_focus : unsigned char
     TAG_SURFACE_CLEAR,
     TAG_SURFACE_CLOSE,
     TAG_SURFACE_PRIMARY,
-    TAG_SURFACE_SECONDARY
+    TAG_SURFACE_SECONDARY,
+    TAG_SURFACE_DONE
 };
 #endif
