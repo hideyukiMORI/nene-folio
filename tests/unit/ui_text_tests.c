@@ -841,6 +841,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_TAG_FILTER_EMPTY] = "タグで絞り込み…",
     [UI_TEXT_TAG_FILTER_COUNT] = "タグ {n} 個 · {name}",
     [UI_TEXT_TAG_STRIP_UNAVAILABLE] = "タグを取得できません",
+    [UI_TEXT_TAG_STRIP_ADD] = "＋ タグ",
     [UI_TEXT_FAILURE_TAG_INVALID] = "タグ名が空か、使えない文字を含んでいます。",
     [UI_TEXT_FAILURE_TAG_LIMIT] = "タグの長さ・個数、またはメタデータの上限を超えます。",
     [UI_TEXT_FAILURE_TAGS_UNAVAILABLE] =

@@ -22,6 +22,7 @@
 #include "ascii_fold.h"
 #include "breadcrumb_layout.h"
 #include "category_name.h"
+#include "chip_flow.h"
 #include "close_phase.h"
 #include "code_copy_target.h"
 #include "command_band_layout.h"
@@ -85,6 +86,7 @@
 #include "tag_catalog.h"
 #include "tag_filter_text.h"
 #include "tag_management_view.h"
+#include "tag_strip_layout.h"
 #include "tag_surface_focus.h"
 #include "tag_update.h"
 #include "text_draw_request.h"
@@ -253,6 +255,8 @@ struct folio_window
     bool unsaved;
     enum folio_state_outcome tag_strip_outcome;
     size_t tag_strip_count;
+    /* いまのノートのタグの写し（#1263）。settle_tag_strip でだけ取り直す。無ければ空の行。 */
+    struct note_tags *_Nullable tag_strip_tags;
     uint64_t store_revision; /* 前回の照合での folio_state_store_revision */
     /* 本文の EN_CHANGE があった（変更の疑い）。名前付きの編集本文はこの印か、世代・文書・mode の
      * 変化があるときだけ写して比べる（矢印など本文を変えない入力では比べない）。 */
@@ -6211,11 +6215,205 @@ static void tag_strip_text(const struct folio_window *_Nonnull self, char *_Nonn
         out[0] = '\0';
 }
 
+/* 荷札の寸法（#1263。DIP）。左が尖って、穴が 1 つ。行（28）の中に、高さ 20 で置く。 */
+constexpr int base_tag_label_height = 20;
+constexpr int base_tag_label_point = 9;   /* 左の尖りの奥行き */
+constexpr int base_tag_label_lead = 18;   /* 左端から字まで（尖りと穴の分） */
+constexpr int base_tag_label_trail = 9;   /* 字から右端まで */
+constexpr int base_tag_label_hole = 4;    /* 穴の直径 */
+constexpr int base_tag_label_gap = 6;     /* 荷札と荷札の間 */
+constexpr int base_tag_label_limit = 160; /* 荷札 1 つの幅の上限（長い名前は「…」で切る） */
+constexpr int base_tag_label_least = 48;
+
+/* 「＋ タグ」の釦の字。タグを読めないノートでは、その旨を釦の字にする。 */
+static enum ui_text tag_strip_add_label(const struct folio_window *_Nonnull self)
+{
+    return self->tag_strip_outcome == FOLIO_STATE_READY ? UI_TEXT_TAG_STRIP_ADD
+                                                        : UI_TEXT_TAG_STRIP_UNAVAILABLE;
+}
+
+static size_t tag_strip_label_count(const struct folio_window *_Nonnull self)
+{
+    return self->tag_strip_tags == nullptr || self->tag_strip_outcome != FOLIO_STATE_READY
+               ? 0
+               : note_tags_count(self->tag_strip_tags);
+}
+
+/* 荷札・「+N」・釦の幅を、描くのと同じ書体（言葉の書体・字間 0）で測る。widths は荷札の幅、
+ * 返すのは釦の幅。more は「+N」の幅（いちばん大きい数で測る）。 */
+static int tag_strip_widths(const struct folio_window *_Nonnull self, int limit,
+                            int *_Nonnull widths, int *_Nonnull more)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    HDC device = GetDC(self->handle);
+    if (device == nullptr)
+        return 0;
+    HGDIOBJ previous = SelectObject(device, word_font(self));
+    SetTextCharacterExtra(device, 0);
+    size_t count = tag_strip_label_count(self);
+    for (size_t at = 0; at < count; ++at)
+    {
+        int width = scale(base_tag_label_lead + base_tag_label_trail, dpi) +
+                    measure_utf8(device, note_tag_bytes(note_tags_at(self->tag_strip_tags, at)));
+        widths[at] = width > limit ? limit : width;
+    }
+    char text[ui_text_unit_limit];
+    struct ui_text_request request = {.id = UI_TEXT_FILTER_MORE,
+                                      .language = folio_state_language(self->state),
+                                      .n = note_tags_max_count};
+    *more = ui_text_format(&request, text, sizeof text) == UI_TEXT_FORMAT_READY
+                ? measure_utf8(device, text)
+                : 0;
+    int add = measure_utf8(device, ui_text_line(tag_strip_add_label(self),
+                                                folio_state_language(self->state))) +
+              scale(ui_part_chip_padding * 2, dpi);
+    SelectObject(device, previous);
+    ReleaseDC(self->handle, device);
+    return add;
+}
+
+/* ノートのタグの行の並び（行の左端からの相対）。左の欄の札と同じ並べ方（chip_flow）を 1 行で
+ * 使う: 入るだけ荷札を置き、残りは「+N」、最後に「＋ タグ」の釦。add に釦の幅を返す。 */
+static struct chip_flow_result tag_strip_flow(const struct folio_window *_Nonnull self,
+                                              int available,
+                                              struct chip_flow_place *_Nonnull places,
+                                              int *_Nonnull add)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    int gap = scale(base_tag_label_gap, dpi);
+    int widths[note_tags_max_count] = {0};
+    int more = 0;
+    *add = tag_strip_widths(self, scale(base_tag_label_limit, dpi), widths, &more);
+    size_t count = tag_strip_label_count(self);
+    struct chip_flow_result alone = {.shown = 0, .rows = 1, .opener = {.left = 0, .width = *add}};
+    if (count == 0)
+        return alone;
+    /* 1 つ目の荷札と釦は必ず置かれる。1 行に入るように、1 つ目の幅を行に合わせて切る。タグが
+     * 2 つ以上なら、畳んだときの「+N」の分も空けておく。 */
+    int room = available - *add - gap - (count > 1 ? more + gap : 0);
+    int least = scale(base_tag_label_least, dpi);
+    if (widths[0] > room)
+        widths[0] = room > least ? room : least;
+    struct chip_flow_input input = {.widths = widths,
+                                    .count = count,
+                                    .opener_width = *add,
+                                    .more_width = more,
+                                    .available = available,
+                                    .height = scale(base_tag_label_height, dpi),
+                                    .gap = gap,
+                                    .row_gap = 0,
+                                    .rows = 1};
+    struct chip_flow_result placed = chip_flow_arrange(&input, places);
+    if (placed.rows <= 1)
+        return placed;
+    /* 1 つ目の荷札を最小まで切っても 1 行に入らない幅。荷札は出さず、「+N」と釦だけを左から
+     * 置く（2 行目へ送られた分を、1 行目に重ねて描かない）。 */
+    return (struct chip_flow_result){.shown = 0,
+                                     .hidden = count,
+                                     .rows = 1,
+                                     .more = {.left = 0, .top = 0, .width = more},
+                                     .opener = {.left = more + gap, .top = 0, .width = *add}};
+}
+
+/* ノートのタグの行の配置（#1263）。行が隠れているあいだは、全部が空。 */
+static void tag_strip_arrange(const struct folio_window *_Nonnull self,
+                              struct tag_strip_layout *_Nonnull out)
+{
+    *out = (struct tag_strip_layout){.shown = 0};
+    RECT row = tag_strip_rect(self);
+    if (IsRectEmpty(&row))
+        return;
+    UINT dpi = GetDpiForWindow(self->handle);
+    int height = scale(base_tag_label_height, dpi);
+    int top = row.top + (row.bottom - row.top - height) / 2;
+    struct chip_flow_place places[note_tags_max_count] = {0};
+    int add = 0;
+    struct chip_flow_result placed = tag_strip_flow(self, row.right - row.left, places, &add);
+    out->shown = placed.shown;
+    out->hidden = placed.hidden;
+    for (size_t at = 0; at < placed.shown; ++at)
+        out->labels[at] = (RECT){row.left + places[at].left, top,
+                                 row.left + places[at].left + places[at].width, top + height};
+    if (placed.hidden > 0)
+        out->more = (RECT){row.left + placed.more.left, top,
+                           row.left + placed.more.left + placed.more.width, top + height};
+    int left = row.left + placed.opener.left;
+    int chip = scale(ui_part_chip_height, dpi);
+    int right = left + add < row.right ? left + add : row.right;
+    out->add = (RECT){left, row.top + (row.bottom - row.top - chip) / 2, right,
+                      row.top + (row.bottom - row.top - chip) / 2 + chip};
+}
+
+/* 押せる範囲と UIA の矩形: 行の左端から釦の右端まで（荷札を押しても、タグの編集の面が開く）。 */
+static RECT tag_entry_rect(const struct folio_window *_Nonnull self)
+{
+    struct tag_strip_layout layout;
+    tag_strip_arrange(self, &layout);
+    RECT row = tag_strip_rect(self);
+    if (IsRectEmpty(&row))
+        return row;
+    row.right = layout.add.right;
+    return row;
+}
+
+/* 荷札 1 つ。左が尖った五角形に、穴を 1 つ。高コントラストでは塗らずに線で描く。 */
+static void draw_tag_label(const struct folio_window *_Nonnull self, HDC device, RECT box,
+                           const char *_Nonnull name)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    bool high = self->palette.contrast == FOLIO_CONTRAST_HIGH;
+    int point = scale(base_tag_label_point, dpi);
+    int middle = (box.top + box.bottom) / 2;
+    POINT shape[] = {{box.left + point, box.top},
+                     {box.right, box.top},
+                     {box.right, box.bottom},
+                     {box.left + point, box.bottom},
+                     {box.left, middle}};
+    HGDIOBJ brush = SelectObject(device, GetStockObject(DC_BRUSH));
+    HGDIOBJ pen = SelectObject(device, GetStockObject(high ? DC_PEN : NULL_PEN));
+    SetDCPenColor(device, self->palette.category_text);
+    SetDCBrushColor(device, high ? self->palette.pane : self->palette.selected_background);
+    Polygon(device, shape, sizeof shape / sizeof shape[0]);
+    int hole = scale(base_tag_label_hole, dpi);
+    int x = box.left + point - hole / 4;
+    SelectObject(device, GetStockObject(NULL_PEN));
+    SetDCBrushColor(device, high ? self->palette.category_text : self->palette.pane);
+    Ellipse(device, x, middle - hole / 2, x + hole + 1, middle - hole / 2 + hole + 1);
+    SelectObject(device, pen);
+    SelectObject(device, brush);
+    RECT text = {box.left + scale(base_tag_label_lead, dpi), box.top,
+                 box.right - scale(base_tag_label_trail, dpi) / 2, box.bottom};
+    SetTextColor(device, high ? self->palette.category_text : self->palette.selected_text);
+    draw_utf8(device, name, text);
+}
+
+static void draw_tag_more(const struct folio_window *_Nonnull self, HDC device,
+                          const struct tag_strip_layout *_Nonnull layout)
+{
+    char text[ui_text_unit_limit];
+    struct ui_text_request request = {.id = UI_TEXT_FILTER_MORE,
+                                      .language = folio_state_language(self->state),
+                                      .n = layout->hidden};
+    if (layout->hidden == 0 || ui_text_format(&request, text, sizeof text) != UI_TEXT_FORMAT_READY)
+        return;
+    SetTextColor(device, self->palette.header_text);
+    draw_utf8(device, text, layout->more);
+}
+
+/* ノートのタグの行（#1263）: 荷札・「+N」・「＋ タグ」の釦。hover・押下・focus は釦に出す。 */
 static void draw_tag_strip(const struct folio_window *_Nonnull self, HDC device)
 {
+    struct tag_strip_layout layout;
+    tag_strip_arrange(self, &layout);
+    HGDIOBJ previous = SelectObject(device, word_font(self)); /* 言葉の書体（#1253） */
+    int tracking = SetTextCharacterExtra(device, 0);
+    for (size_t at = 0; at < layout.shown; ++at)
+        draw_tag_label(self, device, layout.labels[at],
+                       note_tag_bytes(note_tags_at(self->tag_strip_tags, at)));
+    draw_tag_more(self, device, &layout);
     struct ui_part_paint part = {
-        .bounds = tag_strip_rect(self),
-        .style = UI_PART_STYLE_COMMAND,
+        .bounds = layout.add,
+        .style = UI_PART_STYLE_CHIP,
         .dpi = GetDpiForWindow(self->handle),
         .labeled = true,
         .hovered = self->hover_part == ACCESSIBLE_TAG_EDIT,
@@ -6224,11 +6422,10 @@ static void draw_tag_strip(const struct folio_window *_Nonnull self, HDC device)
                    (self->focus_cues || self->focus_cues_always),
         .disabled = !part_enabled(self, ACCESSIBLE_TAG_EDIT)};
     struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
-    char text[ui_text_unit_limit];
-    tag_strip_text(self, text, sizeof text);
     SetTextColor(device, ink.text);
-    HGDIOBJ previous = SelectObject(device, word_font(self)); /* 言葉の書体（#1253） */
-    draw_utf8(device, text, ink.label);
+    draw_utf8(device, ui_text_line(tag_strip_add_label(self), folio_state_language(self->state)),
+              ink.label);
+    SetTextCharacterExtra(device, tracking == tracking_unavailable ? 0 : tracking);
     SelectObject(device, previous);
 }
 
@@ -15594,6 +15791,8 @@ static void window_destroyed(struct folio_window *_Nonnull self)
         self->gutter_font = nullptr;
     }
     command_help_fonts_destroy(&self->help_fonts);
+    note_tags_destroy(self->tag_strip_tags);
+    self->tag_strip_tags = nullptr;
     /* self->handle はここでは消さない。WM_DESTROY の後も WM_NCDESTROY までメッセージは届き、
      * 既定処理はその HWND を要る。手放すのは window_finalized 1 か所（ADR 0014 の補正 1）。 */
     PostQuitMessage(0);
@@ -19055,7 +19254,7 @@ static RECT accessible_pane_rect(const struct folio_window *_Nonnull self,
     {
         enum accessible_kind kind;
         RECT (*_Nonnull bounds)(const struct folio_window *_Nonnull);
-    } parts[] = {{ACCESSIBLE_TAG_EDIT, tag_strip_rect},
+    } parts[] = {{ACCESSIBLE_TAG_EDIT, tag_entry_rect},
                  {ACCESSIBLE_OUTLINE, outline_rect},
                  {ACCESSIBLE_BREADCRUMB, breadcrumb_rect},
                  {ACCESSIBLE_GUIDE, guide_rect}};
@@ -20749,6 +20948,21 @@ static bool current_unsaved(const struct folio_window *_Nonnull self, uint64_t r
     return true;
 }
 
+/* 荷札の行は、ノートの順で並べる。同じ集合でも、順番が違えば描き直す（note_tags_equal は順番を
+ * 見ない）。 */
+static bool tag_lists_same(const struct note_tags *_Nonnull left,
+                           const struct note_tags *_Nullable right)
+{
+    if (right == nullptr || note_tags_count(left) != note_tags_count(right))
+        return false;
+    for (size_t at = 0; at < note_tags_count(left); ++at)
+    {
+        if (!note_tag_equal(note_tags_at(left, at), note_tags_at(right, at)))
+            return false;
+    }
+    return true;
+}
+
 static void settle_tag_strip(struct folio_window *_Nonnull self, uint64_t revision)
 {
     if (!unsaved_needs_compare(self, revision))
@@ -20756,13 +20970,20 @@ static void settle_tag_strip(struct folio_window *_Nonnull self, uint64_t revisi
     const char16_t *_Nonnull units = u"";
     size_t count = 0;
     enum folio_state_outcome outcome = tag_editor_source(self, &units, &count);
-    size_t tags = 0;
+    struct note_tags *_Nullable tags = nullptr;
     if (outcome == FOLIO_STATE_READY)
-        outcome = folio_state_note_tag_count(self->state, units, count, &tags);
-    if (outcome == self->tag_strip_outcome && tags == self->tag_strip_count)
+        outcome = folio_state_note_tags(self->state, units, count, &tags);
+    bool same = outcome == self->tag_strip_outcome &&
+                (tags == nullptr || tag_lists_same(tags, self->tag_strip_tags));
+    if (same)
+    {
+        note_tags_destroy(tags);
         return;
+    }
+    note_tags_destroy(self->tag_strip_tags);
+    self->tag_strip_tags = tags;
     self->tag_strip_outcome = outcome;
-    self->tag_strip_count = tags;
+    self->tag_strip_count = tags == nullptr ? 0 : note_tags_count(tags);
     if (tag_strip_visible(self))
     {
         RECT bounds = tag_strip_rect(self);

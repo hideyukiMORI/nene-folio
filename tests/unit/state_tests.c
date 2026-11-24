@@ -10420,8 +10420,18 @@ static void verify_tag_carry(void)
     require(folio_state_note_tag_count(state, u"", 0, &count) == FOLIO_STATE_NOTHING_SELECTED &&
                 count == 999,
             "no-document tag summary preserves output");
+    struct note_tags *listed = nullptr;
+    require(folio_state_note_tags(state, u"", 0, &listed) == FOLIO_STATE_NOTHING_SELECTED &&
+                listed == nullptr,
+            "no-document tag list preserves output");
     require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
             "select portable tagged source");
+    require(folio_state_note_tags(state, u"rendered", 8, &listed) == FOLIO_STATE_READY &&
+                listed != nullptr && note_tags_count(listed) == 2 &&
+                same_text(note_tag_bytes(note_tags_at(listed, 0)), "red") &&
+                same_text(note_tag_bytes(note_tags_at(listed, 1)), "日本語"),
+            "VIEW lists the saved source's tags in the note's order");
+    note_tags_destroy(listed);
     struct note_name *name = accepted_note_name("tag-renamed");
     require(folio_state_rename_note(state, name, u"rendered", 8) == FOLIO_STATE_READY &&
                 same_text(folio_state_pane_text(state), adapter.note_body) &&
@@ -10455,7 +10465,24 @@ static void verify_tag_summary(void)
                                        &count) == FOLIO_STATE_READY &&
                 count == 1,
             "current summary uses unsaved front matter");
+    struct note_tags *listed = nullptr;
+    require(folio_state_note_tags(state, source, sizeof source / sizeof source[0] - 1, &listed) ==
+                    FOLIO_STATE_READY &&
+                listed != nullptr && note_tags_count(listed) == 1 &&
+                same_text(note_tag_bytes(note_tags_at(listed, 0)), "new"),
+            "EDIT lists the unsaved front matter's tags");
+    struct note_tags *kept = listed;
     const char16_t unsupported[] = u"---\rtags: *alias\r---\rbody";
+    require(folio_state_note_tags(state, unsupported,
+                                  sizeof unsupported / sizeof unsupported[0] - 1,
+                                  &listed) == FOLIO_STATE_TAGS_UNAVAILABLE &&
+                listed == kept,
+            "an unsupported tag list preserves output");
+    const char16_t broken[] = {0xd800};
+    require(folio_state_note_tags(state, broken, 1, &listed) == FOLIO_STATE_NOTE_MALFORMED &&
+                listed == kept,
+            "an invalid native source preserves the tag list output");
+    note_tags_destroy(listed);
     require(folio_state_note_tag_count(state, unsupported,
                                        sizeof unsupported / sizeof unsupported[0] - 1,
                                        &count) == FOLIO_STATE_TAGS_UNAVAILABLE &&

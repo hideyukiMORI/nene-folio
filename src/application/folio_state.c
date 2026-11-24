@@ -6280,6 +6280,31 @@ static enum folio_state_outcome tag_set_outcome(enum note_tags_outcome made)
     return FOLIO_STATE_OUT_OF_MEMORY;
 }
 
+enum folio_state_outcome folio_state_note_tags(const struct folio_state *_Nonnull state,
+                                               const char16_t *_Nonnull units, size_t count,
+                                               struct note_tags *_Nullable *_Nonnull out)
+{
+    if (state->document == FOLIO_DOCUMENT_NONE)
+        return FOLIO_STATE_NOTHING_SELECTED;
+    struct note_text *_Nullable edited = nullptr;
+    if (state->mode == PANE_MODE_EDIT)
+    {
+        enum folio_state_outcome outcome = edited_text(state, units, count, &edited);
+        if (outcome != FOLIO_STATE_READY)
+            return outcome;
+    }
+    const struct note_metadata *_Nonnull metadata =
+        note_text_metadata(edited == nullptr ? state->body : edited);
+    enum folio_state_outcome outcome = FOLIO_STATE_TAGS_UNAVAILABLE;
+    struct note_tags *_Nullable copy = nullptr;
+    if (note_metadata_available(metadata))
+        outcome = tag_set_outcome(note_tags_copy(note_metadata_tags(metadata), &copy));
+    note_text_destroy(edited);
+    if (outcome == FOLIO_STATE_READY)
+        *out = copy;
+    return outcome;
+}
+
 /* Take the prepared body only when the full replacement session exists. */
 static enum folio_state_outcome adopt_tag_session(struct folio_state *_Nonnull state,
                                                   struct note_text *_Nonnull body)

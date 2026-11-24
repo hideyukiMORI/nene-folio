@@ -885,6 +885,8 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_TAG_FILTER_COUNT] = {"タグ {n} 個 · {name}", "{n} tags · {name}",
                                   "{n} 个标签 · {name}"},
     [UI_TEXT_TAG_STRIP_UNAVAILABLE] = {"タグを取得できません", "Tags unavailable", "无法获取标签"},
+    /* ノートのタグの行の右の釦の字（#1263）。読み上げの名前は TAG_STRIP_EMPTY / COUNT のまま。 */
+    [UI_TEXT_TAG_STRIP_ADD] = {"＋ タグ", "+ Tag", "＋ 标签"},
     [UI_TEXT_FAILURE_TAG_INVALID] = {"タグ名が空か、使えない文字を含んでいます。",
                                      "The tag name is empty or contains unsupported characters.",
                                      "标签名为空或含有不支持的字符。"},
