@@ -3098,6 +3098,62 @@ static void note_header_case(struct folio_window *_Nonnull window,
             "bringing the header back restores the mode pair and the body where they were");
 }
 
+static bool native_key_input_to(struct folio_window *_Nonnull window, HWND body, UINT key,
+                                BYTE modifiers);
+
+/* A shortcut pressed with the focus in the note's body. */
+static void header_shortcut(struct folio_window *_Nonnull window, UINT key, BYTE modifiers)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(body != nullptr, "the note's body takes the shortcut");
+    SetFocus(body);
+    (void)native_key_input_to(window, body, key, modifiers);
+}
+
+/* #1264: while the header is collapsed, Ctrl+F still opens the search band, right under the
+ * slim row; Ctrl+M opens nothing, because the actions' button is hidden (ADR 0081). */
+static void header_collapsed_find(struct folio_window *_Nonnull window)
+{
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    struct accessible_view slim = header_part(window, ACCESSIBLE_BREADCRUMB);
+    header_shortcut(window, 'M', FCONTROL);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(input == nullptr || !IsWindowVisible(input),
+            "Ctrl+M opens nothing while the actions' button is hidden");
+    header_shortcut(window, 'F', FCONTROL);
+    input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    RECT field = {0};
+    require(input != nullptr && IsWindowVisible(input) && GetFocus() == input &&
+                GetWindowRect(input, &field),
+            "Ctrl+F opens the search band while the header is collapsed");
+    printf("note-header band field-top=%ld slim-bottom=%ld\n", field.top, slim.bounds.bottom);
+    require(field.top >= slim.bounds.bottom &&
+                field.top <= slim.bounds.bottom + MulDiv(24, dpi, 96),
+            "the search band sits right under the slim row");
+    favorite_key(window, VK_ESCAPE);
+    require(!IsWindowVisible(input), "Escape closes the search band");
+}
+
+/* #1264: the shortcuts that do not need the hidden buttons keep working while the header is
+ * collapsed: Ctrl+Shift+H toggles it, Ctrl+E switches between viewing and editing. */
+static void header_collapsed_shortcuts(struct folio_window *_Nonnull window,
+                                       struct native_fixture *_Nonnull fixture)
+{
+    header_shortcut(window, 'H', FCONTROL | FSHIFT);
+    require(!folio_state_note_header(fixture->state), "Ctrl+Shift+H collapses the note header");
+    header_parts_shown(window, false);
+    header_shortcut(window, 'E', FCONTROL);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT,
+            "Ctrl+E starts editing while the mode pair is hidden");
+    header_collapsed_find(window);
+    header_shortcut(window, 'E', FCONTROL);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW,
+            "Ctrl+E returns to viewing while the mode pair is hidden");
+    header_shortcut(window, 'H', FCONTROL | FSHIFT);
+    require(folio_state_note_header(fixture->state), "Ctrl+Shift+H brings the note header back");
+    header_parts_shown(window, true);
+}
+
 static void run_mode_save_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -3111,6 +3167,7 @@ static void run_mode_save_case(struct native_fixture *_Nonnull fixture)
             "real mode save window");
     pump(window);
     note_header_case(window, fixture);
+    header_collapsed_shortcuts(window, fixture);
     action(window, ACCESSIBLE_EDIT);
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
     append_switch_text(window);
