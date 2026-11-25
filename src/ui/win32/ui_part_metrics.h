@@ -11,7 +11,7 @@ struct ui_part_metrics
     UINT dpi;
     enum folio_language language;
     int tracking;
-    int widths[4];
+    int widths[3];
     bool valid;
 };
 
