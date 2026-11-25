@@ -83,5 +83,10 @@ folio_window_accessible_outline_revision(const struct folio_window *_Nonnull sel
  * 変わったら、host が前の札を捨てて、群の子の変化を知らせる（#1247）。 */
 [[nodiscard]] uint64_t
 folio_window_accessible_filter_revision(const struct folio_window *_Nonnull self);
+/* ノートのタグの行の荷札の並び（荷札の写しの改訂・置かれた数・「+N」の有無）を 1 つの値で返す。
+ * 行が出ていないあいだは 0。変わったら、host が前の荷札を捨てて、群の子の変化を知らせる（#1309）。
+ */
+[[nodiscard]] uint64_t
+folio_window_accessible_note_tag_revision(const struct folio_window *_Nonnull self);
 
 #endif

@@ -261,6 +261,8 @@ struct folio_window
     size_t tag_strip_count;
     /* いまのノートのタグの写し（#1263）。settle_tag_strip でだけ取り直す。無ければ空の行。 */
     struct note_tags *_Nullable tag_strip_tags;
+    /* 荷札の写しを持ち替えるたびに進む（#1309）。読み上げの荷札は、番号とこの値で 1 つを指す。 */
+    uint64_t tag_strip_revision;
     uint64_t store_revision; /* 前回の照合での folio_state_store_revision */
     /* 本文の EN_CHANGE があった（変更の疑い）。名前付きの編集本文はこの印か、世代・文書・mode の
      * 変化があるときだけ写して比べる（矢印など本文を変えない入力では比べない）。 */
@@ -463,8 +465,16 @@ static const struct
     /* 名前は「操作」。▾は描く字（UI_TEXT_ACTION_OPERATIONS）だけが持つ表示の記号。 */
     [ACCESSIBLE_MENU] = {ACCESSIBLE_ACTION_GROUP, UI_TEXT_ACCESSIBLE_OPERATIONS, true,
                          UI_TEXT_TOOLTIP_OPERATIONS, ACCESSIBLE_MAIN_PANE},
-    [ACCESSIBLE_TAG_EDIT] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_COMMAND_EDIT_TAGS, true, UI_TEXT_EMPTY,
-                             ACCESSIBLE_MAIN_PANE},
+    /* ノートのタグの行（#1263・#1309）。群の子は、列挙で連続する 3 つ: 荷札（番号で数が変わる）、
+     * 畳んだ分の「+N」、「＋ タグ」の釦。荷札と「+N」は Tab で止まらない（押すと編集の面）。 */
+    [ACCESSIBLE_NOTE_TAG_GROUP] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_TAG_EDIT_TITLE, false,
+                                   UI_TEXT_EMPTY, ACCESSIBLE_MAIN_PANE},
+    [ACCESSIBLE_NOTE_TAG] = {ACCESSIBLE_NOTE_TAG_GROUP, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
+                             ACCESSIBLE_MAIN_NONE},
+    [ACCESSIBLE_NOTE_TAG_MORE] = {ACCESSIBLE_NOTE_TAG_GROUP, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
+                                  ACCESSIBLE_MAIN_PANE},
+    [ACCESSIBLE_TAG_EDIT] = {ACCESSIBLE_NOTE_TAG_GROUP, UI_TEXT_COMMAND_EDIT_TAGS, true,
+                             UI_TEXT_EMPTY, ACCESSIBLE_MAIN_PANE},
     /* 絞り込みの札の行（#1199・ADR0122）。群の子は、列挙で連続する 4 つ: お気に入りの札、
      * タグごとの札（番号で数が変わる・#1247）、畳んだ分の「+N」、開く札。 */
     [ACCESSIBLE_FILTER_GROUP] = {ACCESSIBLE_DRAWER, UI_TEXT_FILTER_GROUP, false, UI_TEXT_EMPTY,
@@ -6623,6 +6633,14 @@ static RECT tag_entry_rect(const struct folio_window *_Nonnull self)
         return row;
     row.right = layout.add.right;
     return row;
+}
+
+/* 「+N」の UIA の矩形（#1309）。描くのと同じ 1 回の配置から取る。畳んだ分が無ければ空。 */
+static RECT tag_more_rect(const struct folio_window *_Nonnull self)
+{
+    struct tag_strip_layout layout;
+    tag_strip_arrange(self, &layout);
+    return layout.hidden > 0 ? layout.more : (RECT){0};
 }
 
 /* 荷札 1 つ。左が尖った五角形に、穴を 1 つ。高コントラストでは塗らずに線で描く。 */
@@ -19683,7 +19701,8 @@ static bool accessible_pane_control(enum accessible_kind kind)
     enum accessible_kind parent = accessible_controls[kind].parent;
     return kind == ACCESSIBLE_PANE_TOOLS || parent == ACCESSIBLE_PANE_TOOLS ||
            parent == ACCESSIBLE_MODE_GROUP || parent == ACCESSIBLE_ACTION_GROUP ||
-           kind == ACCESSIBLE_BODY || kind == ACCESSIBLE_MINIMAP || kind == ACCESSIBLE_OUTLINE;
+           parent == ACCESSIBLE_NOTE_TAG_GROUP || kind == ACCESSIBLE_BODY ||
+           kind == ACCESSIBLE_MINIMAP || kind == ACCESSIBLE_OUTLINE;
 }
 
 /* 上部を畳んでいるあいだ、描かない・押せない・Tab で止まらない・読み上げに出さない部品
@@ -19695,6 +19714,28 @@ static bool collapsed_part(enum accessible_kind kind)
            kind == ACCESSIBLE_MENU || kind == ACCESSIBLE_TAG_EDIT;
 }
 
+/* ノートのタグの行の部品（群・荷札・「+N」・釦）か（#1309）。 */
+static bool note_tag_part(enum accessible_kind kind)
+{
+    return kind == ACCESSIBLE_NOTE_TAG_GROUP ||
+           accessible_controls[kind].parent == ACCESSIBLE_NOTE_TAG_GROUP;
+}
+
+/* 行が出ていないあいだ（検索・置換の帯・上部を畳んでいる）は、行の部品が全部無い。荷札は 1 つ
+ * でも置かれているとき、「+N」は畳んだ分があるときだけある（左の欄の札と同じ・#1247）。 */
+static bool note_tag_part_gone(const struct folio_window *_Nonnull self, enum accessible_kind kind)
+{
+    if (!note_tag_part(kind))
+        return false;
+    if (!tag_strip_visible(self))
+        return true;
+    if (kind != ACCESSIBLE_NOTE_TAG && kind != ACCESSIBLE_NOTE_TAG_MORE)
+        return false;
+    struct tag_strip_layout layout;
+    tag_strip_arrange(self, &layout);
+    return kind == ACCESSIBLE_NOTE_TAG ? layout.shown == 0 : layout.hidden == 0;
+}
+
 /* 空状態では操作帯・閲覧/編集・本文を描かず、hit と UIA にも出さない（ADR0060 の決定 13）。 */
 static bool pane_control_visible(const struct folio_window *_Nonnull self,
                                  enum accessible_kind kind)
@@ -19703,7 +19744,7 @@ static bool pane_control_visible(const struct folio_window *_Nonnull self,
         return minimap_visible(self);
     if (kind == ACCESSIBLE_OUTLINE)
         return outline_visible(self);
-    if (kind == ACCESSIBLE_TAG_EDIT && !tag_strip_visible(self))
+    if (note_tag_part_gone(self, kind))
         return false;
     if (note_header_collapsed(self) && collapsed_part(kind))
         return false;
@@ -19805,6 +19846,8 @@ static RECT accessible_pane_rect(const struct folio_window *_Nonnull self,
         enum accessible_kind kind;
         RECT (*_Nonnull bounds)(const struct folio_window *_Nonnull);
     } parts[] = {{ACCESSIBLE_TAG_EDIT, tag_entry_rect},
+                 {ACCESSIBLE_NOTE_TAG_GROUP, tag_entry_rect},
+                 {ACCESSIBLE_NOTE_TAG_MORE, tag_more_rect},
                  {ACCESSIBLE_NOTE_HEADER, note_header_rect},
                  {ACCESSIBLE_OUTLINE, outline_rect},
                  {ACCESSIBLE_BREADCRUMB, breadcrumb_rect},
@@ -20289,6 +20332,74 @@ static HRESULT outline_item_read(struct folio_window *_Nonnull self, struct acce
     return S_OK;
 }
 
+/* #1309: one tag label above the note: the tag's name, on the rectangle the row draws it in.
+ * A label of an earlier copy of the tags, of a folded place, or of a row no longer shown, does
+ * not answer. It is not a keyboard stop; invoking it opens the tag editor, as pressing it does. */
+static HRESULT note_tag_read(struct folio_window *_Nonnull self, struct accessible_item item,
+                             struct accessible_view *_Nonnull out)
+{
+    struct tag_strip_layout layout;
+    tag_strip_arrange(self, &layout);
+    if (!accessible_visible(self, ACCESSIBLE_NOTE_TAG_GROUP) ||
+        item.revision != self->tag_strip_revision || item.slot >= layout.shown)
+        return accessibility_node_unavailable;
+    enum folio_language language = folio_state_language(self->state);
+    (void)wide_units(note_tag_bytes(note_tags_at(self->tag_strip_tags, item.slot)), out->name);
+    (void)wide_units(ui_text_line(UI_TEXT_COMMAND_EDIT_TAGS, language), out->help);
+    out->position = (int)item.slot + 1;
+    out->set_size = (int)tag_strip_label_count(self);
+    out->enabled = part_enabled(self, ACCESSIBLE_NOTE_TAG);
+    out->bounds = layout.labels[item.slot];
+    MapWindowPoints(self->handle, nullptr, (POINT *)&out->bounds, 2);
+    out->offscreen = !IsWindowVisible(self->handle) || IsIconic(self->handle);
+    return S_OK;
+}
+
+static struct accessible_item note_tag_item(const struct folio_window *_Nonnull self, size_t slot)
+{
+    return (struct accessible_item){
+        .kind = ACCESSIBLE_NOTE_TAG, .slot = slot, .revision = self->tag_strip_revision};
+}
+
+/* 「+N」の名前「ほか {n} 個のタグ」と、説明（畳んだタグの名前を、ノートの順に。入りきらない
+ * 分は載せない）。左の欄の「+N」（#1247）と同じ形。 */
+static void note_tag_more_view(const struct folio_window *_Nonnull self,
+                               struct accessible_view *_Nonnull out)
+{
+    struct tag_strip_layout layout;
+    tag_strip_arrange(self, &layout);
+    char line[draw_unit_limit];
+    struct ui_text_request request = {.id = UI_TEXT_FILTER_MORE_NAME,
+                                      .language = folio_state_language(self->state),
+                                      .n = layout.hidden};
+    if (ui_text_format(&request, line, sizeof line) == UI_TEXT_FORMAT_READY)
+        (void)wide_units(line, out->name);
+    size_t used = 0;
+    line[0] = '\0';
+    for (size_t slot = layout.shown; slot < tag_strip_label_count(self); ++slot)
+    {
+        const struct note_tag *_Nonnull tag = note_tags_at(self->tag_strip_tags, slot);
+        size_t length = note_tag_length(tag);
+        size_t gap = used == 0 ? 0 : 2;
+        if (used + gap + length + 1 > sizeof line)
+            break;
+        memcpy(line + used, ", ", gap);
+        memcpy(line + used + gap, note_tag_bytes(tag), length);
+        used += gap + length;
+        line[used] = '\0';
+    }
+    (void)wide_units(line, out->help);
+}
+
+uint64_t folio_window_accessible_note_tag_revision(const struct folio_window *_Nonnull self)
+{
+    if (self->handle == nullptr || !accessible_visible(self, ACCESSIBLE_NOTE_TAG_GROUP))
+        return 0;
+    struct tag_strip_layout layout;
+    tag_strip_arrange(self, &layout);
+    return (self->tag_strip_revision + 1) * 128 + layout.shown * 2 + (layout.hidden > 0 ? 1 : 0);
+}
+
 static struct accessible_item outline_item(const struct folio_window *_Nonnull self, size_t row)
 {
     return (struct accessible_item){.kind = ACCESSIBLE_OUTLINE_ITEM,
@@ -20330,6 +20441,8 @@ static void filter_chip_view(const struct folio_window *_Nonnull self, struct ac
         filter_more_help(self, line);
         (void)wide_units(line, out->help);
     }
+    if (item.kind == ACCESSIBLE_NOTE_TAG_MORE)
+        note_tag_more_view(self, out);
 }
 
 /* The items whose views come from elsewhere than the static table: the surface's and the
@@ -20343,6 +20456,8 @@ static bool accessible_read_elsewhere(struct folio_window *_Nonnull self,
         *result = surface_read(self, item, out);
     else if (item.kind == ACCESSIBLE_OUTLINE_ITEM)
         *result = outline_item_read(self, item, out);
+    else if (item.kind == ACCESSIBLE_NOTE_TAG)
+        *result = note_tag_read(self, item, out);
     else
         return false;
     return true;
@@ -20529,7 +20644,8 @@ static bool accessible_virtual(enum accessible_kind kind)
            kind != ACCESSIBLE_REPLACE_PATTERN && kind != ACCESSIBLE_REPLACE_TEXT &&
            kind != ACCESSIBLE_DISCOVERY_PREVIEW && !accessible_item_row(item) &&
            kind != ACCESSIBLE_FILTER && kind != ACCESSIBLE_BODY && !accessible_item_root(item) &&
-           kind != ACCESSIBLE_OUTLINE_ITEM && kind != ACCESSIBLE_FILTER_TAG;
+           kind != ACCESSIBLE_OUTLINE_ITEM && kind != ACCESSIBLE_FILTER_TAG &&
+           kind != ACCESSIBLE_NOTE_TAG;
 }
 
 static bool accessible_edge_direction(enum accessible_navigation direction)
@@ -20680,11 +20796,63 @@ static HRESULT filter_navigate(const struct folio_window *_Nonnull self,
     return S_OK;
 }
 
+/* #1309: the tag row's children in the order they are drawn: the labels that are placed, the
+ * folded label when tags are folded, the button. */
+constexpr size_t note_tag_chain_limit = note_tags_max_count + 2;
+
+static size_t note_tag_chain(const struct folio_window *_Nonnull self,
+                             struct accessible_item *_Nonnull out)
+{
+    struct tag_strip_layout layout;
+    tag_strip_arrange(self, &layout);
+    size_t count = 0;
+    for (size_t slot = 0; slot < layout.shown && slot < note_tags_max_count; ++slot)
+        out[count++] = note_tag_item(self, slot);
+    if (layout.hidden > 0)
+        out[count++] = (struct accessible_item){.kind = ACCESSIBLE_NOTE_TAG_MORE};
+    out[count++] = (struct accessible_item){.kind = ACCESSIBLE_TAG_EDIT};
+    return count;
+}
+
+/* The group's first and last child, and a child's previous and next sibling. The static table
+ * cannot walk them: the labels are one kind with a number. */
+static bool note_tag_navigation(const struct accessible_item *_Nonnull item,
+                                enum accessible_navigation direction)
+{
+    if (item->kind == ACCESSIBLE_NOTE_TAG_GROUP)
+        return accessible_edge_direction(direction);
+    return accessible_controls[item->kind].parent == ACCESSIBLE_NOTE_TAG_GROUP &&
+           (direction == ACCESSIBLE_NAVIGATION_NEXT || direction == ACCESSIBLE_NAVIGATION_PREVIOUS);
+}
+
+static HRESULT note_tag_navigate(const struct folio_window *_Nonnull self,
+                                 const struct accessible_item *_Nonnull item,
+                                 enum accessible_navigation direction,
+                                 struct accessible_item *_Nonnull out)
+{
+    if (!accessible_visible(self, ACCESSIBLE_NOTE_TAG_GROUP))
+        return S_FALSE; /* a row that is not shown has no children */
+    struct accessible_item chain[note_tag_chain_limit];
+    size_t count = note_tag_chain(self, chain);
+    bool forward = accessible_forward_direction(direction);
+    if (item->kind == ACCESSIBLE_NOTE_TAG_GROUP)
+    {
+        *out = chain[forward ? 0 : count - 1];
+        return S_OK;
+    }
+    size_t at = filter_chain_find(chain, count, *item);
+    if (at == count || (forward ? at + 1 == count : at == 0))
+        return S_FALSE;
+    *out = chain[forward ? at + 1 : at - 1];
+    return S_OK;
+}
+
 /* The steps that walk a numbered list rather than the static table. */
 static bool listed_navigation(const struct accessible_item *_Nonnull item,
                               enum accessible_navigation direction)
 {
-    return outline_navigation(item, direction) || filter_navigation(item, direction);
+    return outline_navigation(item, direction) || filter_navigation(item, direction) ||
+           note_tag_navigation(item, direction);
 }
 
 static HRESULT listed_navigate(const struct folio_window *_Nonnull self,
@@ -20694,6 +20862,8 @@ static HRESULT listed_navigate(const struct folio_window *_Nonnull self,
 {
     if (outline_navigation(item, direction))
         return outline_navigate(self, item, direction, out);
+    if (note_tag_navigation(item, direction))
+        return note_tag_navigate(self, item, direction, out);
     return filter_navigate(self, item, direction, out);
 }
 
@@ -20774,10 +20944,35 @@ static bool outline_item_at(struct folio_window *_Nonnull self, POINT screen,
     return true;
 }
 
+/* #1309: the tag label, or the folded label, under a point in screen coordinates. The rest of
+ * the row (the gaps and the button) stays the one entry that opens the tag editor. */
+static bool note_tag_item_at(struct folio_window *_Nonnull self, POINT screen,
+                             struct accessible_item *_Nonnull out)
+{
+    POINT point = screen;
+    if (!accessible_visible(self, ACCESSIBLE_NOTE_TAG_GROUP) ||
+        !ScreenToClient(self->handle, &point))
+        return false;
+    struct tag_strip_layout layout;
+    tag_strip_arrange(self, &layout);
+    for (size_t slot = 0; slot < layout.shown; ++slot)
+    {
+        if (PtInRect(&layout.labels[slot], point))
+        {
+            *out = note_tag_item(self, slot);
+            return true;
+        }
+    }
+    if (layout.hidden == 0 || !PtInRect(&layout.more, point))
+        return false;
+    *out = (struct accessible_item){.kind = ACCESSIBLE_NOTE_TAG_MORE};
+    return true;
+}
+
 static HRESULT accessible_control_at(struct folio_window *_Nonnull self, POINT point,
                                      struct accessible_item *_Nonnull out)
 {
-    if (outline_item_at(self, point, out))
+    if (outline_item_at(self, point, out) || note_tag_item_at(self, point, out))
         return S_OK;
     size_t count = sizeof accessible_controls / sizeof accessible_controls[0];
     for (size_t index = count; index > 0; --index)
@@ -20919,6 +21114,8 @@ static bool accessible_command(enum accessible_kind kind, enum folio_command *_N
                     {ACCESSIBLE_HELP, FOLIO_COMMAND_HELP},
                     {ACCESSIBLE_FIND, FOLIO_COMMAND_FIND},
                     {ACCESSIBLE_TAG_EDIT, FOLIO_COMMAND_EDIT_TAGS},
+                    {ACCESSIBLE_NOTE_TAG, FOLIO_COMMAND_EDIT_TAGS},
+                    {ACCESSIBLE_NOTE_TAG_MORE, FOLIO_COMMAND_EDIT_TAGS},
                     {ACCESSIBLE_TAG_FILTER, FOLIO_COMMAND_FILTER_TAGS},
                     {ACCESSIBLE_FILTER_MORE, FOLIO_COMMAND_FILTER_TAGS},
                     {ACCESSIBLE_FILTER_FAVORITES, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY}};
@@ -21566,6 +21763,7 @@ static void settle_tag_strip(struct folio_window *_Nonnull self, uint64_t revisi
     self->tag_strip_tags = tags;
     self->tag_strip_outcome = outcome;
     self->tag_strip_count = tags == nullptr ? 0 : note_tags_count(tags);
+    self->tag_strip_revision += 1; /* 前の写しの荷札は、読み上げに答えなくなる（#1309） */
     if (tag_strip_visible(self))
     {
         RECT bounds = tag_strip_rect(self);

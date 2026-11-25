@@ -33,8 +33,9 @@ struct accessibility_host
     struct accessible_item selections[8];
     bool had_selection[8];
     uint64_t surface_revision;
-    uint64_t outline_revision; /* #975: the headings column's rows as last published */
-    uint64_t filter_revision;  /* #1247: the tag chips of the filter row as last published */
+    uint64_t outline_revision;  /* #975: the headings column's rows as last published */
+    uint64_t filter_revision;   /* #1247: the tag chips of the filter row as last published */
+    uint64_t note_tag_revision; /* #1309: the note's tag labels as last published */
     uint64_t revision;
     unsigned visibility;
     bool header_observed;
@@ -523,6 +524,24 @@ static void refresh_filter_tags(struct accessibility_host *_Nonnull host)
     raise_structure(host, ACCESSIBLE_FILTER_GROUP);
 }
 
+/* #1309: a tag label above the note belongs to one copy of the note's tags and to a place on
+ * the row. When the tags, the row's fold or the row itself changes, the cached labels stop
+ * answering and the group announces new children; the toolbar does when the row comes or goes. */
+static void refresh_note_tags(struct accessibility_host *_Nonnull host)
+{
+    if (host->owner == nullptr)
+        return;
+    uint64_t revision = folio_window_accessible_note_tag_revision(host->owner);
+    if (host->note_tag_revision == revision)
+        return;
+    bool row_changed = (host->note_tag_revision == 0) != (revision == 0);
+    host->note_tag_revision = revision;
+    drop_stale(host, ACCESSIBLE_NOTE_TAG);
+    raise_structure(host, ACCESSIBLE_NOTE_TAG_GROUP);
+    if (row_changed)
+        raise_structure(host, ACCESSIBLE_PANE_TOOLS);
+}
+
 static void refresh_visibility(struct accessibility_host *_Nonnull host)
 {
     /* 解除（#1199）は、左の欄の固定の子で、条件が効いているあいだだけある。 */
@@ -640,6 +659,7 @@ static void refresh_snapshot(struct accessibility_host *_Nonnull host)
     refresh_surface(host);
     refresh_outline(host);
     refresh_filter_tags(host);
+    refresh_note_tags(host);
     annotate(host, ACCESSIBLE_FILTER, host->filter_name);
     annotate(host, ACCESSIBLE_BODY, host->body_name);
     for (size_t at = 0; at < command_input_count; ++at)

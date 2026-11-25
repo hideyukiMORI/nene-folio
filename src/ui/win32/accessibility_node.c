@@ -46,7 +46,8 @@ static bool has_invoke(enum accessible_kind kind)
            kind == ACCESSIBLE_TAG_EDIT || kind == ACCESSIBLE_TAG_FILTER ||
            kind == ACCESSIBLE_FILTER_CLEAR || kind == ACCESSIBLE_FILTER_TAG ||
            kind == ACCESSIBLE_FILTER_MORE || kind == ACCESSIBLE_SURFACE_CHOICE ||
-           kind == ACCESSIBLE_SURFACE_BUTTON || kind == ACCESSIBLE_OUTLINE_ITEM;
+           kind == ACCESSIBLE_SURFACE_BUTTON || kind == ACCESSIBLE_OUTLINE_ITEM ||
+           kind == ACCESSIBLE_NOTE_TAG || kind == ACCESSIBLE_NOTE_TAG_MORE;
 }
 
 static bool has_selection(enum accessible_kind kind)
@@ -373,6 +374,9 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_EDIT] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_NOTE_HEADER] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_MENU] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_NOTE_TAG_GROUP] = UIA_GroupControlTypeId,
+    [ACCESSIBLE_NOTE_TAG] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_NOTE_TAG_MORE] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_TAG_EDIT] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_TAG_FILTER] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_INDEX_COUNT] = UIA_TextControlTypeId,
