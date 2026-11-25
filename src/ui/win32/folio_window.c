@@ -189,6 +189,8 @@ struct folio_window
     HWND _Nullable tooltip;
     char16_t tooltip_text[draw_unit_limit];
     HWND _Nullable settings_backdrop;
+    /* 暗幕の上で左釦を押した（面の外を押して閉じる道の前半。離しも暗幕の上なら閉じる）。 */
+    bool backdrop_pressed;
     /* native DialogBoxの暗幕は同じownerが持つ。復帰は現surface/DPIから再導出する。 */
     size_t native_modal_depth;
     struct modal_owner *_Nullable modal_owner;
@@ -15875,6 +15877,53 @@ static void paint_settings_backdrop(const struct folio_window *_Nonnull self, HW
     EndPaint(window, &painting);
 }
 
+/* 面の外（暗幕）を押して閉じてよい面: 閉じても何も失わない、すぐ効く面だけ（タグで絞り込み・
+ * 設定・このアプリについて）。適用／取消のある面（このノートのタグ）、進行のある面（タグの全体
+ * 管理）、選ぶと確定する面（テーマ・移動先）、探す面は、閉じない。OS の対話（DialogBox）の暗幕と、
+ * 変換中も、閉じない。 */
+static bool backdrop_dismisses(const struct folio_window *_Nonnull self)
+{
+    if (self->native_modal_depth > 0 || self->command_composing)
+        return false;
+    return self->command_surface == COMMAND_SURFACE_TAG_FILTER ||
+           self->command_surface == COMMAND_SURFACE_SETTINGS || about_surface(self);
+}
+
+/* 暗幕の上の点か（主窓の client 座標。面の窓の中は、暗幕ではない）。 */
+static bool backdrop_point(const struct folio_window *_Nonnull self, POINT point)
+{
+    RECT client;
+    RECT layer;
+    if (!GetClientRect(self->handle, &client) || !GetWindowRect(self->command_layer, &layer))
+        return false;
+    MapWindowPoints(nullptr, self->handle, (POINT *)&layer, 2);
+    return PtInRect(&client, point) && !PtInRect(&layer, point);
+}
+
+/* 押下: これまでどおり入力欄へ focus を戻す。閉じてよい面なら、離しを待つ。 */
+static void backdrop_pressed(struct folio_window *_Nonnull self, HWND window, UINT message)
+{
+    focus_command_input(self);
+    if (message != WM_LBUTTONDOWN || !backdrop_dismisses(self))
+        return;
+    self->backdrop_pressed = true;
+    SetCapture(window);
+}
+
+/* 離し: 押下と離しの両方が暗幕の上のときだけ閉じる。押したまま面の上へ動かして離せば、
+ * 閉じない。押下も離しも、下の窓へは通さない。 */
+static void backdrop_released(struct folio_window *_Nonnull self, HWND window, LPARAM lparam)
+{
+    if (!self->backdrop_pressed)
+        return;
+    self->backdrop_pressed = false;
+    if (GetCapture() == window)
+        ReleaseCapture();
+    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    if (backdrop_dismisses(self) && backdrop_point(self, point))
+        close_command_surface(self);
+}
+
 static LRESULT CALLBACK settings_backdrop_procedure(HWND window, UINT message, WPARAM wparam,
                                                     LPARAM lparam)
 {
@@ -15909,7 +15958,13 @@ static LRESULT CALLBACK settings_backdrop_procedure(HWND window, UINT message, W
     case WM_RBUTTONDOWN:
     case WM_MBUTTONDOWN:
     case WM_MOUSEWHEEL:
-        focus_command_input(self);
+        backdrop_pressed(self, window, message);
+        return 0;
+    case WM_LBUTTONUP:
+        backdrop_released(self, window, lparam);
+        return 0;
+    case WM_CAPTURECHANGED:
+        self->backdrop_pressed = false;
         return 0;
     default:
         return DefWindowProcW(window, message, wparam, lparam);

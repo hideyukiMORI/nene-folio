@@ -2677,6 +2677,7 @@ static void settings_edit_preserved(struct folio_window *_Nonnull window,
 
 static void settings_row_fonts(struct folio_window *_Nonnull window);
 static int surface_ink_span(struct folio_window *_Nonnull window, RECT band);
+static void backdrop_click(struct folio_window *_Nonnull window, POINT down, POINT up);
 
 /* #1283: Close is drawn (its label is inside its box) and a point in it finds the button, not
  * the status line beside it. box is the button's screen rectangle. */
@@ -2694,8 +2695,9 @@ static void surface_done_shown(struct folio_window *_Nonnull window, RECT box)
             "a point in Close finds the button");
 }
 
-/* #1283: the settings take effect at once; the surface is left with Close at the bottom right,
- * under its rows and its lines. The × in the title stays. */
+/* #1283: the settings take effect at once; the surface has Close at the bottom right, under
+ * its rows and its lines. The × in the title stays. It is left here by pressing outside it
+ * (#1285); Close itself is pressed in the tag filter's test. */
 static void settings_done(struct folio_window *_Nonnull window)
 {
     uint64_t revision = folio_window_accessible_surface_revision(window);
@@ -2717,10 +2719,22 @@ static void settings_done(struct folio_window *_Nonnull window)
                 views[0].bounds.top > views[1].bounds.bottom,
             "Close sits under the rows, inside the surface, below the title's close");
     surface_done_shown(window, views[0].bounds);
-    surface_button(window, ACCESSIBLE_SURFACE_DONE);
+    /* #1285: a press outside the settings surface closes it only when the release is outside
+     * too. The points are in the main window's client area. */
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    RECT layer = views[3].bounds, client;
+    MapWindowPoints(nullptr, root, (POINT *)&layer, 2);
+    GetClientRect(root, &client);
+    POINT outside = {client.right - 6, client.bottom - 6};
+    POINT inside = {(layer.left + layer.right) / 2, layer.top + 6};
+    backdrop_click(window, outside, inside);
+    require(folio_window_accessible_read(window, &items[3], &views[3]) == S_OK &&
+                !views[3].offscreen,
+            "a release over the settings surface keeps it open");
+    backdrop_click(window, outside, outside);
     require(folio_window_accessible_read(window, &items[3], &views[3]) != S_OK ||
                 views[3].offscreen,
-            "Close closes the settings surface");
+            "a press and a release outside close the settings surface");
 }
 static void japanese_row_face(struct folio_window *_Nonnull window);
 
@@ -11448,9 +11462,56 @@ static void tags_filter_done(struct folio_window *_Nonnull window,
             "Enter on Close closes the filter surface and leaves the filter as it is");
 }
 
+/* #1285: a press and a release on the backdrop, at these points of the main window's client
+ * area. The backdrop is the main window's own child that dims what is behind a surface. */
+static void backdrop_click(struct folio_window *_Nonnull window, POINT down, POINT up)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND backdrop = FindWindowExW(root, nullptr, L"NeNeFolioSettingsBackdrop", nullptr);
+    require(backdrop != nullptr && IsWindowVisible(backdrop),
+            "a framed surface shows its backdrop");
+    SendMessageW(backdrop, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(down.x, down.y));
+    SendMessageW(backdrop, WM_LBUTTONUP, 0, MAKELPARAM(up.x, up.y));
+    pump(window);
+}
+
+/* #1285: pressing outside a surface closes it when closing loses nothing (the tag filter, the
+ * settings); a surface with Apply and Cancel (this note's tags) stays. Both the press and the
+ * release must be on the backdrop: a release over the surface does not close it. */
+static void tags_outside_press(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    tags_open(window, ACCESSIBLE_TAG_FILTER);
+    tags_settle(window, fixture->state);
+    struct accessible_view surface = tags_view(window, ACCESSIBLE_SURFACE, 0);
+    RECT layer = surface.bounds;
+    MapWindowPoints(nullptr, root, (POINT *)&layer, 2);
+    RECT client;
+    GetClientRect(root, &client);
+    POINT outside = {client.right - 6, client.bottom - 6};
+    POINT inside = {(layer.left + layer.right) / 2, layer.top + 6};
+    require(!PtInRect(&layer, outside) && PtInRect(&layer, inside),
+            "the test's points are outside and inside the surface");
+    size_t shown = folio_state_index_filter_count(fixture->state);
+    backdrop_click(window, outside, inside);
+    require(IsWindowVisible(input), "a release over the surface keeps the filter surface open");
+    backdrop_click(window, outside, outside);
+    require(!IsWindowVisible(input) && folio_state_index_filter_count(fixture->state) == shown,
+            "a press and a release outside close the filter surface and leave the filter");
+    tags_open(window, ACCESSIBLE_TAG_EDIT);
+    tags_settle(window, fixture->state);
+    backdrop_click(window, outside, outside);
+    require(IsWindowVisible(input) && folio_state_edit_tags(fixture->state) != nullptr,
+            "pressing outside does not close this note's tags, which has Apply and Cancel");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_CANCEL);
+}
+
 static void tags_filter_roundtrip(struct folio_window *_Nonnull window,
                                   struct native_fixture *_Nonnull fixture)
 {
+    tags_outside_press(window, fixture);
     tags_filter_done(window, fixture);
     tags_open(window, ACCESSIBLE_TAG_FILTER);
     tags_settle(window, fixture->state);
