@@ -5,6 +5,7 @@
 enum drawer_header_button : unsigned char
 {
     DRAWER_HEADER_NONE,
+    DRAWER_HEADER_NEW_NOTE, /* 検索の欄の右の印（#1291） */
     DRAWER_HEADER_FAVORITES,
     DRAWER_HEADER_TAG,  /* タグごとの札。どの札かは番号で持つ（#1247） */
     DRAWER_HEADER_MORE, /* 畳んだタグの「+N」 */

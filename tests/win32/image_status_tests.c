@@ -6199,7 +6199,7 @@ static void first_save_departure(struct folio_window *_Nonnull window,
     struct accessible_request create = {.item = {.kind = ACCESSIBLE_NEW_NOTE},
                                         .action = ACCESSIBLE_ACTION_INVOKE};
     require(folio_window_accessible_action(window, &create) == S_OK,
-            "invoke the public header New Note button");
+            "invoke the public New Note button");
     pump(window);
     expect_editor(window, fixture->state, L"", FOLIO_NOTE_CHANGED);
     struct note_ref selected = {0};
@@ -9148,17 +9148,28 @@ static void favorite_empty_scope(struct folio_window *_Nonnull window,
     select_favorite_scope(window, false);
 }
 
+/* #1291: from the search field, Tab stops on the "new note" mark beside it, and the next Tab
+ * enters the chip row. */
+static void tab_from_search_to_chips(struct folio_window *_Nonnull window)
+{
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
+    favorite_key(window, VK_TAB);
+    struct accessible_item focus = {0};
+    require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_NEW_NOTE,
+            "Tab from the search field stops on the new-note mark");
+    favorite_key(window, VK_TAB);
+}
+
 static void favorite_scope_input(struct folio_window *_Nonnull window,
                                  struct native_fixture *_Nonnull fixture)
 {
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
-    HWND filter = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
-    SetFocus(filter);
-    favorite_key(window, VK_TAB);
+    tab_from_search_to_chips(window);
     struct accessible_item focus = {0};
     require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
                 focus.kind == ACCESSIBLE_FILTER_FAVORITES,
-            "Tab enters the chip row after search");
+            "Tab enters the chip row after search and the new-note mark");
     favorite_key(window, VK_RIGHT);
     require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL &&
                 folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
@@ -9558,28 +9569,28 @@ static bool expect_header_count(struct folio_window *_Nonnull window, struct hea
 }
 
 /* #1222: the main window draws the names of its buttons in the language's bundled face, not in
- * the monospace face. The "new note" button is as wide as its name measured in that face (the
- * name is not ASCII, so no tracking is added), rounded the way every command part is. */
+ * the monospace face. The "save" button is as wide as its name measured in that face (the
+ * name is not ASCII, so no tracking is added), rounded the way every command part is. The
+ * "new note" button, which this used to measure, is a mark without a name now (#1291). */
 static void word_font_parts(struct folio_window *_Nonnull window)
 {
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
     UINT dpi = GetDpiForWindow(root);
     wchar_t face[LF_FACESIZE];
     ui_face_for(FOLIO_LANGUAGE_JA, face);
-    int name = header_text_width(root, L"新しいノート", (struct header_font){face, 11, FW_NORMAL});
+    int name = header_text_width(root, L"保存", (struct header_font){face, 11, FW_NORMAL});
     wchar_t mono[LF_FACESIZE];
     int mono_size = ui_face_mono(mono, 11);
-    int linked =
-        header_text_width(root, L"新しいノート", (struct header_font){mono, mono_size, FW_NORMAL});
-    struct accessible_item button = {.kind = ACCESSIBLE_NEW_NOTE};
+    int linked = header_text_width(root, L"保存", (struct header_font){mono, mono_size, FW_NORMAL});
+    struct accessible_item button = {.kind = ACCESSIBLE_SAVE};
     struct accessible_view view = {0};
     require(folio_window_accessible_read(window, &button, &view) == S_OK && !view.offscreen,
-            "the new note button is visible");
+            "the save button is visible");
     int width = view.bounds.right - view.bounds.left;
-    printf("word-font new-note width=%d word=%d mono=%d dpi=%u\n", width,
+    printf("word-font save width=%d word=%d mono=%d dpi=%u\n", width,
            ui_part_command_width(name, true, dpi), ui_part_command_width(linked, true, dpi), dpi);
     require(width == ui_part_command_width(name, true, dpi),
-            "the new note button is sized for its name in the language's face");
+            "the save button is sized for its name in the language's face");
 }
 
 static int breadcrumb_width(struct folio_window *_Nonnull window)
@@ -9901,13 +9912,12 @@ static void filter_chips_resting(struct folio_window *_Nonnull window, RECT star
 static void filter_tab_without_clear(struct folio_window *_Nonnull window,
                                      struct native_fixture *_Nonnull fixture)
 {
-    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
-    favorite_key(window, VK_TAB);
+    tab_from_search_to_chips(window);
     struct accessible_item focus = {0};
     require(!folio_state_conditions_active(fixture->state) &&
                 folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
                 focus.kind == ACCESSIBLE_FILTER_FAVORITES,
-            "Tab from the search field stops on the chip row");
+            "Tab from the search field reaches the chip row after the new-note mark");
     favorite_key(window, VK_TAB);
     require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
                 focus.kind == ACCESSIBLE_NEW_CATEGORY,
@@ -9920,8 +9930,7 @@ static void filter_tab_without_clear(struct folio_window *_Nonnull window,
 static void filter_clear_keyboard(struct folio_window *_Nonnull window,
                                   struct native_fixture *_Nonnull fixture)
 {
-    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
-    favorite_key(window, VK_TAB);
+    tab_from_search_to_chips(window);
     favorite_key(window, VK_SPACE);
     favorite_key(window, VK_TAB);
     struct accessible_item focus = {0};
@@ -10663,8 +10672,7 @@ static void match_pair_select(struct folio_window *_Nonnull window,
 static void match_pair_keyboard(struct folio_window *_Nonnull window,
                                 struct native_fixture *_Nonnull fixture)
 {
-    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
-    favorite_key(window, VK_TAB);
+    tab_from_search_to_chips(window);
     favorite_key(window, VK_TAB);
     require(filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_MATCH_ANY}),
             "Tab from the chip row enters the pair on the selected mode");
@@ -10722,8 +10730,7 @@ static void match_pair_vanishes(struct folio_window *_Nonnull window,
     require(drawer_region_plain(window, (RECT){left.left, clear.top, clear.left, clear.bottom}) &&
                 folio_window_accessible_selected(window, &pair, &chosen) != S_OK,
             "with one tag nothing is drawn left of the clear button and no mode is reported");
-    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
-    favorite_key(window, VK_TAB);
+    tab_from_search_to_chips(window);
     favorite_key(window, VK_TAB);
     require(filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_CLEAR}),
             "with one tag, Tab goes from the chip row to the clear row");
@@ -11036,6 +11043,100 @@ static void filter_mark_needs_a_term(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+/* #1291: the "new note" mark sits right of the search field, in the field's band: a 28 DIP
+ * square that ends 16 DIP before the drawer's edge. The field ends 8 DIP and its frame before
+ * the mark, so the two never overlap. Sizes follow the DPI (the required CI runs at 96). */
+static void new_note_mark_place(struct folio_window *_Nonnull window, const char *_Nonnull what)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    int dpi = (int)GetDpiForWindow(drawer);
+    RECT client, edit;
+    GetClientRect(drawer, &client);
+    GetWindowRect(folio_window_accessible_window(window, ACCESSIBLE_FILTER), &edit);
+    MapWindowPoints(nullptr, drawer, (POINT *)&edit, 2);
+    RECT mark = chip_bounds(window, ACCESSIBLE_NEW_NOTE);
+    int gap = mark.left - edit.right;
+    printf("new-note mark: field=%ld..%ld mark=%ld..%ld drawer=%ld dpi=%d\n", edit.left, edit.right,
+           mark.left, mark.right, client.right, dpi);
+    require(mark.right - mark.left == MulDiv(28, dpi, 96) &&
+                mark.bottom - mark.top == MulDiv(28, dpi, 96) &&
+                mark.right == client.right - MulDiv(16, dpi, 96),
+            what);
+    require(edit.right > edit.left && gap >= MulDiv(8, dpi, 96) && gap <= MulDiv(12, dpi, 96) &&
+                mark.top <= edit.top && mark.bottom >= edit.bottom,
+            what);
+}
+
+/* The mark draws its picture, says its name and its key, and has a tooltip that says the key
+ * too. The top band no longer holds it. */
+static void new_note_mark_named(struct folio_window *_Nonnull window)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    RECT mark = chip_bounds(window, ACCESSIBLE_NEW_NOTE);
+    int inset = MulDiv(4, (int)GetDpiForWindow(drawer), 96);
+    require(!drawer_region_plain(window, (RECT){mark.left + inset, mark.top + inset,
+                                                mark.right - inset, mark.bottom - inset}),
+            "the new-note mark draws its picture");
+    struct accessible_view view = header_part(window, ACCESSIBLE_NEW_NOTE);
+    require(!view.offscreen && wcscmp((const wchar_t *)view.name, L"新しいノート") == 0 &&
+                wcsstr((const wchar_t *)view.help, L"Ctrl+N") != nullptr,
+            "the new-note mark says its name and its key");
+    struct accessible_view band = header_part(window, ACCESSIBLE_HEADER);
+    RECT shared;
+    require(!IntersectRect(&shared, &band.bounds, &view.bounds),
+            "the top band does not hold the new-note mark");
+    expect_tooltip_rect(window, ACCESSIBLE_NEW_NOTE);
+    wchar_t text[1024] = {0};
+    TOOLINFOW tool = {.cbSize = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM),
+                      .hwnd = drawer,
+                      .uId = ACCESSIBLE_NEW_NOTE,
+                      .lpszText = text};
+    HWND tooltip = status_tooltip(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    SendMessageW(tooltip, TTM_GETTEXTW, 1024, (LPARAM)&tool);
+    require(wcsstr(text, L"新しいノート") != nullptr && wcsstr(text, L"Ctrl+N") != nullptr,
+            "the new-note mark's tooltip says its name and its key");
+}
+
+/* With the note alone there is no drawer, and so no mark; it comes back with the drawer. */
+static void new_note_mark_note_only(struct folio_window *_Nonnull window,
+                                    struct native_fixture *_Nonnull fixture)
+{
+    action(window, ACCESSIBLE_LAYOUT_NOTE);
+    require(folio_state_layout_mode(fixture->state) == FOLIO_LAYOUT_NOTE &&
+                header_part(window, ACCESSIBLE_NEW_NOTE).offscreen,
+            "with the note alone the new-note mark is off screen");
+    action(window, ACCESSIBLE_LAYOUT_BOTH);
+    require(folio_state_layout_mode(fixture->state) == FOLIO_LAYOUT_BOTH &&
+                !header_part(window, ACCESSIBLE_NEW_NOTE).offscreen,
+            "the new-note mark comes back with the drawer");
+}
+
+static void new_note_mark_case(struct native_fixture *_Nonnull fixture)
+{
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "new-note mark fixture");
+    pump(window);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+    new_note_mark_place(window, "the new-note mark sits right of the search field");
+    new_note_mark_named(window);
+    new_note_mark_note_only(window, fixture);
+    struct accessible_request width = {.item = {.kind = ACCESSIBLE_SPLITTER},
+                                       .action = ACCESSIBLE_ACTION_SET_RANGE,
+                                       .range_value = 200};
+    require(folio_window_accessible_action(window, &width) == S_OK, "minimum drawer width");
+    pump(window);
+    new_note_mark_place(window, "at the narrowest drawer the mark still sits right of the field");
+    /* A real press on the mark takes the same path as Ctrl+N: an untitled note opens. */
+    chip_click(window, ACCESSIBLE_NEW_NOTE);
+    require(folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_UNTITLED &&
+                GetFocus() == folio_window_accessible_window(window, ACCESSIBLE_BODY),
+            "a press on the new-note mark opens an untitled note in the editor");
+    folio_window_destroy(window);
+}
+
 static void run_favorites_ui(struct native_fixture *_Nonnull fixture)
 {
     prepare_favorites(fixture);
@@ -11066,6 +11167,9 @@ static void run_favorites_ui(struct native_fixture *_Nonnull fixture)
     fflush(stdout);
     favorite_scope_input(window, fixture);
     folio_window_destroy(window);
+    puts("favorites UI: new-note mark");
+    fflush(stdout);
+    new_note_mark_case(fixture);
 }
 
 static void run_favorites_case(struct native_fixture *_Nonnull fixture)
