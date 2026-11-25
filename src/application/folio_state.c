@@ -151,6 +151,7 @@ struct folio_state
     struct markdown_rtf *_Nullable tag_current_edit;
     struct index_filter *_Nullable filter;
     enum note_scope note_scope;
+    enum search_scope search_scope; /* 検索語を掛ける範囲（#1292）。既定は ALL。覚えない。 */
     /* 準備中の最新要求と次の読込位置（ADR0068）。部分corpusを結果へ公開しない。 */
     struct utf8_text *_Nullable index_request;
     struct index_filter_build *_Nullable index_build;
@@ -1179,13 +1180,35 @@ create_index_build(const struct folio_state *_Nonnull state,
     return from_index_filter(index_filter_build_create(query, count, out));
 }
 
+/* 検索語が条件の外まで届くか（#1292）: 範囲が ALL で、語が空でない。このあいだ、お気に入りと
+ * タグの条件は掛けない。「効いている条件」を決める所は、ここ 1 つ。 */
+static bool search_widened(const struct folio_state *_Nonnull state, size_t term_length)
+{
+    return state->search_scope == SEARCH_SCOPE_ALL && term_length > 0;
+}
+
+/* 最新の準備要求か、確定している検索語の長さ。無ければ 0。 */
+static size_t listed_term_length(const struct folio_state *_Nonnull state)
+{
+    const struct utf8_text *_Nullable term =
+        state->index_request != nullptr ? state->index_request : state->index_term;
+    return term == nullptr ? 0 : utf8_text_length(term);
+}
+
+/* いま一覧に掛かっている、お気に入りの範囲。 */
+static enum note_scope listed_scope(const struct folio_state *_Nonnull state)
+{
+    return search_widened(state, listed_term_length(state)) ? NOTE_SCOPE_ALL : state->note_scope;
+}
+
 static struct index_filter_query list_query(const struct folio_state *_Nonnull state,
                                             const struct utf8_text *_Nonnull term)
 {
-    return (struct index_filter_query){.term = utf8_text_bytes(term),
-                                       .length = utf8_text_length(term),
-                                       .tags = state->index_tags,
-                                       .mode = state->tag_mode};
+    return (struct index_filter_query){
+        .term = utf8_text_bytes(term),
+        .length = utf8_text_length(term),
+        .tags = search_widened(state, utf8_text_length(term)) ? nullptr : state->index_tags,
+        .mode = state->tag_mode};
 }
 
 /* Only this call borrows name/body. No entry array or pointer survives a step. */
@@ -1391,7 +1414,7 @@ static struct drawer_source source_of(const struct folio_state *_Nonnull state)
         .notes = (const struct note_ledger *_Nonnull const *_Nonnull)state->notes,
         .filter = state->filter,
         .order = folio_settings_note_order(state->settings),
-        .scope = state->note_scope};
+        .scope = listed_scope(state)};
     return source;
 }
 
@@ -5046,6 +5069,52 @@ enum folio_state_outcome folio_state_set_tag_filter(struct folio_state *_Nonnull
     return FOLIO_STATE_READY;
 }
 
+enum search_scope folio_state_search_scope(const struct folio_state *_Nonnull state)
+{
+    return state->search_scope;
+}
+
+bool folio_state_search_scope_offered(const struct folio_state *_Nonnull state)
+{
+    return folio_state_conditions_active(state) && listed_term_length(state) > 0;
+}
+
+/* いまの検索語で、絞り込みを取り直す。語の持ち主を要求へ移すだけで、タグの条件と改訂は
+ * 変えない（adopt_tag_query と同じ持ち替え）。 */
+static void restart_index_request(struct folio_state *_Nonnull state)
+{
+    struct utf8_text *_Nullable term =
+        state->index_request != nullptr ? state->index_request : state->index_term;
+    if (term == nullptr)
+        return;
+    discard_index_build(state);
+    state->index_request = nullptr;
+    if (state->index_term == term)
+        state->index_term = nullptr;
+    clear_index_filter(state);
+    state->index_request = term;
+}
+
+enum folio_state_outcome folio_state_set_search_scope(struct folio_state *_Nonnull state,
+                                                      enum search_scope scope)
+{
+    if (state->search_scope == scope)
+        return FOLIO_STATE_READY;
+    /* 語とタグの両方があるときだけ、作ってある絞り込みが範囲に依る（お気に入りは外で掛ける）。 */
+    bool rebuilt = listed_term_length(state) > 0 && state->index_tags != nullptr &&
+                   note_tags_count(state->index_tags) > 0;
+    enum folio_state_outcome synced = rebuilt ? synchronize_filter(state) : FOLIO_STATE_READY;
+    if (synced != FOLIO_STATE_READY)
+        return synced;
+    state->search_scope = scope;
+    if (rebuilt)
+        restart_index_request(state);
+    state->scroll = 0;
+    layout_changed(state);
+    settle_cursor(state);
+    return FOLIO_STATE_READY;
+}
+
 const struct note_tags *_Nullable folio_state_tag_filter(const struct folio_state *_Nonnull state)
 {
     return state->index_tags;
@@ -5256,7 +5325,7 @@ const char *_Nonnull folio_state_index_filter_term(const struct folio_state *_No
 
 size_t folio_state_index_filter_count(const struct folio_state *_Nonnull state)
 {
-    if (state->note_scope == NOTE_SCOPE_ALL)
+    if (listed_scope(state) == NOTE_SCOPE_ALL)
         return state->filter == nullptr ? total_notes(state) : index_filter_count(state->filter);
     size_t count = 0;
     for (size_t category = 0; category < state->notes_count; ++category)

@@ -74,6 +74,7 @@ folio_state_tag_management_phase(const struct folio_state *_Nonnull state);
 #include "note_times_view.h"
 #include "open_place_kind.h"
 #include "pane_mode.h"
+#include "search_scope.h"
 
 #include "pane_title_view.h"
 #include "product_link.h"
@@ -853,6 +854,19 @@ folio_state_toggle_favorite(struct folio_state *_Nonnull state, struct note_ref 
 folio_state_ledger_outcome(struct folio_state *_Nonnull state, enum folio_state_outcome outcome);
 [[nodiscard]] enum note_scope folio_state_note_scope(const struct folio_state *_Nonnull state);
 void folio_state_set_note_scope(struct folio_state *_Nonnull state, enum note_scope scope);
+/* 一覧の検索語を掛ける範囲（ADR 0122 の決定 6・#1292）。既定は SEARCH_SCOPE_ALL で、覚えない
+ * （起動のたびに既定へ戻る。検索語・お気に入りの範囲・タグの条件と同じ扱い）。
+ * ALL のあいだ、検索語が空でなければ、お気に入りとタグの条件を掛けずに、すべてのノートから
+ * 探す。条件そのもの（folio_state_note_scope・folio_state_tag_filter）は変えない。検索語を
+ * 消せば、条件がまた効く。FILTERED は、検索語と条件の AND。 */
+[[nodiscard]] enum search_scope folio_state_search_scope(const struct folio_state *_Nonnull state);
+/* 範囲を選ばせる意味があるか: 条件（お気に入り・タグ）があり、検索語が空でない。 */
+[[nodiscard]] bool folio_state_search_scope_offered(const struct folio_state *_Nonnull state);
+/* 範囲を替える。タグの条件と検索語の両方があるときは、いまの語で絞り込みを取り直す（結果は
+ * folio_state_continue_index_filter で進む。タグの条件の改訂は進めない）。先行する同期が
+ * 失敗したら、その結果を返し、範囲は変えない。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_set_search_scope(struct folio_state *_Nonnull state, enum search_scope scope);
 [[nodiscard]] enum note_order folio_state_note_order(const struct folio_state *_Nonnull state);
 [[nodiscard]] enum folio_state_outcome
 folio_state_set_note_order(struct folio_state *_Nonnull state, enum note_order order);

@@ -9946,10 +9946,19 @@ static void verify_favorite_state(void)
     folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
     require(folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads,
             "star filtering never prepares corpus");
-    require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
+    /* #1292: by default the term searches every note, whatever the star scope is. */
+    require(folio_state_search_scope(state) == SEARCH_SCOPE_ALL &&
+                !folio_state_search_scope_offered(state) &&
+                test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) >= 1 &&
+                folio_state_search_scope_offered(state) &&
+                folio_state_note_scope(state) == NOTE_SCOPE_FAVORITES,
+            "a term searches all notes by default and keeps the star scope set");
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                !folio_state_index_filter_pending(state) &&
                 folio_state_index_filter_count(state) == 0 &&
                 folio_state_favorite_count(state) == 1,
-            "star and term filters intersect");
+            "star and term filters intersect inside the filtered scope, with no rebuild");
     require(test_index_filter_complete(state, u"three", 5) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 1,
             "term finds the starred note");
@@ -10133,9 +10142,27 @@ static void verify_tag_filter_queries(void)
                 finish_test_index_filter(state) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 2 && adapter.note_reads == reads,
             "warm ANY uses the same corpus without rereads");
+    /* #1292: the term searches all notes by default; the tag condition stays set. */
+    uint64_t revision = folio_state_tag_filter_revision(state);
     require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) >= 1 &&
+                folio_state_search_scope_offered(state) &&
+                note_tags_count(folio_state_tag_filter(state)) > 0,
+            "a term searches beyond the tag condition by default");
+    size_t everywhere = folio_state_index_filter_count(state);
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 &&
+                folio_state_tag_filter_revision(state) == revision,
+            "text intersects tag conditions inside the filtered scope");
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_ALL) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == everywhere &&
+                folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 1,
-            "text intersects tag conditions");
+            "switching the scope rebuilds the same term both ways");
     require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 2 &&
                 folio_state_tag_match_mode(state) == TAG_MATCH_ANY,
@@ -10168,7 +10195,8 @@ static void verify_tag_filter_clearing(void)
     require(folio_state_set_tag_filter(state, empty, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
                 !folio_state_filtering(state) && !folio_state_index_filter_pending(state),
             "clearing all conditions stops an unfinished request");
-    require(test_index_filter_complete(state, u"other", 5) == FOLIO_STATE_READY &&
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"other", 5) == FOLIO_STATE_READY &&
                 folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
                 finish_test_index_filter(state) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 0,
@@ -10873,7 +10901,8 @@ static void verify_management_success(void)
                 folio_state_begin_edit(state) == FOLIO_STATE_READY,
             "selected note stays in edit mode");
     struct note_tags *red = selected_tags(1);
-    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
                 folio_state_set_tag_filter(state, red, TAG_MATCH_ANY) == FOLIO_STATE_READY &&
                 finish_test_index_filter(state) == FOLIO_STATE_READY,
             "existing combined query");
