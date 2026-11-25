@@ -1068,6 +1068,9 @@ static void band_body_geometry(struct folio_window *_Nonnull window, enum folio_
     require(surface.bounds.bottom <= bounds.top, "inline controls do not cover the body");
 }
 
+static void short_band_result(struct folio_window *_Nonnull window, enum folio_command command,
+                              enum folio_language language);
+
 static void short_band_case(struct native_fixture *_Nonnull fixture, enum folio_command command,
                             enum folio_language language)
 {
@@ -1088,6 +1091,7 @@ static void short_band_case(struct native_fixture *_Nonnull fixture, enum folio_
     band_body_geometry(window, command);
     band_tag_visibility(window, false);
     band_fixed_controls(window, fixed, false);
+    short_band_result(window, command, language);
     char path[64];
     require(snprintf(path, sizeof path, "short-band-%d-%d.bmp", command, language) > 0,
             "short band capture path");
@@ -17838,6 +17842,273 @@ static void finder_gutter_face(struct folio_window *_Nonnull window)
     require_face(&all.drawn, &all.values, &all.words, "the source's line numbers stay monospace");
 }
 
+/* #1301: the search and replace bands, and the notice above the ":" line, say their words in
+ * the language's face. A band is read from the surface's own window and compared with the same
+ * text in the language's face and in the monospace face (the shapes, not the widths: the
+ * required CI runs at 96 DPI). band is a screen rectangle whose top left pixel is ground. */
+struct band_face
+{
+    RECT band;
+    const wchar_t *_Nonnull text;
+    enum folio_language language; /* the face the text is drawn in */
+    enum folio_language other;    /* a face it is not drawn in; the same language for none */
+    const char *_Nonnull message;
+};
+
+static void band_face(struct folio_window *_Nonnull window, struct band_face expected)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    wchar_t own[LF_FACESIZE], foreign[LF_FACESIZE], mono[LF_FACESIZE];
+    ui_face_for(expected.language, own);
+    ui_face_for(expected.other, foreign);
+    int mono_size = ui_face_mono(mono, 11);
+    struct ink_profile drawn = surface_profile(window, expected.band);
+    struct ink_profile words =
+        reference_profile(root, expected.text, (struct header_font){own, 11, FW_NORMAL}, &drawn);
+    struct ink_profile values = reference_profile(
+        root, expected.text, (struct header_font){mono, mono_size, FW_NORMAL}, &drawn);
+    printf("band-face dpi=%u language=%u ink=%d width=%d\n", GetDpiForWindow(root),
+           (unsigned)expected.language, drawn.total, drawn.width);
+    fflush(stdout);
+    require(drawn.total > 0, "the band shows the text");
+    require_face(&drawn, &words, &values, expected.message);
+    if (expected.other == expected.language)
+        return;
+    struct ink_profile strange = reference_profile(
+        root, expected.text, (struct header_font){foreign, 11, FW_NORMAL}, &drawn);
+    require_face(&drawn, &words, &strange, "the band's words are in the window's language's face");
+}
+
+static void band_words(enum ui_text id, enum folio_language language, wchar_t *_Nonnull out)
+{
+    require(MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, ui_text_line(id, language), -1, out,
+                                128) > 1,
+            "a band's words are there to compare");
+}
+
+/* The rectangle the band keeps for its result line (the count, or the reason of a failure). */
+static RECT band_result(struct folio_window *_Nonnull window)
+{
+    struct accessible_view status = band_view(window, ACCESSIBLE_SURFACE_STATUS);
+    require(!status.offscreen && status.name[0] != u'\0', "the band says a result");
+    return status.bounds;
+}
+
+/* How high a line of a language's words is: its face at the words' size (11). */
+static int band_line_height(HWND root, enum folio_language language)
+{
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(language, face);
+    HFONT font = CreateFontW(-MulDiv(11, (int)GetDpiForWindow(root), 96), 0, 0, 0, FW_NORMAL, FALSE,
+                             FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, face);
+    HDC device = GetDC(root);
+    HGDIOBJ previous = SelectObject(device, font);
+    TEXTMETRICW metrics = {0};
+    require(GetTextMetricsW(device, &metrics), "measure a line of the band's words");
+    SelectObject(device, previous);
+    ReleaseDC(root, device);
+    DeleteObject(font);
+    return (int)metrics.tmHeight;
+}
+
+/* Three lines of the highest of the three languages' faces, rounded as the band rounds its
+ * result: up to 4 DIP. */
+static int band_three_lines(HWND root)
+{
+    int dpi = (int)GetDpiForWindow(root);
+    int line = 0;
+    for (size_t language = 0; language < folio_language_count; ++language)
+    {
+        int height = band_line_height(root, (enum folio_language)language);
+        line = height > line ? height : line;
+    }
+    int logical = (line * 3 * 96 + dpi - 1) / dpi;
+    return MulDiv((logical + 3) / 4 * 4, dpi, 96);
+}
+
+/* What is measured and what is drawn agree: the result is drawn inside its rectangle, and
+ * nothing of it is in the margin below. The rectangle is as high as the longest reason of the
+ * three languages, each measured in its language's face: exactly three lines of the words'
+ * face (48 DIP; 52 where a line rounds up, at 144 DPI). A reason that wraps to a fourth line
+ * makes it 64 or more, which tells when a reason was added or made longer; measuring in the
+ * monospace face makes it 40 or 52, which the upper bound alone would let through. 52 is what
+ * the monospace face needed for four lines, and the smallest window keeps its body with that. */
+static void band_result_fits(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    RECT result = band_result(window);
+    int lines = band_three_lines(root);
+    int height = result.bottom - result.top;
+    RECT inside = {result.left - MulDiv(2, dpi, 96), result.top, result.right, result.bottom};
+    RECT below = {inside.left, result.bottom, result.right, result.bottom + MulDiv(6, dpi, 96)};
+    int shown = surface_profile(window, inside).total;
+    int spilled = surface_profile(window, below).total;
+    printf("band-result dpi=%d height=%d dip=%d three-lines=%d ink=%d below=%d\n", dpi, height,
+           MulDiv(height, 96, dpi), lines, shown, spilled);
+    fflush(stdout);
+    require(height > 0 && height <= MulDiv(52, dpi, 96),
+            "every reason of the three languages fits three lines of the band's result");
+    require(height == lines, "the band's result is measured in the words' faces");
+    require(shown > 0 && spilled == 0, "the band's result is drawn inside its rectangle");
+}
+
+/* The narrow replace band names its second field in the 16 DIP between the two fields' boxes.
+ * The public bounds are the EDITs', each inside its box by the same inset; the band stays a
+ * pixel inside the gap, clear of the boxes' frames, and starts left of the boxes. */
+static void band_replace_label(struct folio_window *_Nonnull window, enum folio_language language)
+{
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    RECT first = band_view(window, ACCESSIBLE_REPLACE_PATTERN).bounds;
+    RECT second = band_view(window, ACCESSIBLE_REPLACE_TEXT).bounds;
+    wchar_t label[128];
+    band_words(UI_TEXT_ACCESSIBLE_REPLACEMENT, language, label);
+    int inset = (second.top - first.bottom - MulDiv(16, dpi, 96)) / 2;
+    printf("band-label gap=%ld inset=%d\n", second.top - first.bottom, inset);
+    require(inset >= 0, "the narrow replace band stacks its two fields");
+    band_face(window,
+              (struct band_face){{first.left - 2 * inset - MulDiv(2, dpi, 96),
+                                  first.bottom + inset + 1, second.right, second.top - inset - 1},
+                                 label,
+                                 language,
+                                 language,
+                                 "a replace field's label is in the language's face"});
+}
+
+/* The smallest window, in each language: a result is shown and fits. The search band says "not
+ * found" in one line; the replace band says why the pattern is refused. */
+static void short_band_result(struct folio_window *_Nonnull window, enum folio_command command,
+                              enum folio_language language)
+{
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    if (command == FOLIO_COMMAND_REPLACE)
+    {
+        HWND pattern = folio_window_accessible_window(window, ACCESSIBLE_REPLACE_PATTERN);
+        require(pattern != nullptr && SetWindowTextW(pattern, L"("), "an unfinished pattern");
+        pump(window);
+        band_result_fits(window);
+        band_replace_label(window, language);
+        return;
+    }
+    search_term(window, L"no such words in the note");
+    band_result_fits(window);
+    RECT result = band_result(window);
+    wchar_t line[128];
+    band_words(UI_TEXT_STATUS_SEARCH_NOT_FOUND, language, line);
+    band_face(window, (struct band_face){{result.left - MulDiv(2, dpi, 96), result.top,
+                                          result.right, result.bottom},
+                                         line,
+                                         language,
+                                         language,
+                                         "the band's result is in the language's face"});
+}
+
+/* The wide search band: its label is left of the field, in the field's rows. */
+static RECT band_search_label(struct folio_window *_Nonnull window)
+{
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    RECT field = band_view(window, ACCESSIBLE_COMMAND_INPUT).bounds;
+    RECT layer = {0};
+    require(GetWindowRect(folio_window_accessible_window(window, ACCESSIBLE_SURFACE), &layer),
+            "the band's place on the screen");
+    printf("band-search field=(%ld,%ld,%ld,%ld) layer=(%ld,%ld,%ld,%ld)\n", field.left, field.top,
+           field.right, field.bottom, layer.left, layer.top, layer.right, layer.bottom);
+    return (RECT){layer.left + MulDiv(6, dpi, 96), field.top, field.left - MulDiv(6, dpi, 96),
+                  field.bottom};
+}
+
+/* The search band of a wide window: the label, the count of a found word and the result's
+ * rectangle. Returns where the field starts (the label's width decides it). */
+static LONG band_search_faces(struct folio_window *_Nonnull window, enum folio_language language,
+                              enum folio_language other)
+{
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    invoke_operation(window, FOLIO_COMMAND_FIND);
+    pump(window);
+    search_term(window, L"needle");
+    wchar_t label[128];
+    band_words(UI_TEXT_STATUS_SEARCH_FORWARD, language, label);
+    RECT band = band_search_label(window);
+    band_face(window, (struct band_face){band, label, language, other,
+                                         "the search band's label is in the language's face"});
+    struct accessible_view status = band_view(window, ACCESSIBLE_SURFACE_STATUS);
+    require(status.name[0] >= u'1' && status.name[0] <= u'9', "the result starts with a count");
+    band_result_fits(window);
+    RECT result = band_result(window);
+    band_face(window, (struct band_face){{result.left - MulDiv(2, dpi, 96), result.top,
+                                          result.right, result.bottom},
+                                         (const wchar_t *)status.name,
+                                         language,
+                                         language,
+                                         "the band's count is in the language's face"});
+    LONG field = band_view(window, ACCESSIBLE_COMMAND_INPUT).bounds.left;
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_KEYDOWN, VK_ESCAPE,
+                 0);
+    pump(window);
+    return field;
+}
+
+/* The notice above the ":" line ("no matching command") is 24 DIP at the top of the layer. */
+static void band_ex_notice(struct folio_window *_Nonnull window)
+{
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    submit_ex(window, L":nosuchcommand1301");
+    struct accessible_view status = band_view(window, ACCESSIBLE_SURFACE_STATUS);
+    wchar_t notice[128];
+    band_words(UI_TEXT_STATUS_COMMAND_NOT_FOUND, FOLIO_LANGUAGE_JA, notice);
+    require(!status.offscreen && wcscmp((const wchar_t *)status.name, notice) == 0,
+            "an unknown command is answered above the line");
+    RECT layer = {0};
+    require(GetWindowRect(folio_window_accessible_window(window, ACCESSIBLE_SURFACE), &layer),
+            "the line's place on the screen");
+    band_face(window, (struct band_face){
+                          {layer.left + MulDiv(4, dpi, 96), layer.top + MulDiv(2, dpi, 96),
+                           layer.right - MulDiv(8, dpi, 96), layer.top + MulDiv(24, dpi, 96)},
+                          notice,
+                          FOLIO_LANGUAGE_JA,
+                          FOLIO_LANGUAGE_JA,
+                          "the notice above the line is in the language's face"});
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT), WM_KEYDOWN,
+                 VK_ESCAPE, 0);
+    pump(window);
+}
+
+/* The words' faces are made again when the language changes, and the band is measured again
+ * with them: its label is then in the new language's face (the Japanese face lacks glyphs of
+ * the Chinese label), and the field starts where it did (the label's column is as wide as the
+ * widest of the three languages' labels, each in its own face). */
+static void band_language_switch(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture, LONG field)
+{
+    submit_ex(window, L":set language=zh-Hans");
+    require(folio_state_language(fixture->state) == FOLIO_LANGUAGE_ZH_HANS,
+            "the line changes the language");
+    LONG chinese = band_search_faces(window, FOLIO_LANGUAGE_ZH_HANS, FOLIO_LANGUAGE_JA);
+    submit_ex(window, L":set language=ja");
+    require(folio_state_language(fixture->state) == FOLIO_LANGUAGE_JA,
+            "the line changes the language back");
+    printf("band-language field ja=%ld zh=%ld\n", field, chinese);
+    require(chinese == field, "the band's label column does not depend on the language");
+}
+
+/* In a window of its own, before the finder's case: the bands leave nothing behind in it. */
+static void band_fonts_case(struct native_fixture *_Nonnull fixture)
+{
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "a window for the bands' faces");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SetWindowPos(root, nullptr, 20, 20, 1050, 720, SWP_NOZORDER | SWP_NOACTIVATE),
+            "a wide window for the bands");
+    pump(window);
+    LONG field = band_search_faces(window, FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_JA);
+    band_ex_notice(window);
+    band_language_switch(window, fixture, field);
+    folio_window_destroy(window);
+}
+
 static void body_discovery_fonts(struct folio_window *_Nonnull window,
                                  struct native_fixture *_Nonnull fixture)
 {
@@ -18729,6 +19000,8 @@ static void run_body_discovery_case(struct native_fixture *_Nonnull fixture)
     if (body_discovery_96)
         require(SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE) != nullptr,
                 "96 DPI windows for the body-discovery case");
+    if (!body_discovery_copy_case && !body_discovery_measure_case)
+        band_fonts_case(fixture);
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,

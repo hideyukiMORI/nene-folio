@@ -1494,6 +1494,9 @@ static void refresh_word_font(struct folio_window *_Nonnull self, UINT dpi)
         self->language_fonts[index] = create_word_font((enum folio_language)index, dpi);
     }
     self->part_metrics.valid = false;
+    /* 検索・置換の帯は、言葉の書体で測ってある。作り直した書体が前と同じ値の handle でも
+     * 古い測りを使わないように、ここで覚えを捨てる（#1301）。 */
+    self->band.valid = false;
 }
 
 /* 言葉を描く書体。作れなかったときは等幅で描く（前の形）。 */
@@ -4806,11 +4809,14 @@ static void draw_surface_button(const struct folio_window *_Nonnull self, HDC de
         draw_surface_button_in(self, device, slot, bounds);
 }
 
+/* 検索の帯。札・結果の文（件数・失敗の理由）・釦の名前は言葉の書体（#1301）。測る側は
+ * refresh_band_layout。入力欄（EDIT）の字は替えていない。 */
 static void draw_search_surface(const struct folio_window *_Nonnull self, HDC device)
 {
     enum folio_language language = folio_state_language(self->state);
     char line[search_status_capacity];
     search_status(self, line);
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     SetTextColor(device, self->palette.current_text);
     draw_utf8(device, ui_text_line(search_direction_label(self), language),
               search_header_rect(self));
@@ -4821,6 +4827,7 @@ static void draw_search_surface(const struct folio_window *_Nonnull self, HDC de
     draw_input_field(self, device, self->command_input, command_input_rect(self));
     draw_surface_button(self, device, ACCESSIBLE_SURFACE_PREVIOUS);
     draw_surface_button(self, device, ACCESSIBLE_SURFACE_NEXT);
+    SelectObject(device, previous);
 }
 
 /* 失敗の 1 行。REPLACE_BAD_PATTERN のときだけ末尾に位置を添える（ADR 0028 の決定 9）。
@@ -4891,9 +4898,11 @@ static void replace_line(const struct folio_window *_Nonnull self, char *_Nonnul
     failure_status(self, self->replace_outcome, out);
 }
 
+/* 置換の帯。検索の帯と同じく、札・結果の文・釦の名前は言葉の書体（#1301）。 */
 static void draw_replace_surface(const struct folio_window *_Nonnull self, HDC device)
 {
     enum folio_language language = folio_state_language(self->state);
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     SetTextColor(device, self->palette.current_text);
     draw_utf8(device, ui_text_line(UI_TEXT_ACCESSIBLE_PATTERN, language), self->band.label[0]);
     draw_utf8(device, ui_text_line(UI_TEXT_ACCESSIBLE_REPLACEMENT, language), self->band.label[1]);
@@ -4906,6 +4915,7 @@ static void draw_replace_surface(const struct folio_window *_Nonnull self, HDC d
     draw_surface_button(self, device, ACCESSIBLE_SURFACE_CLOSE);
     draw_surface_button(self, device, ACCESSIBLE_SURFACE_REPLACE_ONE);
     draw_surface_button(self, device, ACCESSIBLE_SURFACE_REPLACE_ALL);
+    SelectObject(device, previous);
 }
 
 static void draw_command_status(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
@@ -4931,8 +4941,11 @@ static void draw_command_status(const struct folio_window *_Nonnull self, HDC de
     {
         return;
     }
+    /* 知らせは言葉（#1301）。「:」の行は面の土台の等幅を引き継ぐので、ここで選んで戻す。 */
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     SetTextColor(device, self->palette.header_text);
     draw_utf8(device, line, bounds);
+    SelectObject(device, previous);
 }
 
 /* 各ページの先頭にも所属群を残し、途中ページのEnter/Escを別の場所の操作と読ませない。 */
@@ -8086,34 +8099,64 @@ static bool band_offset_height(HDC device, enum folio_language language, RECT bo
     return measure_band_reason(device, text, bounds, maximum);
 }
 
-static bool band_reason_height(HDC device, UINT dpi, int width, int *_Nonnull out)
+/* 帯の文を測る書体。いまの言語の文は、描く書体そのもの（word_font）で測り、ほかの言語の文は、
+ * その言語の書体で測る（日本語の書体で简体中文の文を測らない。#1301）。 */
+static HFONT _Nullable band_measure_font(const struct folio_window *_Nonnull self,
+                                         enum folio_language language)
 {
-    RECT bounds = {0, 0, width, 0};
-    int maximum = 0;
-    for (size_t column = 0; column < folio_language_count; ++column)
-    {
-        enum folio_language language = (enum folio_language)column;
-        if (!band_outcomes_height(device, language, bounds, &maximum) ||
-            !band_commands_height(device, language, bounds, &maximum) ||
-            !band_status_height(device, language, bounds, &maximum) ||
-            !band_offset_height(device, language, bounds, &maximum))
-            return false;
-    }
-    int logical = (maximum * 96 + (int)dpi - 1) / (int)dpi;
-    *out = scale((logical + 3) / 4 * 4, dpi);
-    return *out > 0;
+    return language == folio_state_language(self->state) ? word_font(self)
+                                                         : language_font(self, language);
 }
 
-static int band_label_width(HDC device, enum ui_text first, enum ui_text second)
+/* 1 つの言語の全部の文を、device にいま選んである書体で測る。 */
+static bool band_language_height(HDC device, enum folio_language language, RECT bounds,
+                                 int *_Nonnull maximum)
+{
+    return band_outcomes_height(device, language, bounds, maximum) &&
+           band_commands_height(device, language, bounds, maximum) &&
+           band_status_height(device, language, bounds, maximum) &&
+           band_offset_height(device, language, bounds, maximum);
+}
+
+/* 結果の文の高さ。3 言語の全部の文を、それぞれの言語の書体で測った最大で、言語によらない。
+ * device の書体は、入ったときのものに戻して返す。 */
+static bool band_reason_height(const struct folio_window *_Nonnull self, HDC device,
+                               struct command_band_layout *_Nonnull layout)
+{
+    RECT bounds = {0, 0, layout->measured_width, 0};
+    int maximum = 0;
+    bool measured = true;
+    HGDIOBJ entered = GetCurrentObject(device, OBJ_FONT);
+    for (size_t column = 0; measured && column < folio_language_count; ++column)
+    {
+        enum folio_language language = (enum folio_language)column;
+        SelectObject(device, band_measure_font(self, language));
+        measured = band_language_height(device, language, bounds, &maximum);
+    }
+    SelectObject(device, entered);
+    if (!measured)
+        return false;
+    int logical = (maximum * 96 + (int)layout->dpi - 1) / (int)layout->dpi;
+    layout->result_height = scale((logical + 3) / 4 * 4, layout->dpi);
+    return layout->result_height > 0;
+}
+
+/* 札の幅。3 言語の札を、それぞれの言語の書体で測った最大。device の書体は、入ったときのものに
+ * 戻して返す。 */
+static int band_label_width(const struct folio_window *_Nonnull self, HDC device,
+                            enum ui_text first, enum ui_text second)
 {
     int maximum = 0;
+    HGDIOBJ entered = GetCurrentObject(device, OBJ_FONT);
     for (size_t column = 0; column < folio_language_count; ++column)
     {
+        SelectObject(device, band_measure_font(self, (enum folio_language)column));
         int a = measure_utf8(device, ui_text_line(first, (enum folio_language)column));
         int b = measure_utf8(device, ui_text_line(second, (enum folio_language)column));
         int width = a > b ? a : b;
         maximum = width > maximum ? width : maximum;
     }
+    SelectObject(device, entered);
     return maximum;
 }
 
@@ -8172,7 +8215,8 @@ static void band_wide_layout(struct command_band_layout *_Nonnull layout, RECT c
     layout->result = (RECT){content.left, scale(replacing ? 96 : 52, dpi), content.right, 0};
 }
 
-static void band_geometry(struct command_band_layout *_Nonnull layout, HDC device)
+static void band_geometry(const struct folio_window *_Nonnull self,
+                          struct command_band_layout *_Nonnull layout, HDC device)
 {
     UINT dpi = layout->dpi;
     RECT bounds = {0, 0, layout->width, 0};
@@ -8185,7 +8229,7 @@ static void band_geometry(struct command_band_layout *_Nonnull layout, HDC devic
     enum ui_text first = replacing ? UI_TEXT_ACCESSIBLE_PATTERN : UI_TEXT_STATUS_SEARCH_FORWARD;
     enum ui_text second =
         replacing ? UI_TEXT_ACCESSIBLE_REPLACEMENT : UI_TEXT_STATUS_SEARCH_BACKWARD;
-    int label = band_label_width(device, first, second);
+    int label = band_label_width(self, device, first, second);
     int left = content.left + label + scale(8, dpi);
     int right = replacing ? content.right : layout->close.left - scale(8, dpi);
     int remaining = right - scale(base_search_button_width * 2 + 16, dpi) - left;
@@ -8250,26 +8294,28 @@ static bool refresh_band_layout(struct folio_window *_Nonnull self)
     UINT dpi = GetDpiForWindow(self->handle);
     int available = pane.bottom - pane.top - scale(note_tools_height(self), dpi);
     if (self->band.valid && self->band.width == width && self->band.available_height == available &&
-        self->band.dpi == dpi && self->band.font == self->mono_font &&
+        self->band.dpi == dpi && self->band.font == word_font(self) &&
         self->band.mode == self->command_surface)
         return true;
     HDC device = GetDC(self->handle);
     if (device == nullptr)
         return false;
-    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    /* 描く側（draw_search_surface・draw_replace_surface）と同じ言葉の書体と字間で測る（#1301）。
+     * 字間は描く側と同じ決まり: DC に 1 DIP を置き、ASCII だけの行にだけ掛かる（draw_text）。
+     * 覚えの鍵の書体は、作り直しの所（refresh_word_font）でも捨てる。 */
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     int tracking = SetTextCharacterExtra(device, scale(base_tracking, dpi));
     struct command_band_layout layout = {.width = width,
                                          .available_height = available,
                                          .dpi = dpi,
-                                         .font = self->mono_font,
+                                         .font = word_font(self),
                                          .mode = self->command_surface};
-    band_geometry(&layout, device);
+    band_geometry(self, &layout, device);
     bool reusable = self->band.valid && self->band.dpi == dpi &&
-                    self->band.font == self->mono_font &&
+                    self->band.font == word_font(self) &&
                     self->band.measured_width == layout.measured_width;
     layout.result_height = self->band.result_height;
-    bool measured =
-        reusable || band_reason_height(device, dpi, layout.measured_width, &layout.result_height);
+    bool measured = reusable || band_reason_height(self, device, &layout);
     if (tracking != tracking_unavailable)
         SetTextCharacterExtra(device, tracking);
     SelectObject(device, previous);
