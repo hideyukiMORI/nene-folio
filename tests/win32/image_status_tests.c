@@ -12652,17 +12652,59 @@ static void note_tag_role(struct folio_window *_Nonnull window,
                 folio_window_accessible_navigate(window, &items[0], ACCESSIBLE_NAVIGATION_PREVIOUS,
                                                  &back) == S_FALSE,
             "the labels walk backwards too, and the first has nothing before it");
+    struct accessible_request entry = {.item = {.kind = ACCESSIBLE_TAG_EDIT},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    struct accessible_request label = {.item = items[0], .action = ACCESSIBLE_ACTION_FOCUS};
     struct accessible_item focus = {0};
-    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
-    SetFocus(root);
-    require(folio_window_accessible_focus(window, ACCESSIBLE_WINDOW, &focus) != S_OK ||
-                focus.kind != ACCESSIBLE_NOTE_TAG,
-            "the keyboard never rests on a label");
+    require(folio_window_accessible_action(window, &entry) == S_OK &&
+                FAILED(folio_window_accessible_action(window, &label)) &&
+                folio_window_accessible_focus(window, ACCESSIBLE_WINDOW, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_TAG_EDIT,
+            "a label refuses the keyboard focus; it stays on the row's entry");
 }
 
-/* Opens another note of the first category from its row in the index. The row is named by the
- * rows' own revision: the window's revision is behind it on a run that starts from the data an
- * earlier run left (seen 2026-11-25; every row then reads as unavailable). */
+/* The tree around the row: the entry is the group's last child and no longer a child of the
+ * note's tools, whose last child is the group. */
+static void note_tag_tree(struct folio_window *_Nonnull window,
+                          const struct accessible_item *_Nonnull items, size_t count)
+{
+    struct accessible_item tools = {.kind = ACCESSIBLE_PANE_TOOLS};
+    struct accessible_item child = {0};
+    struct accessible_item up = {0};
+    require(folio_window_accessible_navigate(window, &tools, ACCESSIBLE_NAVIGATION_LAST, &child) ==
+                    S_OK &&
+                child.kind == ACCESSIBLE_NOTE_TAG_GROUP,
+            "the tag row's group is the last child of the note's tools");
+    HRESULT result =
+        folio_window_accessible_navigate(window, &tools, ACCESSIBLE_NAVIGATION_FIRST, &child);
+    for (size_t step = 0; result == S_OK && step < 20; ++step)
+    {
+        require(child.kind != ACCESSIBLE_TAG_EDIT && child.kind != ACCESSIBLE_NOTE_TAG &&
+                    child.kind != ACCESSIBLE_NOTE_TAG_MORE,
+                "the row's elements are not direct children of the note's tools");
+        result =
+            folio_window_accessible_navigate(window, &child, ACCESSIBLE_NAVIGATION_NEXT, &child);
+    }
+    for (size_t at = count - 2; at < count; ++at)
+    {
+        require(folio_window_accessible_navigate(window, &items[at], ACCESSIBLE_NAVIGATION_PARENT,
+                                                 &up) == S_OK &&
+                    up.kind == ACCESSIBLE_NOTE_TAG_GROUP,
+                "the parent of the row's last two elements is the row's group");
+    }
+    require(folio_window_accessible_navigate(window, &items[count - 2], ACCESSIBLE_NAVIGATION_NEXT,
+                                             &child) == S_OK &&
+                child.kind == ACCESSIBLE_TAG_EDIT && items[count - 1].kind == ACCESSIBLE_TAG_EDIT &&
+                folio_window_accessible_navigate(window, &items[count - 1],
+                                                 ACCESSIBLE_NAVIGATION_NEXT, &child) == S_FALSE,
+            "the entry follows the last label or the folded element, and nothing follows it");
+}
+
+/* Opens another note of the first category from its row in the index. A row is named by the
+ * rows' revision (folio_state_row_revision), as the product names it. The window's revision
+ * (folio_window_accessible_revision, the index revision) is the value that watches for any
+ * change of the index: it also moves when the layout alone changes (a category folds or
+ * opens), so it is equal to the rows' revision only on some runs. */
 static void note_tag_switch(struct folio_window *_Nonnull window,
                             struct native_fixture *_Nonnull fixture, size_t row)
 {
@@ -12682,9 +12724,13 @@ static void note_tag_other_note(struct folio_window *_Nonnull window,
                                 struct native_fixture *_Nonnull fixture,
                                 const struct accessible_item *_Nonnull old)
 {
+    uint64_t watched = folio_window_accessible_note_tag_revision(window);
     note_tag_switch(window, fixture, 1);
     require(note_tag_gone(window, old[0]) && note_tag_gone(window, old[1]),
             "the labels of the note before do not answer for the note now open");
+    require(watched != 0 && folio_window_accessible_note_tag_revision(window) != 0 &&
+                folio_window_accessible_note_tag_revision(window) != watched,
+            "the value the host watches changes when another note's tags are shown");
     note_tag_names(window, L"blue", L"green");
     note_tag_switch(window, fixture, 0);
     require(note_tag_gone(window, old[0]) && note_tag_gone(window, old[1]),
@@ -12698,7 +12744,10 @@ static void note_tag_collapsed(struct folio_window *_Nonnull window)
     struct accessible_item items[note_tag_child_limit];
     require(note_tag_children(window, items) == 3, "the open note header shows the tag row");
     RECT place = note_tag_view(window, items[0]).bounds;
+    uint64_t watched = folio_window_accessible_note_tag_revision(window);
     header_toggle(window);
+    require(watched != 0 && folio_window_accessible_note_tag_revision(window) == 0,
+            "the value the host watches is 0 while the row is not shown");
     struct accessible_item shown[note_tag_child_limit];
     struct accessible_view group = {0};
     struct accessible_item row = {.kind = ACCESSIBLE_NOTE_TAG_GROUP};
@@ -12714,7 +12763,8 @@ static void note_tag_collapsed(struct folio_window *_Nonnull window)
                 under != ACCESSIBLE_TAG_EDIT,
             "where a label was, a collapsed note header has no element of the row");
     header_toggle(window);
-    require(wcscmp((const wchar_t *)note_tag_view(window, items[0]).name, L"red") == 0,
+    require(wcscmp((const wchar_t *)note_tag_view(window, items[0]).name, L"red") == 0 &&
+                folio_window_accessible_note_tag_revision(window) == watched,
             "the same labels answer again when the note header is shown again");
 }
 
@@ -12752,7 +12802,37 @@ static struct accessible_item note_tag_more(struct folio_window *_Nonnull window
     }
     require(note_tag_under(window, more.bounds).kind == ACCESSIBLE_NOTE_TAG_MORE,
             "a point on the folded element is the folded element");
+    note_tag_tree(window, items, count);
     return items[placed];
+}
+
+/* A narrower window holds fewer labels: the value the host watches changes with the number
+ * placed, and comes back with the width. */
+static void note_tag_narrower(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    RECT before;
+    require(GetWindowRect(root, &before), "the window's place before narrowing");
+    struct accessible_item items[note_tag_child_limit];
+    size_t wide = note_tag_children(window, items);
+    uint64_t watched = folio_window_accessible_note_tag_revision(window);
+    UINT flags = SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE;
+    require(
+        SetWindowPos(root, nullptr, 0, 0, MulDiv(560, dpi, 96), before.bottom - before.top, flags),
+        "narrow the window to its least width");
+    pump(window);
+    size_t narrow = note_tag_children(window, items);
+    printf("tag-element children wide=%zu narrow=%zu\n", wide, narrow);
+    require(narrow < wide && folio_window_accessible_note_tag_revision(window) != watched,
+            "a narrower row places fewer labels and the watched value changes");
+    require(SetWindowPos(root, nullptr, 0, 0, before.right - before.left,
+                         before.bottom - before.top, flags),
+            "the window's width again");
+    pump(window);
+    require(note_tag_children(window, items) == wide &&
+                folio_window_accessible_note_tag_revision(window) == watched,
+            "the width back, the same labels and the same watched value");
 }
 
 /* A note whose tags do not fit the row. The text is typed in EDIT and undone again, so the
@@ -12769,6 +12849,7 @@ static void note_tag_fold(struct folio_window *_Nonnull window,
     pump(window);
     require(note_tag_gone(window, before[0]), "typed tags replace the labels of the saved text");
     note_tag_opens(window, fixture, note_tag_more(window));
+    note_tag_narrower(window);
     require(SendMessageW(body, EM_UNDO, 0, 0), "undo the typed tags");
     pump(window);
     tags_expect_text(window, tags_original);
@@ -12786,6 +12867,7 @@ static void note_tag_elements(struct folio_window *_Nonnull window,
     require(note_tag_children(window, items) == 3, "two labels and the entry");
     note_tag_places(window, items);
     note_tag_role(window, items);
+    note_tag_tree(window, items, 3);
     note_tag_opens(window, fixture, items[1]);
     /* The pointer does the same: a press on a label opens the tag editor (#1263). */
     header_click(window, note_tag_view(window, items[0]).bounds);
