@@ -9946,10 +9946,26 @@ static void verify_favorite_state(void)
     folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
     require(folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads,
             "star filtering never prepares corpus");
-    require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
+    /* #1292: by default the term searches every note, whatever the star scope is. */
+    require(folio_state_listed_scope(state) == NOTE_SCOPE_FAVORITES &&
+                test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_listed_scope(state) == NOTE_SCOPE_ALL &&
+                folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+                folio_state_listed_scope(state) == NOTE_SCOPE_FAVORITES,
+            "the listed star scope widens only while a term searches all notes");
+    require(folio_state_search_scope(state) == SEARCH_SCOPE_ALL &&
+                !folio_state_search_scope_offered(state) &&
+                test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 2 &&
+                folio_state_search_scope_offered(state) &&
+                folio_state_note_scope(state) == NOTE_SCOPE_FAVORITES,
+            "a term searches all notes by default and keeps the star scope set");
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                !folio_state_index_filter_pending(state) &&
                 folio_state_index_filter_count(state) == 0 &&
-                folio_state_favorite_count(state) == 1,
-            "star and term filters intersect");
+                folio_state_favorite_count(state) == 1 &&
+                folio_state_listed_scope(state) == NOTE_SCOPE_FAVORITES,
+            "star and term filters intersect inside the filtered scope, with no rebuild");
     require(test_index_filter_complete(state, u"three", 5) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 1,
             "term finds the starred note");
@@ -10111,6 +10127,29 @@ static void verify_empty_tag_mode(void)
     folio_state_destroy(state);
 }
 
+/* #1292 review: called inside the filtered scope with the ANY condition of red and blue, and
+ * leaves the same. */
+static void verify_scope_moves_count(struct folio_state *_Nonnull state,
+                                     const struct note_tags *_Nonnull selected)
+{
+    /* The scope alone moves the count: only note two holds "other", and it lacks red. A query
+     * that always widened, or never did, fails one of these. */
+    require(folio_state_set_tag_filter(state, selected, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"other", 5) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0,
+            "inside the filter, all of red and blue AND the other note's term match nothing");
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_ALL) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 &&
+                folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0,
+            "over all notes the term finds its note; back inside the filter it finds none");
+    require(folio_state_set_tag_filter(state, selected, TAG_MATCH_ANY) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY,
+            "back to the ANY condition");
+}
+
 static void verify_tag_filter_queries(void)
 {
     struct persistence_adapter adapter = tagged_adapter();
@@ -10133,9 +10172,28 @@ static void verify_tag_filter_queries(void)
                 finish_test_index_filter(state) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 2 && adapter.note_reads == reads,
             "warm ANY uses the same corpus without rereads");
+    /* #1292: the term searches all notes by default; the tag condition stays set. */
+    uint64_t revision = folio_state_tag_filter_revision(state);
     require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 &&
+                folio_state_search_scope_offered(state) &&
+                note_tags_count(folio_state_tag_filter(state)) > 0,
+            "a term searches beyond the tag condition by default");
+    size_t everywhere = folio_state_index_filter_count(state);
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 &&
+                folio_state_tag_filter_revision(state) == revision,
+            "text intersects tag conditions inside the filtered scope");
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_ALL) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == everywhere &&
+                folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 1,
-            "text intersects tag conditions");
+            "switching the scope rebuilds the same term both ways");
+    verify_scope_moves_count(state, selected);
     require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 2 &&
                 folio_state_tag_match_mode(state) == TAG_MATCH_ANY,
@@ -10155,6 +10213,112 @@ static void verify_tag_filter_queries(void)
     folio_state_destroy(state);
 }
 
+/* #1292 review: the listed star scope changes with the term alone; the row revision follows. */
+static void verify_listed_scope_revision(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_READY, "star one note");
+    folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
+    uint64_t revision = folio_state_index_revision(state);
+    require(folio_state_set_index_filter(state, u"o", 1) == FOLIO_STATE_READY &&
+                folio_state_listed_scope(state) == NOTE_SCOPE_ALL &&
+                folio_state_index_revision(state) != revision,
+            "the first character widens the listed scope and advances the row revision");
+    revision = folio_state_index_revision(state);
+    require(folio_state_index_filter_pending(state) &&
+                folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+                folio_state_listed_scope(state) == NOTE_SCOPE_FAVORITES &&
+                folio_state_index_revision(state) != revision,
+            "emptying a term still being prepared narrows the scope and advances the revision");
+    folio_state_destroy(state);
+}
+
+/* #1292 review: while the term searches all notes, lighting the favorites chip changes no row,
+ * so the list keeps its place; the revision still advances for the chip. */
+static void verify_note_scope_keeps_scroll(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    require(folio_state_toggle_favorite(state, at(0, 2)) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"t", 1) == FOLIO_STATE_READY &&
+                folio_state_scroll_drawer(state, scroll_metrics, 15) == FOLIO_STATE_READY &&
+                folio_state_drawer_scroll(state) > 0,
+            "a scrolled list of the term's notes");
+    int scroll = folio_state_drawer_scroll(state);
+    uint64_t revision = folio_state_index_revision(state);
+    folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
+    require(folio_state_drawer_scroll(state) == scroll &&
+                folio_state_index_revision(state) != revision &&
+                folio_state_note_scope(state) == NOTE_SCOPE_FAVORITES &&
+                folio_state_listed_scope(state) == NOTE_SCOPE_ALL,
+            "a star scope that changes no row keeps the scroll and advances the revision");
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                folio_state_scroll_drawer(state, scroll_metrics, 0) == FOLIO_STATE_READY,
+            "search inside the favorites");
+    folio_state_set_note_scope(state, NOTE_SCOPE_ALL);
+    require(folio_state_scroll_drawer(state, scroll_metrics, 15) == FOLIO_STATE_READY &&
+                folio_state_drawer_scroll(state) > 0,
+            "scroll the wider list again");
+    folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
+    require(folio_state_drawer_scroll(state) == 0,
+            "a star scope that changes the rows goes back to the top");
+    folio_state_destroy(state);
+}
+
+/* #1292 review: a prior synchronization that fails leaves the scope as it was. */
+static void verify_search_scope_sync_failure(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tags *red = selected_tags(1);
+    require(folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"other", 5) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 &&
+                folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "a term and a tag condition, over all notes");
+    struct note_name *name = accepted_note_name("renamed");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
+            "a rename is left unfinished");
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) ==
+                    FOLIO_STATE_RENAME_PENDING &&
+                folio_state_search_scope(state) == SEARCH_SCOPE_ALL,
+            "a failed prior synchronization keeps the scope");
+    note_name_destroy(name);
+    note_tags_destroy(red);
+    folio_state_destroy(state);
+}
+
+/* #1292 review: switching while the request is still pending ends with the latest scope's
+ * result, and a cursor on a note that fell out of the list is settled again. */
+static void verify_search_scope_pending_switch(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tags *red = selected_tags(1);
+    require(folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"other", 5) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 &&
+                folio_state_focus_cursor(state, FOLIO_CURSOR_NOTE, at(0, 1)) == FOLIO_STATE_READY,
+            "the cursor is on the only listed note, which is outside the tag condition");
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) &&
+                folio_state_set_search_scope(state, SEARCH_SCOPE_ALL) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) &&
+                folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY,
+            "the scope is switched three times before the request finishes");
+    enum folio_cursor_kind kind = FOLIO_CURSOR_CATEGORY;
+    struct note_ref ref = {0};
+    require(folio_state_search_scope(state) == SEARCH_SCOPE_FILTERED &&
+                folio_state_index_filter_count(state) == 0 &&
+                !(folio_state_cursor(state, &kind, &ref) && kind == FOLIO_CURSOR_NOTE),
+            "the result is the latest scope's and the cursor left the note that fell out");
+    note_tags_destroy(red);
+    folio_state_destroy(state);
+}
+
 static void verify_tag_filter_clearing(void)
 {
     struct persistence_adapter adapter = tagged_adapter();
@@ -10168,7 +10332,8 @@ static void verify_tag_filter_clearing(void)
     require(folio_state_set_tag_filter(state, empty, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
                 !folio_state_filtering(state) && !folio_state_index_filter_pending(state),
             "clearing all conditions stops an unfinished request");
-    require(test_index_filter_complete(state, u"other", 5) == FOLIO_STATE_READY &&
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"other", 5) == FOLIO_STATE_READY &&
                 folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
                 finish_test_index_filter(state) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 0,
@@ -10255,10 +10420,20 @@ static void verify_tag_filter_save(void)
     folio_state_destroy(state);
 }
 
+/* #1292: the sweep below is about a query of text AND tags, which is the filtered scope. */
+static struct folio_state *_Nonnull filtered_scope_state(
+    struct persistence_adapter *_Nonnull adapter)
+{
+    struct folio_state *state = ready_state(adapter);
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY,
+            "search inside the filter before the tag allocation sweep");
+    return state;
+}
+
 static bool tag_filter_allocation(size_t nth, const struct note_tags *_Nonnull red)
 {
     struct persistence_adapter adapter = tagged_adapter();
-    struct folio_state *state = ready_state(&adapter);
+    struct folio_state *state = filtered_scope_state(&adapter);
     require(test_index_filter_complete(state, u"two", 3) == FOLIO_STATE_READY,
             "prior text query before tag allocation failure");
     allocation_probe_fail_at(nth);
@@ -10713,9 +10888,50 @@ static void tag_catalog_allocation_sweep(void)
     test_failure("tag catalog state allocation sweep did not finish");
 }
 
+/* #1292: a term over all notes is being prepared while the star scope is set, and its
+ * preparation fails at the nth allocation. The list goes back to the favorites, so the row
+ * revision has to advance. True when no allocation failed. */
+static bool listed_scope_allocation(size_t nth)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    /* The bodies are read first, so the failures fall in the query itself. */
+    require(test_index_filter_complete(state, u"two", 3) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY &&
+                folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_READY,
+            "read the bodies and star a note before the scope sweep");
+    folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_listed_scope(state) == NOTE_SCOPE_ALL,
+            "a pending term widens the listed scope");
+    uint64_t revision = folio_state_index_revision(state);
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome outcome = finish_test_index_filter(state);
+    allocation_probe_fail_at(0);
+    require(outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_OUT_OF_MEMORY,
+            "term preparation has typed failures");
+    if (outcome == FOLIO_STATE_OUT_OF_MEMORY)
+        require(!folio_state_index_filter_pending(state) &&
+                    folio_state_listed_scope(state) == NOTE_SCOPE_FAVORITES &&
+                    folio_state_index_revision(state) != revision,
+                "a failed preparation narrows the list back and advances the row revision");
+    folio_state_destroy(state);
+    return outcome == FOLIO_STATE_READY;
+}
+
+static void listed_scope_allocation_sweep(void)
+{
+    size_t nth = 1;
+    while (nth < 128 && !listed_scope_allocation(nth))
+        ++nth;
+    require(nth > 1 && nth < 128, "listed scope sweep finishes after real injection");
+    printf("listed scope: %zu allocation failures\n", nth - 1);
+}
+
 void run_tag_filter_allocation_tests(void)
 {
     finder = test_regex_port();
+    listed_scope_allocation_sweep();
     tag_catalog_allocation_sweep();
     verify_catalog_copy_failure();
     tag_edit_allocation_sweep();
@@ -10766,6 +10982,10 @@ void run_tag_filter_state_tests(void)
 {
     finder = test_regex_port();
     verify_tag_filter_queries();
+    verify_listed_scope_revision();
+    verify_note_scope_keeps_scroll();
+    verify_search_scope_sync_failure();
+    verify_search_scope_pending_switch();
     verify_empty_tag_mode();
     verify_tag_filter_clearing();
     verify_conditions_clearing();
@@ -10873,7 +11093,8 @@ static void verify_management_success(void)
                 folio_state_begin_edit(state) == FOLIO_STATE_READY,
             "selected note stays in edit mode");
     struct note_tags *red = selected_tags(1);
-    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+    require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
                 folio_state_set_tag_filter(state, red, TAG_MATCH_ANY) == FOLIO_STATE_READY &&
                 finish_test_index_filter(state) == FOLIO_STATE_READY,
             "existing combined query");

@@ -41,6 +41,11 @@ enum accessible_kind : unsigned char
     ACCESSIBLE_FILTER_MATCH_ALL,   /* すべて含む */
     ACCESSIBLE_FILTER_MATCH_ANY,   /* いずれか */
     ACCESSIBLE_FILTER_CLEAR,       /* 「× 解除」。条件が効いているときだけある */
+    /* 検索の範囲の 2 択（#1292）。条件と検索語の両方があるときだけある。画面と Tab の順のとおり、
+     * 解除の後 */
+    ACCESSIBLE_SEARCH_SCOPE_GROUP,
+    ACCESSIBLE_SEARCH_SCOPE_ALL,      /* すべてのノート */
+    ACCESSIBLE_SEARCH_SCOPE_FILTERED, /* 絞り込みの中 */
     ACCESSIBLE_INDEX_COUNT, /* 見出しの行（「カテゴリ」と数）。名前は「カテゴリ k ・ ノート n」 */
     ACCESSIBLE_NEW_CATEGORY,
     ACCESSIBLE_TREE,

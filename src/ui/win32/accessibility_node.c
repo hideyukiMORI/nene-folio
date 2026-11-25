@@ -54,7 +54,7 @@ static bool has_selection(enum accessible_kind kind)
     return kind == ACCESSIBLE_TREE || kind == ACCESSIBLE_LAYOUT_GROUP ||
            kind == ACCESSIBLE_MODE_GROUP || kind == ACCESSIBLE_SURFACE_LIST ||
            kind == ACCESSIBLE_SURFACE_TABS || kind == ACCESSIBLE_OUTLINE ||
-           kind == ACCESSIBLE_FILTER_MATCH_GROUP;
+           kind == ACCESSIBLE_FILTER_MATCH_GROUP || kind == ACCESSIBLE_SEARCH_SCOPE_GROUP;
 }
 
 static bool has_selection_item(enum accessible_kind kind)
@@ -64,7 +64,8 @@ static bool has_selection_item(enum accessible_kind kind)
            kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT ||
            kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_LANGUAGE ||
            kind == ACCESSIBLE_SURFACE_TAB || kind == ACCESSIBLE_OUTLINE_ITEM ||
-           kind == ACCESSIBLE_FILTER_MATCH_ALL || kind == ACCESSIBLE_FILTER_MATCH_ANY;
+           kind == ACCESSIBLE_FILTER_MATCH_ALL || kind == ACCESSIBLE_FILTER_MATCH_ANY ||
+           kind == ACCESSIBLE_SEARCH_SCOPE_ALL || kind == ACCESSIBLE_SEARCH_SCOPE_FILTERED;
 }
 
 /* Toggle: 面の切り替え、ノートの星、左の欄のお気に入りの札（#1199）。 */
@@ -388,6 +389,9 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_FILTER_MATCH_GROUP] = UIA_GroupControlTypeId,
     [ACCESSIBLE_FILTER_MATCH_ALL] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_FILTER_MATCH_ANY] = UIA_RadioButtonControlTypeId,
+    [ACCESSIBLE_SEARCH_SCOPE_GROUP] = UIA_GroupControlTypeId,
+    [ACCESSIBLE_SEARCH_SCOPE_ALL] = UIA_RadioButtonControlTypeId,
+    [ACCESSIBLE_SEARCH_SCOPE_FILTERED] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_TREE] = UIA_TreeControlTypeId,
     [ACCESSIBLE_CATEGORY] = UIA_TreeItemControlTypeId,
     [ACCESSIBLE_NOTE] = UIA_TreeItemControlTypeId,
@@ -841,6 +845,16 @@ static HRESULT STDMETHODCALLTYPE selection_required(ISelectionProvider *_Nonnull
     return result;
 }
 
+/* 左の欄の 2 択（タグの条件 #1249・検索の範囲 #1292）の群。どちらでもなければ、主窓の表示の群。 */
+static enum accessible_kind drawer_choice_group(enum accessible_kind kind)
+{
+    if (kind == ACCESSIBLE_FILTER_MATCH_ALL || kind == ACCESSIBLE_FILTER_MATCH_ANY)
+        return ACCESSIBLE_FILTER_MATCH_GROUP;
+    if (kind == ACCESSIBLE_SEARCH_SCOPE_ALL || kind == ACCESSIBLE_SEARCH_SCOPE_FILTERED)
+        return ACCESSIBLE_SEARCH_SCOPE_GROUP;
+    return ACCESSIBLE_LAYOUT_GROUP;
+}
+
 static struct accessible_item selection_container(struct accessible_item item)
 {
     if (accessible_item_surface(item))
@@ -851,14 +865,12 @@ static struct accessible_item selection_container(struct accessible_item item)
     enum accessible_kind kind = item.kind;
     if (kind == ACCESSIBLE_OUTLINE_ITEM)
         return (struct accessible_item){.kind = ACCESSIBLE_OUTLINE};
-    if (kind == ACCESSIBLE_FILTER_MATCH_ALL || kind == ACCESSIBLE_FILTER_MATCH_ANY)
-        return (struct accessible_item){.kind = ACCESSIBLE_FILTER_MATCH_GROUP};
     if (kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT)
     {
         return (struct accessible_item){.kind = ACCESSIBLE_MODE_GROUP};
     }
     return (struct accessible_item){.kind = kind == ACCESSIBLE_NOTE ? ACCESSIBLE_TREE
-                                                                    : ACCESSIBLE_LAYOUT_GROUP};
+                                                                    : drawer_choice_group(kind)};
 }
 
 static HRESULT STDMETHODCALLTYPE selection_item_select(ISelectionItemProvider *_Nonnull self)

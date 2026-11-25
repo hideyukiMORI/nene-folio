@@ -9226,6 +9226,15 @@ static void favorite_empty_scope(struct folio_window *_Nonnull window,
     for (unsigned at = 0; at < 100 && folio_state_index_filter_pending(fixture->state); ++at)
         folio_window_continue_idle_work(window);
     select_favorite_scope(window, true);
+    /* #1292: the term searches all notes by default. "No matching favorites" is what the list
+     * says when the search stays inside the filter, so that scope is chosen first. */
+    struct accessible_request scope = {.item = {.kind = ACCESSIBLE_SEARCH_SCOPE_FILTERED},
+                                       .action = ACCESSIBLE_ACTION_SELECT};
+    require(folio_state_search_scope(fixture->state) == SEARCH_SCOPE_ALL &&
+                folio_window_accessible_action(window, &scope) == S_OK &&
+                folio_state_search_scope(fixture->state) == SEARCH_SCOPE_FILTERED,
+            "the search is narrowed to the favorites");
+    pump(window);
     struct accessible_item tree = {.kind = ACCESSIBLE_TREE};
     struct accessible_view view = {0};
     require(folio_window_accessible_read(window, &tree, &view) == S_OK &&
@@ -9236,6 +9245,10 @@ static void favorite_empty_scope(struct folio_window *_Nonnull window,
     wchar_t term[64];
     GetWindowTextW(filter, term, 64);
     require(wcscmp(term, L"no-favorite-match") == 0, "scope change preserves the search term");
+    scope.item.kind = ACCESSIBLE_SEARCH_SCOPE_ALL;
+    require(folio_window_accessible_action(window, &scope) == S_OK &&
+                folio_state_search_scope(fixture->state) == SEARCH_SCOPE_ALL,
+            "the search scope goes back to all notes");
     SetWindowTextW(filter, L"");
     pump(window);
     struct accessible_request request = {.item = favorite_item(window),
@@ -11977,6 +11990,335 @@ static void tags_outside_press(struct folio_window *_Nonnull window,
     surface_button(window, ACCESSIBLE_SURFACE_TAG_CANCEL);
 }
 
+/* #1292: one of the two search scopes, selected through UIA. */
+static void scope_select(struct folio_window *_Nonnull window,
+                         struct native_fixture *_Nonnull fixture, enum accessible_kind kind)
+{
+    struct accessible_request select = {.item = {.kind = kind}, .action = ACCESSIBLE_ACTION_SELECT};
+    require(folio_window_accessible_action(window, &select) == S_OK,
+            "UIA Select on a search scope");
+    tags_settle(window, fixture->state);
+    filter_settle(window, fixture);
+}
+
+static void scope_term(struct folio_window *_Nonnull window,
+                       struct native_fixture *_Nonnull fixture, const wchar_t *_Nonnull term)
+{
+    require(SetWindowTextW(folio_window_accessible_window(window, ACCESSIBLE_FILTER), term),
+            "set the search term");
+    tags_settle(window, fixture->state);
+    filter_settle(window, fixture);
+}
+
+/* #1292: the search term and the conditions are ANDed only inside the filter. The condition is
+ * "red or green" (notes one and two). By default the term reaches every note: "Unsupported" is
+ * only in note three, outside the condition. */
+static void tags_filter_scoped(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    scope_term(window, fixture, L"Unsupported");
+    require(folio_state_search_scope(fixture->state) == SEARCH_SCOPE_ALL &&
+                folio_state_index_filter_count(fixture->state) == 1,
+            "by default the search reaches a note outside the tag query");
+    scope_select(window, fixture, ACCESSIBLE_SEARCH_SCOPE_FILTERED);
+    require(folio_state_index_filter_count(fixture->state) == 0,
+            "inside the filter a term found only outside the tag query matches nothing");
+    scope_term(window, fixture, L"Other");
+    require(folio_state_search_scope(fixture->state) == SEARCH_SCOPE_FILTERED &&
+                folio_state_index_filter_count(fixture->state) == 1,
+            "global text is ANDed with the tag query");
+    require(folio_state_toggle_favorite(fixture->state, (struct note_ref){0, 0}) ==
+                FOLIO_STATE_READY,
+            "mark only the different saved source as favorite");
+    select_favorite_scope(window, true);
+    require(folio_state_index_filter_count(fixture->state) == 0,
+            "favorite scope is ANDed with text and tag conditions");
+    scope_select(window, fixture, ACCESSIBLE_SEARCH_SCOPE_ALL);
+    require(folio_state_index_filter_count(fixture->state) == 1 &&
+                folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES &&
+                tag_condition_count(fixture) == 2,
+            "over all notes the term alone decides, and the conditions stay as they were");
+}
+
+static bool scope_row_absent(struct folio_window *_Nonnull window)
+{
+    return match_part_absent(window, ACCESSIBLE_SEARCH_SCOPE_GROUP) &&
+           match_part_absent(window, ACCESSIBLE_SEARCH_SCOPE_ALL) &&
+           match_part_absent(window, ACCESSIBLE_SEARCH_SCOPE_FILTERED);
+}
+
+/* The row sits below the condition row (the pair and the clear button) and above the heading
+ * row, inside the chip row's width, and its two choices do not overlap. Returns whether the
+ * caption "search in" is on the row too. */
+static bool scope_row_place(struct folio_window *_Nonnull window, const char *_Nonnull message)
+{
+    RECT group = chip_bounds(window, ACCESSIBLE_FILTER_GROUP);
+    RECT clear = chip_bounds(window, ACCESSIBLE_FILTER_CLEAR);
+    RECT any = chip_bounds(window, ACCESSIBLE_FILTER_MATCH_ANY);
+    RECT all = chip_bounds(window, ACCESSIBLE_SEARCH_SCOPE_ALL);
+    RECT filtered = chip_bounds(window, ACCESSIBLE_SEARCH_SCOPE_FILTERED);
+    RECT pair = chip_bounds(window, ACCESSIBLE_SEARCH_SCOPE_GROUP);
+    RECT heading = chip_bounds(window, ACCESSIBLE_INDEX_COUNT);
+    int gap = MulDiv(
+        8, (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_DRAWER)), 96);
+    require(all.top >= clear.bottom && all.top >= any.bottom && filtered.top == all.top &&
+                filtered.left >= all.right + gap && pair.left >= group.left &&
+                pair.left <= all.left && pair.right == filtered.right &&
+                filtered.right <= group.right && heading.top >= all.bottom &&
+                chip_bounds(window, ACCESSIBLE_TREE).top >= heading.bottom,
+            message);
+    expect_tooltip_rect(window, ACCESSIBLE_SEARCH_SCOPE_ALL);
+    expect_tooltip_rect(window, ACCESSIBLE_SEARCH_SCOPE_FILTERED);
+    bool captioned = pair.left < all.left;
+    require(!captioned || (all.left - pair.left > gap &&
+                           !drawer_region_plain(
+                               window, (RECT){pair.left, all.top, all.left - gap, all.bottom})),
+            "the caption, when it fits, is drawn left of the two choices");
+    return captioned;
+}
+
+/* Conditions alone show no row. With a term the row appears, "all notes" is selected and the
+ * list counts every note the term finds: "e" is in all three, the condition holds two. */
+static void scope_row_resting(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture)
+{
+    discovery_seed_tags(fixture);
+    filter_settle(window, fixture);
+    require(scope_row_absent(window) && folio_state_index_filter_count(fixture->state) == 2,
+            "conditions without a search term show no search scope row");
+    scope_term(window, fixture, L"e");
+    struct accessible_item group = {.kind = ACCESSIBLE_SEARCH_SCOPE_GROUP};
+    struct accessible_item selected = {0};
+    require(folio_state_search_scope(fixture->state) == SEARCH_SCOPE_ALL &&
+                match_selected(window, ACCESSIBLE_SEARCH_SCOPE_ALL) &&
+                !match_selected(window, ACCESSIBLE_SEARCH_SCOPE_FILTERED) &&
+                folio_window_accessible_selected(window, &group, &selected) == S_OK &&
+                selected.kind == ACCESSIBLE_SEARCH_SCOPE_ALL,
+            "with a condition and a term the row is there and all notes is selected");
+    require(folio_state_index_filter_count(fixture->state) == 3 &&
+                tag_condition_count(fixture) == 2,
+            "over all notes the list counts what the term finds, and the conditions stay");
+    (void)scope_row_place(window, "the search scope row sits between the conditions and the tree");
+    RECT all = chip_bounds(window, ACCESSIBLE_SEARCH_SCOPE_ALL);
+    RECT filtered = chip_bounds(window, ACCESSIBLE_SEARCH_SCOPE_FILTERED);
+    COLORREF ground = drawer_pixel(window, filtered.left + 1, filtered.bottom - 1);
+    require(drawer_pixel(window, all.left + 1, all.bottom - 1) != ground &&
+                drawer_pixel(window, all.left + 1, all.top) == ground,
+            "the selected scope carries a line under it and no fill");
+    struct accessible_item item = {.kind = ACCESSIBLE_SEARCH_SCOPE_ALL};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK &&
+                wcscmp((const wchar_t *)view.name, L"すべてのノート") == 0 &&
+                wcsstr((const wchar_t *)view.help, L"すべてのノートから探します") != nullptr,
+            "the choice is named as it is drawn and its help says what it searches");
+}
+
+/* A press selects "in the filter": the count becomes the AND, the row does not move, the tags
+ * stay. UIA Select goes back; selecting the selected one changes nothing. */
+static void scope_row_select(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture)
+{
+    RECT all = chip_bounds(window, ACCESSIBLE_SEARCH_SCOPE_ALL);
+    RECT filtered = chip_bounds(window, ACCESSIBLE_SEARCH_SCOPE_FILTERED);
+    uint64_t revision = folio_state_tag_filter_revision(fixture->state);
+    chip_click(window, ACCESSIBLE_SEARCH_SCOPE_FILTERED);
+    tags_settle(window, fixture->state);
+    filter_settle(window, fixture);
+    RECT all_after = chip_bounds(window, ACCESSIBLE_SEARCH_SCOPE_ALL);
+    RECT filtered_after = chip_bounds(window, ACCESSIBLE_SEARCH_SCOPE_FILTERED);
+    require(folio_state_search_scope(fixture->state) == SEARCH_SCOPE_FILTERED &&
+                folio_state_index_filter_count(fixture->state) == 2 &&
+                match_selected(window, ACCESSIBLE_SEARCH_SCOPE_FILTERED) &&
+                !match_selected(window, ACCESSIBLE_SEARCH_SCOPE_ALL),
+            "a press selects the filter as the scope and the count is term AND conditions");
+    require(EqualRect(&all, &all_after) && EqualRect(&filtered, &filtered_after) &&
+                tag_condition_count(fixture) == 2 &&
+                folio_state_tag_filter_revision(fixture->state) == revision,
+            "selecting a scope does not move the row and leaves the tag condition alone");
+    scope_select(window, fixture, ACCESSIBLE_SEARCH_SCOPE_ALL);
+    require(folio_state_search_scope(fixture->state) == SEARCH_SCOPE_ALL &&
+                folio_state_index_filter_count(fixture->state) == 3,
+            "UIA Select goes back to all notes");
+    scope_select(window, fixture, ACCESSIBLE_SEARCH_SCOPE_ALL);
+    require(folio_state_search_scope(fixture->state) == SEARCH_SCOPE_ALL &&
+                folio_state_index_filter_count(fixture->state) == 3,
+            "selecting the selected scope changes nothing");
+}
+
+/* Tab stops once on the row, after the clear button, on the selected scope; arrows move only
+ * the focus; Space and Enter select; the next Tab reaches the new-category button. */
+static void scope_row_keyboard(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    const struct accessible_item all = {.kind = ACCESSIBLE_SEARCH_SCOPE_ALL};
+    const struct accessible_item filtered = {.kind = ACCESSIBLE_SEARCH_SCOPE_FILTERED};
+    tab_from_search_to_chips(window);
+    favorite_key(window, VK_TAB);
+    favorite_key(window, VK_TAB);
+    require(filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_FILTER_CLEAR}),
+            "Tab goes from the chip row over the pair to the clear button");
+    favorite_key(window, VK_TAB);
+    require(filter_focus_is(window, all), "the next Tab enters the row on the selected scope");
+    favorite_key(window, VK_RIGHT);
+    require(filter_focus_is(window, filtered) &&
+                folio_state_search_scope(fixture->state) == SEARCH_SCOPE_ALL,
+            "an arrow moves only the focus within the row");
+    favorite_key(window, VK_SPACE);
+    tags_settle(window, fixture->state);
+    require(filter_focus_is(window, filtered) &&
+                folio_state_search_scope(fixture->state) == SEARCH_SCOPE_FILTERED &&
+                folio_state_index_filter_count(fixture->state) == 2,
+            "Space selects the focused scope and the focus stays");
+    favorite_key(window, VK_LEFT);
+    favorite_key(window, VK_RETURN);
+    tags_settle(window, fixture->state);
+    require(filter_focus_is(window, all) &&
+                folio_state_search_scope(fixture->state) == SEARCH_SCOPE_ALL &&
+                folio_state_index_filter_count(fixture->state) == 3,
+            "Enter selects the focused scope");
+    favorite_key(window, VK_TAB);
+    require(filter_focus_is(window, (struct accessible_item){.kind = ACCESSIBLE_NEW_CATEGORY}),
+            "the next Tab reaches the new-category button");
+}
+
+/* Without a term the row is gone and the conditions stay; without conditions the row is gone
+ * and the term stays. A focus that was on the row moves to the favorites chip. */
+static void scope_row_vanishes(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    const struct accessible_item chip = {.kind = ACCESSIBLE_FILTER_FAVORITES};
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_SEARCH_SCOPE_FILTERED},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK, "focus the search scope");
+    pump(window);
+    scope_term(window, fixture, L"");
+    struct accessible_item group = {.kind = ACCESSIBLE_SEARCH_SCOPE_GROUP};
+    struct accessible_item selected = {0};
+    require(scope_row_absent(window) && tag_condition_count(fixture) == 2 &&
+                !match_part_absent(window, ACCESSIBLE_FILTER_CLEAR) &&
+                folio_state_index_filter_count(fixture->state) == 2 &&
+                folio_window_accessible_selected(window, &group, &selected) != S_OK,
+            "without a term the row is gone and the conditions are still in effect");
+    require(filter_focus_is(window, chip), "the focus on the vanished row moves to the chip row");
+    scope_term(window, fixture, L"e");
+    focus.item.kind = ACCESSIBLE_SEARCH_SCOPE_ALL;
+    require(!scope_row_absent(window) && folio_window_accessible_action(window, &focus) == S_OK,
+            "the row is back with the term");
+    pump(window);
+    struct accessible_request clear = {.item = {.kind = ACCESSIBLE_FILTER_CLEAR},
+                                       .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &clear) == S_OK, "clear the conditions");
+    tags_settle(window, fixture->state);
+    filter_settle(window, fixture);
+    require(scope_row_absent(window) && !folio_state_conditions_active(fixture->state) &&
+                strcmp(folio_state_index_filter_term(fixture->state), "e") == 0 &&
+                filter_focus_is(window, chip),
+            "without conditions the row is gone, the term stays, the focus moves to the chips");
+    scope_term(window, fixture, L"");
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+}
+
+static bool tree_help_has(struct folio_window *_Nonnull window, const wchar_t *_Nonnull words)
+{
+    struct accessible_item tree = {.kind = ACCESSIBLE_TREE};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &tree, &view) == S_OK, "read the tree");
+    return wcsstr((const wchar_t *)view.help, words) != nullptr;
+}
+
+/* The favorites chip is lit and the term matches nothing. Over all notes the empty list says
+ * nothing about favorites (it is the plain no-match list); inside the filter it says that no
+ * favorite matches. */
+static void scope_row_empty(struct folio_window *_Nonnull window,
+                            struct native_fixture *_Nonnull fixture)
+{
+    select_favorite_scope(window, true);
+    scope_term(window, fixture, L"no-such-note-zz");
+    require(folio_state_search_scope(fixture->state) == SEARCH_SCOPE_ALL &&
+                folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES &&
+                folio_state_favorite_count(fixture->state) > 0 &&
+                folio_state_index_filter_count(fixture->state) == 0,
+            "a lit favorites chip, a term over all notes, nothing found");
+    require(!tree_help_has(window, L"お気に入り") && !tree_help_has(window, L"解除"),
+            "over all notes the empty list does not blame the favorites");
+    scope_select(window, fixture, ACCESSIBLE_SEARCH_SCOPE_FILTERED);
+    require(tree_help_has(window, L"一致するお気に入りはありません"),
+            "inside the filter the empty list says that no favorite matches");
+    scope_select(window, fixture, ACCESSIBLE_SEARCH_SCOPE_ALL);
+    scope_term(window, fixture, L"");
+    select_favorite_scope(window, false);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+}
+
+/* #1292 / ADR0122 decision 6: while a condition and a search term are both in effect, the
+ * drawer offers where the term searches. */
+static void search_scope_row(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture)
+{
+    require(scope_row_absent(window), "no search scope row while nothing filters the list");
+    scope_row_resting(window, fixture);
+    scope_row_select(window, fixture);
+    scope_row_keyboard(window, fixture);
+    scope_row_vanishes(window, fixture);
+    scope_row_empty(window, fixture);
+}
+
+/* One language at one drawer width: the row keeps its place and its two choices fit. */
+static bool scope_narrow_width(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture, int width)
+{
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_SPLITTER},
+                                         .action = ACCESSIBLE_ACTION_SET_RANGE,
+                                         .range_value = width};
+    require(folio_window_accessible_action(window, &request) == S_OK, "drawer width for the row");
+    filter_settle(window, fixture);
+    bool captioned =
+        scope_row_place(window, "the search scope row fits the drawer without overlapping");
+    RECT group = chip_bounds(window, ACCESSIBLE_FILTER_GROUP);
+    RECT all = chip_bounds(window, ACCESSIBLE_SEARCH_SCOPE_ALL);
+    RECT filtered = chip_bounds(window, ACCESSIBLE_SEARCH_SCOPE_FILTERED);
+    printf(
+        "search-scope-row language=%u width=%d row=%ld caption=%d all=%ld..%ld filtered=%ld..%ld\n",
+        (unsigned)folio_state_language(fixture->state), width, group.right - group.left,
+        captioned ? 1 : 0, all.left - group.left, all.right - group.left,
+        filtered.left - group.left, filtered.right - group.left);
+    return captioned;
+}
+
+/* #1292: at the default and at the narrowest drawer, in each language, the two choices stay
+ * inside the row; the caption is there only when it fits beside them. */
+static void search_scope_narrow(struct native_fixture *_Nonnull fixture)
+{
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    for (size_t at = 0; at < sizeof languages / sizeof languages[0]; ++at)
+    {
+        require(folio_state_set_language(fixture->state, languages[at]) == FOLIO_STATE_READY,
+                "language for the search scope row");
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "search scope row fixture");
+        pump(window);
+        discovery_seed_tags(fixture);
+        scope_term(window, fixture, L"e");
+        /* The Japanese caption is two full-width glyphs so that it fits the default width:
+         * at 96 DPI 22 + 8 + 81 + 8 + 70 = 189 of the row's 208 (at 120 DPI 240 of 260). */
+        bool captioned = scope_narrow_width(window, fixture, 240);
+        require(captioned || languages[at] != FOLIO_LANGUAGE_JA,
+                "at the default width the Japanese row carries its caption");
+        (void)scope_narrow_width(window, fixture, 200);
+        scope_term(window, fixture, L"");
+        require(folio_state_clear_conditions(fixture->state) == FOLIO_STATE_READY,
+                "clear the conditions of the search scope row");
+        folio_window_destroy(window);
+    }
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "back to Japanese after the search scope row");
+}
+
 static void tags_filter_roundtrip(struct folio_window *_Nonnull window,
                                   struct native_fixture *_Nonnull fixture)
 {
@@ -12010,17 +12352,7 @@ static void tags_filter_roundtrip(struct folio_window *_Nonnull window,
             "ANY tags match either saved source");
     tags_filter_counts(window, L"選択中 2 個 ・ 該当 2 件");
     surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
-    HWND input = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
-    require(SetWindowTextW(input, L"Other"), "set ordinary global text filter");
-    tags_settle(window, fixture->state);
-    require(folio_state_index_filter_count(fixture->state) == 1,
-            "global text is ANDed with the tag query");
-    require(folio_state_toggle_favorite(fixture->state, (struct note_ref){0, 0}) ==
-                FOLIO_STATE_READY,
-            "mark only the different saved source as favorite");
-    select_favorite_scope(window, true);
-    require(folio_state_index_filter_count(fixture->state) == 0,
-            "favorite scope is ANDed with text and tag conditions");
+    tags_filter_scoped(window, fixture);
     tags_open(window, ACCESSIBLE_TAG_FILTER);
     tags_settle(window, fixture->state);
     surface_button(window, ACCESSIBLE_SURFACE_TAG_CLEAR);
@@ -12146,8 +12478,10 @@ static void run_tags_case(struct native_fixture *_Nonnull fixture)
     tags_view_save(window, fixture);
     tags_keyboard(window, fixture);
     tags_filter_roundtrip(window, fixture);
+    search_scope_row(window, fixture);
     require(controlled.requests == 0, "tag fixtures start no unrelated media work");
     folio_window_destroy(window);
+    search_scope_narrow(fixture);
 }
 
 static void management_set_input(struct folio_window *_Nonnull window, const wchar_t *_Nonnull text)

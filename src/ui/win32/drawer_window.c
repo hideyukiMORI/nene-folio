@@ -583,6 +583,46 @@ static int match_width(const struct drawer_window *_Nonnull self, HDC device, UI
            chip_text_width(self, device, match_text(self, mode), true);
 }
 
+/* 検索の範囲の 2 択の 1 つの字（#1292）。 */
+static const char *_Nonnull scope_text(const struct drawer_window *_Nonnull self,
+                                       enum search_scope scope)
+{
+    enum ui_text line = UI_TEXT_SEARCH_SCOPE_ALL;
+    switch (scope)
+    {
+    case SEARCH_SCOPE_ALL:
+        break;
+    case SEARCH_SCOPE_FILTERED:
+        line = UI_TEXT_SEARCH_SCOPE_FILTERED;
+        break;
+    }
+    return ui_text_line(line, folio_state_language(self->state));
+}
+
+static enum drawer_header_button scope_button(enum search_scope scope)
+{
+    switch (scope)
+    {
+    case SEARCH_SCOPE_ALL:
+        return DRAWER_HEADER_SCOPE_ALL;
+    case SEARCH_SCOPE_FILTERED:
+        return DRAWER_HEADER_SCOPE_FILTERED;
+    }
+    return DRAWER_HEADER_SCOPE_ALL;
+}
+
+/* 検索の範囲の行の幅: 見出し「範囲」（細字）・すべてのノート・絞り込みの中（タグの条件の
+ * 2 択と同じく、どちらも太字で測る）の順。 */
+static void scope_widths(const struct drawer_window *_Nonnull self, HDC device, UINT dpi,
+                         int *_Nonnull out)
+{
+    const char *label = ui_text_line(UI_TEXT_SEARCH_SCOPE_LABEL, folio_state_language(self->state));
+    int padding = 2 * scale(base_match_padding, dpi);
+    out[0] = chip_text_width(self, device, label, false);
+    out[1] = padding + chip_text_width(self, device, scope_text(self, SEARCH_SCOPE_ALL), true);
+    out[2] = padding + chip_text_width(self, device, scope_text(self, SEARCH_SCOPE_FILTERED), true);
+}
+
 static int clear_width(const struct drawer_window *_Nonnull self, HDC device, UINT dpi)
 {
     const char *text = ui_text_line(UI_TEXT_FILTER_CLEAR, folio_state_language(self->state));
@@ -637,6 +677,32 @@ static void place_status(const struct drawer_window *_Nonnull self,
     band->bottom = band->clear.bottom + scale(base_clear_bottom, dpi);
 }
 
+/* 検索の範囲の行（#1292・ADR0122 の決定 6）: 条件の行の下に、見出し「探す範囲」と 2 択
+ * 「すべてのノート／絞り込みの中」。条件と検索語の両方があるあいだだけ置く。見出しと 2 択が
+ * 1 行に入らない幅では、見出しを置かずに 2 択を左から詰める。widths は scope_widths の順。 */
+static void place_scope(const struct drawer_window *_Nonnull self,
+                        struct drawer_filter_band *_Nonnull band, const int *_Nonnull widths,
+                        UINT dpi)
+{
+    if (!folio_state_search_scope_offered(self->state))
+    {
+        return;
+    }
+    int height = scale(base_clear_height, dpi);
+    int gap = scale(base_match_gap, dpi);
+    int top = band->bottom;
+    int left = band->group.left;
+    if (left + widths[0] + gap + widths[1] + gap + widths[2] <= band->group.right)
+    {
+        band->scope_label = (RECT){left, top, left + widths[0], top + height};
+        left = band->scope_label.right + gap;
+    }
+    band->scope_all = (RECT){left, top, left + widths[1], top + height};
+    left = band->scope_all.right + gap;
+    band->scope_filtered = (RECT){left, top, left + widths[2], top + height};
+    band->bottom = top + height + scale(base_clear_bottom, dpi);
+}
+
 /* 絞り込みの札の行の配置。字の幅を測って、中核の chip_flow_arrange に並べさせる（ADR0122）。 */
 static struct drawer_filter_band filter_band(const struct drawer_window *_Nonnull self)
 {
@@ -665,6 +731,8 @@ static struct drawer_filter_band filter_band(const struct drawer_window *_Nonnul
     const int status[3] = {match_width(self, device, dpi, TAG_MATCH_ALL),
                            match_width(self, device, dpi, TAG_MATCH_ANY),
                            clear_width(self, device, dpi)};
+    int scope[3] = {0, 0, 0};
+    scope_widths(self, device, dpi, scope);
     RestoreDC(device, saved);
     ReleaseDC(self->handle, device);
     struct chip_flow_place places[1 + note_tags_max_count] = {{0, 0, 0}};
@@ -685,7 +753,19 @@ static struct drawer_filter_band filter_band(const struct drawer_window *_Nonnul
                         row.top + flow.rows * height + (flow.rows - 1) * input.row_gap};
     band.bottom = band.group.bottom + scale(base_chip_bottom, dpi);
     place_status(self, &band, status, dpi);
+    place_scope(self, &band, scope, dpi);
     return band;
+}
+
+/* 2 択の 2 つ（タグの条件・検索の範囲）と、検索の範囲の見出しが同じ所にあるか。 */
+static bool same_choices(const struct drawer_filter_band *_Nonnull left,
+                         const struct drawer_filter_band *_Nonnull right)
+{
+    return EqualRect(&left->match_all, &right->match_all) &&
+           EqualRect(&left->match_any, &right->match_any) &&
+           EqualRect(&left->scope_label, &right->scope_label) &&
+           EqualRect(&left->scope_all, &right->scope_all) &&
+           EqualRect(&left->scope_filtered, &right->scope_filtered);
 }
 
 static bool same_band(const struct drawer_filter_band *_Nonnull left,
@@ -703,8 +783,7 @@ static bool same_band(const struct drawer_filter_band *_Nonnull left,
             return false;
         }
     }
-    if (!EqualRect(&left->match_all, &right->match_all) ||
-        !EqualRect(&left->match_any, &right->match_any))
+    if (!same_choices(left, right))
     {
         return false;
     }
@@ -852,6 +931,40 @@ static void draw_match(const struct drawer_window *_Nonnull self, HDC device,
     draw_utf8(device, match_text(self, mode), bounds, DT_CENTER);
 }
 
+/* 検索の範囲の 2 択の 1 つ（#1292）。見た目は、タグの条件の 2 択と同じ（枠を持たない札・
+ * 選んでいる方は字の色・太字・下辺の線）。無いときは描かない。 */
+static void draw_scope(const struct drawer_window *_Nonnull self, HDC device,
+                       enum search_scope scope, RECT bounds)
+{
+    if (IsRectEmpty(&bounds))
+    {
+        return;
+    }
+    bool selected = folio_state_search_scope(self->state) == scope;
+    struct ui_part_paint part =
+        chip_part(self, (struct drawer_header_hit){scope_button(scope), 0}, bounds);
+    part.grouped = true;
+    part.selected = selected;
+    struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
+    SelectObject(device, selected ? self->chip_lit_font : self->unit_font);
+    SetTextColor(device, ink.text);
+    draw_utf8(device, scope_text(self, scope), bounds, DT_CENTER);
+}
+
+/* 検索の範囲の行の見出し「範囲」（読み上げの群の名前は「探す範囲」）。字だけで、押せない。見出しの数の単位と同じ書体と色。
+ * 2 択と 1 行に入らない幅では、矩形が空で、描かない。 */
+static void draw_scope_label(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
+{
+    if (IsRectEmpty(&bounds))
+    {
+        return;
+    }
+    SelectObject(device, self->unit_font);
+    SetTextColor(device, self->palette.note_text);
+    draw_utf8(device, ui_text_line(UI_TEXT_SEARCH_SCOPE_LABEL, folio_state_language(self->state)),
+              bounds, 0);
+}
+
 /* 「× 解除」。枠を持たない札（字だけ）。条件が効いていないときは描かない。 */
 static void draw_clear(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
 {
@@ -937,6 +1050,9 @@ static void draw_header(const struct drawer_window *_Nonnull self, HDC device)
     draw_match(self, device, TAG_MATCH_ALL, band.match_all);
     draw_match(self, device, TAG_MATCH_ANY, band.match_any);
     draw_clear(self, device, band.clear);
+    draw_scope_label(self, device, band.scope_label);
+    draw_scope(self, device, SEARCH_SCOPE_ALL, band.scope_all);
+    draw_scope(self, device, SEARCH_SCOPE_FILTERED, band.scope_filtered);
     draw_category_band(self, device);
 }
 
@@ -1110,9 +1226,11 @@ static void draw_rows(const struct drawer_window *_Nonnull self, HDC device,
     draw_drop_line(self, device, layout, clip.right);
 }
 
+/* 一覧が空のときの説明。お気に入りの文は、一覧にお気に入りの範囲が掛かっているあいだだけ
+ * （検索語がすべてのノートから探しているあいだは、札が点いていても出さない・#1292）。 */
 static enum ui_text empty_message(const struct drawer_window *_Nonnull self)
 {
-    if (folio_state_note_scope(self->state) != NOTE_SCOPE_FAVORITES ||
+    if (folio_state_listed_scope(self->state) != NOTE_SCOPE_FAVORITES ||
         folio_state_index_filter_pending(self->state))
         return UI_TEXT_EMPTY;
     return folio_state_favorite_count(self->state) == 0 ? UI_TEXT_EMPTY_FAVORITES
@@ -1510,6 +1628,10 @@ static RECT header_button_rect(const struct drawer_window *_Nonnull self,
         return filter_band(self).match_all;
     case DRAWER_HEADER_MATCH_ANY:
         return filter_band(self).match_any;
+    case DRAWER_HEADER_SCOPE_ALL:
+        return filter_band(self).scope_all;
+    case DRAWER_HEADER_SCOPE_FILTERED:
+        return filter_band(self).scope_filtered;
     case DRAWER_HEADER_CLEAR:
         return filter_band(self).clear;
     case DRAWER_HEADER_NEW_CATEGORY:
@@ -1538,6 +1660,10 @@ static enum accessible_kind header_kind(enum drawer_header_button button)
         return ACCESSIBLE_FILTER_MATCH_ALL;
     case DRAWER_HEADER_MATCH_ANY:
         return ACCESSIBLE_FILTER_MATCH_ANY;
+    case DRAWER_HEADER_SCOPE_ALL:
+        return ACCESSIBLE_SEARCH_SCOPE_ALL;
+    case DRAWER_HEADER_SCOPE_FILTERED:
+        return ACCESSIBLE_SEARCH_SCOPE_FILTERED;
     case DRAWER_HEADER_CLEAR:
         return ACCESSIBLE_FILTER_CLEAR;
     case DRAWER_HEADER_NEW_CATEGORY:
@@ -1567,11 +1693,12 @@ static struct drawer_header_hit header_hit_at(const struct drawer_window *_Nonnu
         if (PtInRect(&band.chips[slot], point))
             return (struct drawer_header_hit){DRAWER_HEADER_TAG, slot};
     }
-    const enum drawer_header_button buttons[] = {DRAWER_HEADER_FAVORITES,  DRAWER_HEADER_MORE,
-                                                 DRAWER_HEADER_TAG_FILTER, DRAWER_HEADER_MATCH_ALL,
-                                                 DRAWER_HEADER_MATCH_ANY,  DRAWER_HEADER_CLEAR};
-    const RECT bounds[] = {band.favorites, band.more,      band.tags,
-                           band.match_all, band.match_any, band.clear};
+    const enum drawer_header_button buttons[] = {
+        DRAWER_HEADER_FAVORITES, DRAWER_HEADER_MORE,          DRAWER_HEADER_TAG_FILTER,
+        DRAWER_HEADER_MATCH_ALL, DRAWER_HEADER_MATCH_ANY,     DRAWER_HEADER_CLEAR,
+        DRAWER_HEADER_SCOPE_ALL, DRAWER_HEADER_SCOPE_FILTERED};
+    const RECT bounds[] = {band.favorites, band.more,  band.tags,      band.match_all,
+                           band.match_any, band.clear, band.scope_all, band.scope_filtered};
     for (size_t at = 0; at < sizeof buttons / sizeof buttons[0]; ++at)
     {
         if (PtInRect(&bounds[at], point))
@@ -1894,7 +2021,8 @@ static void invoke_header(struct drawer_window *_Nonnull self, enum drawer_heade
 {
     struct accessible_request request = {.item = {.kind = header_kind(button)},
                                          .action = ACCESSIBLE_ACTION_INVOKE};
-    if (button == DRAWER_HEADER_MATCH_ALL || button == DRAWER_HEADER_MATCH_ANY)
+    if (button == DRAWER_HEADER_MATCH_ALL || button == DRAWER_HEADER_MATCH_ANY ||
+        button == DRAWER_HEADER_SCOPE_ALL || button == DRAWER_HEADER_SCOPE_FILTERED)
     {
         request.action = ACCESSIBLE_ACTION_SELECT; /* 2 択は選ぶ（選んでいる方は何もしない） */
     }
@@ -1920,6 +2048,8 @@ static void run_header(struct drawer_window *_Nonnull self, enum drawer_header_b
     case DRAWER_HEADER_TAG_FILTER:
     case DRAWER_HEADER_MATCH_ALL:
     case DRAWER_HEADER_MATCH_ANY:
+    case DRAWER_HEADER_SCOPE_ALL:
+    case DRAWER_HEADER_SCOPE_FILTERED:
     case DRAWER_HEADER_CLEAR:
         invoke_header(self, button);
         return;
@@ -2411,9 +2541,12 @@ static bool filter_part_rect(const struct drawer_window *_Nonnull self, enum acc
                              RECT *_Nonnull out)
 {
     const enum accessible_kind kinds[] = {
-        ACCESSIBLE_FILTER_GROUP, ACCESSIBLE_FILTER_FAVORITES,  ACCESSIBLE_TAG_FILTER,
-        ACCESSIBLE_FILTER_MORE,  ACCESSIBLE_FILTER_MATCH_ALL,  ACCESSIBLE_FILTER_MATCH_ANY,
-        ACCESSIBLE_FILTER_CLEAR, ACCESSIBLE_FILTER_MATCH_GROUP};
+        ACCESSIBLE_FILTER_GROUP,      ACCESSIBLE_FILTER_FAVORITES,
+        ACCESSIBLE_TAG_FILTER,        ACCESSIBLE_FILTER_MORE,
+        ACCESSIBLE_FILTER_MATCH_ALL,  ACCESSIBLE_FILTER_MATCH_ANY,
+        ACCESSIBLE_FILTER_CLEAR,      ACCESSIBLE_FILTER_MATCH_GROUP,
+        ACCESSIBLE_SEARCH_SCOPE_ALL,  ACCESSIBLE_SEARCH_SCOPE_FILTERED,
+        ACCESSIBLE_SEARCH_SCOPE_GROUP};
     size_t at = 0;
     while (at < sizeof kinds / sizeof kinds[0] && kinds[at] != kind)
     {
@@ -2432,7 +2565,12 @@ static bool filter_part_rect(const struct drawer_window *_Nonnull self, enum acc
         band.match_all,
         band.match_any,
         band.clear,
-        {band.match_all.left, band.match_all.top, band.match_any.right, band.match_any.bottom}};
+        {band.match_all.left, band.match_all.top, band.match_any.right, band.match_any.bottom},
+        band.scope_all,
+        band.scope_filtered,
+        /* 群は、見出し（あれば）から「絞り込みの中」の右端まで */
+        {IsRectEmpty(&band.scope_label) ? band.scope_all.left : band.scope_label.left,
+         band.scope_all.top, band.scope_filtered.right, band.scope_filtered.bottom}};
     *out = rects[at];
     return true;
 }
