@@ -793,6 +793,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FILTER_MATCH_ALL] = "すべて含む",
     [UI_TEXT_FILTER_MATCH_ANY] = "いずれか",
     [UI_TEXT_SEARCH_SCOPE_GROUP] = "探す範囲",
+    [UI_TEXT_SEARCH_SCOPE_LABEL] = "範囲",
     [UI_TEXT_SEARCH_SCOPE_ALL] = "すべてのノート",
     [UI_TEXT_SEARCH_SCOPE_FILTERED] = "絞り込みの中",
     [UI_TEXT_SEARCH_SCOPE_ALL_HELP] =

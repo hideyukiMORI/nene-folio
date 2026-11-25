@@ -9947,6 +9947,12 @@ static void verify_favorite_state(void)
     require(folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads,
             "star filtering never prepares corpus");
     /* #1292: by default the term searches every note, whatever the star scope is. */
+    require(folio_state_listed_scope(state) == NOTE_SCOPE_FAVORITES &&
+                test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_listed_scope(state) == NOTE_SCOPE_ALL &&
+                folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+                folio_state_listed_scope(state) == NOTE_SCOPE_FAVORITES,
+            "the listed star scope widens only while a term searches all notes");
     require(folio_state_search_scope(state) == SEARCH_SCOPE_ALL &&
                 !folio_state_search_scope_offered(state) &&
                 test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
@@ -9957,7 +9963,8 @@ static void verify_favorite_state(void)
     require(folio_state_set_search_scope(state, SEARCH_SCOPE_FILTERED) == FOLIO_STATE_READY &&
                 !folio_state_index_filter_pending(state) &&
                 folio_state_index_filter_count(state) == 0 &&
-                folio_state_favorite_count(state) == 1,
+                folio_state_favorite_count(state) == 1 &&
+                folio_state_listed_scope(state) == NOTE_SCOPE_FAVORITES,
             "star and term filters intersect inside the filtered scope, with no rebuild");
     require(test_index_filter_complete(state, u"three", 5) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 1,

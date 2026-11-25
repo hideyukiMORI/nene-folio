@@ -1620,6 +1620,11 @@ void folio_state_set_note_scope(struct folio_state *_Nonnull state, enum note_sc
     settle_cursor(state);
 }
 
+enum note_scope folio_state_listed_scope(const struct folio_state *_Nonnull state)
+{
+    return listed_scope(state);
+}
+
 size_t folio_state_favorite_count(const struct folio_state *_Nonnull state)
 {
     size_t count = 0;

@@ -611,12 +611,12 @@ static enum drawer_header_button scope_button(enum search_scope scope)
     return DRAWER_HEADER_SCOPE_ALL;
 }
 
-/* 検索の範囲の行の幅: 見出し「探す範囲」（細字）・すべてのノート・絞り込みの中（タグの条件の
+/* 検索の範囲の行の幅: 見出し「範囲」（細字）・すべてのノート・絞り込みの中（タグの条件の
  * 2 択と同じく、どちらも太字で測る）の順。 */
 static void scope_widths(const struct drawer_window *_Nonnull self, HDC device, UINT dpi,
                          int *_Nonnull out)
 {
-    const char *label = ui_text_line(UI_TEXT_SEARCH_SCOPE_GROUP, folio_state_language(self->state));
+    const char *label = ui_text_line(UI_TEXT_SEARCH_SCOPE_LABEL, folio_state_language(self->state));
     int padding = 2 * scale(base_match_padding, dpi);
     out[0] = chip_text_width(self, device, label, false);
     out[1] = padding + chip_text_width(self, device, scope_text(self, SEARCH_SCOPE_ALL), true);
@@ -951,7 +951,7 @@ static void draw_scope(const struct drawer_window *_Nonnull self, HDC device,
     draw_utf8(device, scope_text(self, scope), bounds, DT_CENTER);
 }
 
-/* 検索の範囲の行の見出し「探す範囲」。字だけで、押せない。見出しの数の単位と同じ書体と色。
+/* 検索の範囲の行の見出し「範囲」（読み上げの群の名前は「探す範囲」）。字だけで、押せない。見出しの数の単位と同じ書体と色。
  * 2 択と 1 行に入らない幅では、矩形が空で、描かない。 */
 static void draw_scope_label(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
 {
@@ -961,7 +961,7 @@ static void draw_scope_label(const struct drawer_window *_Nonnull self, HDC devi
     }
     SelectObject(device, self->unit_font);
     SetTextColor(device, self->palette.note_text);
-    draw_utf8(device, ui_text_line(UI_TEXT_SEARCH_SCOPE_GROUP, folio_state_language(self->state)),
+    draw_utf8(device, ui_text_line(UI_TEXT_SEARCH_SCOPE_LABEL, folio_state_language(self->state)),
               bounds, 0);
 }
 
@@ -1226,9 +1226,11 @@ static void draw_rows(const struct drawer_window *_Nonnull self, HDC device,
     draw_drop_line(self, device, layout, clip.right);
 }
 
+/* 一覧が空のときの説明。お気に入りの文は、一覧にお気に入りの範囲が掛かっているあいだだけ
+ * （検索語がすべてのノートから探しているあいだは、札が点いていても出さない・#1292）。 */
 static enum ui_text empty_message(const struct drawer_window *_Nonnull self)
 {
-    if (folio_state_note_scope(self->state) != NOTE_SCOPE_FAVORITES ||
+    if (folio_state_listed_scope(self->state) != NOTE_SCOPE_FAVORITES ||
         folio_state_index_filter_pending(self->state))
         return UI_TEXT_EMPTY;
     return folio_state_favorite_count(self->state) == 0 ? UI_TEXT_EMPTY_FAVORITES

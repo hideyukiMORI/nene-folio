@@ -854,6 +854,10 @@ folio_state_toggle_favorite(struct folio_state *_Nonnull state, struct note_ref 
 folio_state_ledger_outcome(struct folio_state *_Nonnull state, enum folio_state_outcome outcome);
 [[nodiscard]] enum note_scope folio_state_note_scope(const struct folio_state *_Nonnull state);
 void folio_state_set_note_scope(struct folio_state *_Nonnull state, enum note_scope scope);
+/* いま一覧に掛かっている、お気に入りの範囲（#1292）。条件そのもの（folio_state_note_scope）が
+ * FAVORITES でも、検索語がすべてのノートから探しているあいだは ALL。「一覧に何が出ているか」
+ * で文や見た目を決める所は、こちらを読む。札の点き方と解除は、条件そのものを読む。 */
+[[nodiscard]] enum note_scope folio_state_listed_scope(const struct folio_state *_Nonnull state);
 /* 一覧の検索語を掛ける範囲（ADR 0122 の決定 6・#1292）。既定は SEARCH_SCOPE_ALL で、覚えない
  * （起動のたびに既定へ戻る。検索語・お気に入りの範囲・タグの条件と同じ扱い）。
  * ALL のあいだ、検索語が空でなければ、お気に入りとタグの条件を掛けずに、すべてのノートから

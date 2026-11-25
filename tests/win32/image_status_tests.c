@@ -12219,6 +12219,39 @@ static void scope_row_vanishes(struct folio_window *_Nonnull window,
     pump(window);
 }
 
+static bool tree_help_has(struct folio_window *_Nonnull window, const wchar_t *_Nonnull words)
+{
+    struct accessible_item tree = {.kind = ACCESSIBLE_TREE};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &tree, &view) == S_OK, "read the tree");
+    return wcsstr((const wchar_t *)view.help, words) != nullptr;
+}
+
+/* The favorites chip is lit and the term matches nothing. Over all notes the empty list says
+ * nothing about favorites (it is the plain no-match list); inside the filter it says that no
+ * favorite matches. */
+static void scope_row_empty(struct folio_window *_Nonnull window,
+                            struct native_fixture *_Nonnull fixture)
+{
+    select_favorite_scope(window, true);
+    scope_term(window, fixture, L"no-such-note-zz");
+    require(folio_state_search_scope(fixture->state) == SEARCH_SCOPE_ALL &&
+                folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES &&
+                folio_state_favorite_count(fixture->state) > 0 &&
+                folio_state_index_filter_count(fixture->state) == 0,
+            "a lit favorites chip, a term over all notes, nothing found");
+    require(!tree_help_has(window, L"お気に入り") && !tree_help_has(window, L"解除"),
+            "over all notes the empty list does not blame the favorites");
+    scope_select(window, fixture, ACCESSIBLE_SEARCH_SCOPE_FILTERED);
+    require(tree_help_has(window, L"一致するお気に入りはありません"),
+            "inside the filter the empty list says that no favorite matches");
+    scope_select(window, fixture, ACCESSIBLE_SEARCH_SCOPE_ALL);
+    scope_term(window, fixture, L"");
+    select_favorite_scope(window, false);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    pump(window);
+}
+
 /* #1292 / ADR0122 decision 6: while a condition and a search term are both in effect, the
  * drawer offers where the term searches. */
 static void search_scope_row(struct folio_window *_Nonnull window,
@@ -12229,10 +12262,11 @@ static void search_scope_row(struct folio_window *_Nonnull window,
     scope_row_select(window, fixture);
     scope_row_keyboard(window, fixture);
     scope_row_vanishes(window, fixture);
+    scope_row_empty(window, fixture);
 }
 
 /* One language at one drawer width: the row keeps its place and its two choices fit. */
-static void scope_narrow_width(struct folio_window *_Nonnull window,
+static bool scope_narrow_width(struct folio_window *_Nonnull window,
                                struct native_fixture *_Nonnull fixture, int width)
 {
     struct accessible_request request = {.item = {.kind = ACCESSIBLE_SPLITTER},
@@ -12250,6 +12284,7 @@ static void scope_narrow_width(struct folio_window *_Nonnull window,
         (unsigned)folio_state_language(fixture->state), width, group.right - group.left,
         captioned ? 1 : 0, all.left - group.left, all.right - group.left,
         filtered.left - group.left, filtered.right - group.left);
+    return captioned;
 }
 
 /* #1292: at the default and at the narrowest drawer, in each language, the two choices stay
@@ -12269,8 +12304,12 @@ static void search_scope_narrow(struct native_fixture *_Nonnull fixture)
         pump(window);
         discovery_seed_tags(fixture);
         scope_term(window, fixture, L"e");
-        scope_narrow_width(window, fixture, 240);
-        scope_narrow_width(window, fixture, 200);
+        /* The Japanese caption is two full-width glyphs so that it fits the default width:
+         * at 96 DPI 22 + 8 + 81 + 8 + 70 = 189 of the row's 208 (at 120 DPI 240 of 260). */
+        bool captioned = scope_narrow_width(window, fixture, 240);
+        require(captioned || languages[at] != FOLIO_LANGUAGE_JA,
+                "at the default width the Japanese row carries its caption");
+        (void)scope_narrow_width(window, fixture, 200);
         scope_term(window, fixture, L"");
         require(folio_state_clear_conditions(fixture->state) == FOLIO_STATE_READY,
                 "clear the conditions of the search scope row");
