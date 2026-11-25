@@ -1,14 +1,14 @@
 /* data/settings.json の設定（ADR 0025・ADR 0031 の決定 1）。
  * 効果を実装したキーだけがスキーマに入る。
- * 版 7 の形（キーの順序も固定。違えば MALFORMED で既定値には落ちない・ARC-009）:
- *   {"version": 7, "number": false, "theme": "system", "language": "ja", "minimap": true,
- * "note_order": "favorites_first", "motion": true} 版 1 の形 {"version": 1, "number": <bool>} と版
- * 2 の形
+ * 版 8 の形（キーの順序も固定。違えば MALFORMED で既定値には落ちない・ARC-009）:
+ *   {"version": 8, "number": false, "theme": "system", "language": "ja", "minimap": true,
+ *    "note_order": "favorites_first", "motion": true, "note_header": true}
+ * 版 1 の形 {"version": 1, "number": <bool>} と版 2 の形
  * {"version": 2, "number": <bool>, "theme": "…"} と版 3
  * の3語テーマも読めて、足りないキーに既定値を埋める（移行）。
  * キーを足すときは必ず版を上げ、旧版からの移行は core の純関数で行う（決定 2）。
- * 版4は127固定テーマを受ける。版1〜4のminimapはtrue、版1〜5のnote_orderはfavorites_first、版1〜6のmotionはtrue。
- * 起動だけでは書き換えず、次の設定変更で版7へ移る。
+ * 版4は127固定テーマを受ける。版1〜4のminimapはtrue、版1〜5のnote_orderはfavorites_first、版1〜6のmotionはtrue、
+ * 版1〜7のnote_headerはtrue（#1264）。起動だけでは書き換えず、次の設定変更で版8へ移る。
  */
 #ifndef NENEFOLIO_FOLIO_SETTINGS_H
 #define NENEFOLIO_FOLIO_SETTINGS_H
@@ -45,6 +45,11 @@ folio_settings_with_minimap(const struct folio_settings *_Nonnull settings, bool
 folio_settings_with_motion(const struct folio_settings *_Nonnull settings, bool motion,
                            struct folio_settings *_Nullable *_Nonnull out);
 [[nodiscard]] bool folio_settings_motion(const struct folio_settings *_Nonnull settings);
+/* ノートの上部（題・タグ・道具の行）を表示するか。畳むのは主窓、保存採用はapplication（#1264）。 */
+[[nodiscard]] enum folio_settings_outcome
+folio_settings_with_note_header(const struct folio_settings *_Nonnull settings, bool note_header,
+                                struct folio_settings *_Nullable *_Nonnull out);
+[[nodiscard]] bool folio_settings_note_header(const struct folio_settings *_Nonnull settings);
 /* theme だけが違う新しい設定を作る（ADR 0031 の決定 1）。with_number と同じ流儀。 */
 [[nodiscard]] enum folio_settings_outcome
 folio_settings_with_theme(const struct folio_settings *_Nonnull settings,
@@ -55,7 +60,7 @@ folio_settings_with_theme(const struct folio_settings *_Nonnull settings,
 folio_settings_with_language(const struct folio_settings *_Nonnull settings,
                              enum folio_language language,
                              struct folio_settings *_Nullable *_Nonnull out);
-/* writer へ版 7 の文書を 1 つ書く。完了の判定は json_writer_finish で行う。 */
+/* writer へ版 8 の文書を 1 つ書く。完了の判定は json_writer_finish で行う。 */
 void folio_settings_write(const struct folio_settings *_Nonnull settings,
                           struct json_writer *_Nonnull writer);
 /* 編集中の本文の左に原文の行番号を出すか（FR-021 / ADR 0026）。 */

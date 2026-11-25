@@ -319,6 +319,10 @@ folio_state_select_notice(const struct folio_state *_Nonnull state);
                                                               bool motion);
 [[nodiscard]] enum folio_state_outcome folio_state_set_minimap(struct folio_state *_Nonnull state,
                                                                bool minimap);
+/* ノートの上部を表示するか（#1264）。アプリ全体で1つ。minimapと同じく書込成功後だけ採用する。 */
+[[nodiscard]] bool folio_state_note_header(const struct folio_state *_Nonnull state);
+[[nodiscard]] enum folio_state_outcome
+folio_state_set_note_header(struct folio_state *_Nonnull state, bool note_header);
 [[nodiscard]] bool folio_state_number(const struct folio_state *_Nonnull state);
 /* 行番号の表示を変える意図（ADR 0025 の決定 5）。**先に data/settings.json へ書いてから採用する**
  * ので、表示と保存が食い違わない。いまと同じ値なら書かずに READY。

@@ -187,14 +187,14 @@ A missing or unavailable selected folder opens a recovery choice; an invalid or 
 | `data/<category>/index.json` | manual note order and favorites (version 2; version 1 reads as unstarred) |
 | `data/<category>/<note>.md` | the note itself, written back as-is |
 | `data/.history/<category>/<note>/1.md` … `5.md` | the last five bodies before a save (1 is newest) |
-| `data/settings.json` | line numbers, theme, language, minimap, note order and motion effects (version 7; versions 1–6 are read) |
+| `data/settings.json` | line numbers, theme, language, minimap, note order, motion effects and whether the note header is shown (version 8; versions 1–7 are read) |
 | `data/.rename.json` | an in-flight rename, replayed on the next start |
 | `data/.nenefolio.lock` | refuses a second instance on the same `data/` |
 
 Changing metadata or preferences writes the new schema; startup alone does not migrate files.
 Settings include **Motion effects** for the Find a note frame, selection underline and busy line. Windows animation preferences, contrast themes and unavailable appearance settings keep these effects static without changing the saved choice. Input and results update immediately.
 
-Older app versions cannot read version 2 note indexes or version 7 settings. Markdown/ZIP export
+Older app versions cannot read version 2 note indexes or version 8 settings. Markdown/ZIP export
 does not include personal favorites.
 
 Folders whose name starts with `.` are not scanned as categories. Use a local NTFS folder; sync-folder

@@ -801,6 +801,10 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_KEY_MINIMAP] = "Ctrl+Shift+M",
     [UI_TEXT_COMMAND_TOGGLE_OUTLINE] = "見出しの欄の表示を切り替える",
     [UI_TEXT_KEY_OUTLINE] = "Ctrl+Shift+O",
+    [UI_TEXT_COMMAND_TOGGLE_NOTE_HEADER] = "ノートの上部の表示を切り替える",
+    [UI_TEXT_KEY_NOTE_HEADER] = "Ctrl+Shift+H",
+    [UI_TEXT_NOTE_HEADER_HIDE] = "ノートの上部を隠す",
+    [UI_TEXT_NOTE_HEADER_SHOW] = "ノートの上部を表示",
     [UI_TEXT_OUTLINE] = "見出し",
     [UI_TEXT_OUTLINE_HELP] =
         "行を押すとその見出しへ移ります。ホイールで欄を送れます。狭い窓と編集表示では隠れます。",
@@ -1062,6 +1066,7 @@ static const char *_Nonnull const key_names[] = {
     "Ctrl+Shift+S",
     "Ctrl+Shift+M",
     "Ctrl+Shift+O",
+    "Ctrl+Shift+H",
     "Ctrl+Enter",
     "F1",
     "F2",
