@@ -10195,6 +10195,12 @@ static void relanguage_window(struct folio_window *_Nonnull self)
     }
     enum folio_state_outcome outcome = reface_pane(self);
     InvalidateRect(self->handle, nullptr, FALSE);
+    /* 主窓は WS_CLIPCHILDREN なので、上の無効化は子の EDIT に届かない。絞り込みの欄の案内
+     * （文と書体）を、新しい言語で描き直す（#1305）。 */
+    if (self->filter_input != nullptr)
+    {
+        InvalidateRect(self->filter_input, nullptr, TRUE);
+    }
     redraw_command_layer(self);
     if (outcome != FOLIO_STATE_READY && !session_busy(self))
     {
@@ -14851,7 +14857,9 @@ static bool filter_input_handled(struct folio_window *_Nonnull self, UINT messag
 
 /* #855: the field's key at the right end of the placeholder, only when it fits after the label
  * (`label` is the label's measured extent) with a gap of half a line. An empty field shows no
- * clear button, so the key may use its margin; the right padding mirrors the left one. */
+ * clear button, so the key may use its margin; the right padding mirrors the left one.
+ * キーの名前は等幅（呼ぶ側が選んである）。名前の幅と空き（名前の行の高さの半分）は、名前を
+ * 描いた言葉の書体で測ってある（#1305）。 */
 static void paint_placeholder_hint(HDC _Nonnull device, HWND window, RECT label,
                                    const char *_Nonnull hint)
 {
@@ -14871,6 +14879,30 @@ static void paint_placeholder_hint(HDC _Nonnull device, HWND window, RECT label,
         bounds.right - bounds.left)
         return;
     DrawTextW(device, key, keys, &bounds, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
+}
+
+/* 案内の名前を描く矩形。欄（単一行 EDIT）の高さは打つ字の書体の 1 行で、言葉の書体の 1 行は
+ * それより高い。縦の中央に置くと基線が打つ字より下がり、下へ伸びる字が欄の下で切れるので、
+ * **名前の基線を、打つ字（欄の書体）の基線にそろえる**。欄の上へはみ出すのは、言葉の書体の
+ * 行の上の空き（tmInternalLeading）の中で、字の形は欄の中に入る（ADR 0036 の #1305 の補正）。
+ * 2 つの書体が同じなら、矩形は打つ字の行と同じになる。 */
+static RECT placeholder_label_rect(HDC _Nonnull device, HWND window, HFONT _Nullable word,
+                                   RECT bounds)
+{
+    TEXTMETRICW typed_metrics = {0};
+    TEXTMETRICW word_metrics = {0};
+    HGDIOBJ previous = SelectObject(device, (HGDIOBJ)SendMessageW(window, WM_GETFONT, 0, 0));
+    bool typed = GetTextMetricsW(device, &typed_metrics) != 0;
+    SelectObject(device, word);
+    bool worded = GetTextMetricsW(device, &word_metrics) != 0;
+    SelectObject(device, previous);
+    if (!typed || !worded)
+    {
+        return bounds;
+    }
+    bounds.top += typed_metrics.tmAscent - word_metrics.tmAscent;
+    bounds.bottom = bounds.top + word_metrics.tmHeight;
+    return bounds;
 }
 
 /* 空のあいだは用途を薄い文字で重ねる（EM_SETCUEBANNER は comctl32 を要るので使わない）。 */
@@ -14893,9 +14925,13 @@ static void paint_input_placeholder(const struct folio_window *_Nonnull self, HW
     SetTextColor(device, self->palette.header_text);
     char16_t units[draw_unit_limit];
     int count = wide_units(ui_text_line(label, folio_state_language(self->state)), units);
-    DrawTextW(device, units, count, &bounds, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    /* 案内の名前は言葉の書体、右に添えるキーの名前は等幅（#1305）。 */
+    RECT line = placeholder_label_rect(device, window, word_font(self), bounds);
+    SelectObject(device, word_font(self));
+    DrawTextW(device, units, count, &line, DT_SINGLELINE | DT_NOPREFIX);
     RECT extent = bounds;
     DrawTextW(device, units, count, &extent, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+    SelectObject(device, self->mono_font);
     paint_placeholder_hint(device, window, extent, hint);
     SelectObject(device, previous);
     ReleaseDC(window, device);
