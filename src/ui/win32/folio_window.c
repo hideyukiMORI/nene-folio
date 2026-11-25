@@ -3826,6 +3826,14 @@ static enum accessible_kind selected_layout_kind(const struct folio_window *_Non
     return ACCESSIBLE_LAYOUT_BOTH;
 }
 
+/* 表示の選択の入口: 3 択が出ていれば選んでいる配置、chooser に縮んでいれば chooser。Tab の
+ * 群の入口・隠れた入口の写し直し・F6 の上の帯の入口が、この 1 本を使う（#1291）。 */
+static enum accessible_kind layout_entry_kind(const struct folio_window *_Nonnull self)
+{
+    return layout_metrics_for(self).chooser ? ACCESSIBLE_LAYOUT_CHOOSER
+                                            : selected_layout_kind(self);
+}
+
 /* 実root focusが隠れた表示入口にいる時だけ写す。他HWNDへは触れない。 */
 static void normalize_header_target(struct folio_window *_Nonnull self)
 {
@@ -3838,7 +3846,7 @@ static void normalize_header_target(struct folio_window *_Nonnull self)
     if (!hidden_choice && !hidden_chooser)
         return;
     cancel_part_press(self);
-    self->keyboard_target = chooser ? ACCESSIBLE_LAYOUT_CHOOSER : selected_layout_kind(self);
+    self->keyboard_target = layout_entry_kind(self);
     accessibility_host_schedule(self->accessibility);
 }
 
@@ -8757,8 +8765,7 @@ static bool change_layout_geometry(struct folio_window *_Nonnull self,
  * 表示切替の復帰と、OS が root へ戻した focus の正規化が同じ 1 本を使う。 */
 static void focus_header_entry(struct folio_window *_Nonnull self)
 {
-    self->keyboard_target =
-        layout_metrics_for(self).chooser ? ACCESSIBLE_LAYOUT_CHOOSER : selected_layout_kind(self);
+    self->keyboard_target = layout_entry_kind(self);
     show_focus_cues(self, true);
     SetFocus(self->handle);
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -16337,12 +16344,14 @@ static void normalize_settings_focus(struct folio_window *_Nonnull self)
 }
 
 /* OSがNOTEのrootへ戻した実focusだけを、可視paneへ正規化する。文書が無く本文を隠している間は
- * 見えない索引に残さず、F6 の上の帯の入口（表示の選択）へ寄せて印を出す（#349 / #1291）。 */
+ * 見えない索引に残さず、F6 の上の帯の入口（表示の選択）へ寄せて印を出す（#349 / #1291）。
+ * 寄せ直すのは、キーボードの宛先が見えない部品のとき（索引の行だけでなく、左の欄の「新しい
+ * ノート」の印なども。左の欄で押した後にノートだけの表示へ移ると、宛先が見えなくなる）。 */
 static void normalize_root_focus(struct folio_window *_Nonnull self)
 {
     normalize_settings_focus(self);
     normalize_header_target(self);
-    if (self->keyboard_target != ACCESSIBLE_TREE ||
+    if (accessible_visible(self, self->keyboard_target) ||
         folio_state_layout_mode(self->state) != FOLIO_LAYOUT_NOTE ||
         self->command_surface != COMMAND_SURFACE_CLOSED || self->pane == nullptr)
     {
@@ -21066,8 +21075,7 @@ static enum accessible_kind keyboard_entry(const struct folio_window *_Nonnull s
 {
     if (kind == ACCESSIBLE_LAYOUT_DRAWER)
     {
-        return layout_metrics_for(self).chooser ? ACCESSIBLE_LAYOUT_CHOOSER
-                                                : selected_layout_kind(self);
+        return layout_entry_kind(self);
     }
     if (kind == ACCESSIBLE_FILTER_MATCH_ALL)
     {

@@ -120,8 +120,10 @@ and [1.1.0 notes](docs/release/1.1.0.md).
   **Save / Don't save / Cancel** in the name form. Don't save continues without creating a file;
   Cancel keeps the draft and Undo. If the destination cannot be opened, the draft is kept.
   Ctrl+S and explicit **Save and quit** remain save commands.
-  The **New note** button beside the search field also works in List view (Note view has no
-  list, so use Ctrl+N or the Actions menu there). A category's right-click
+  The **New note** button beside the search field also works in List view. Note view has no
+  list and no such button: with a note open use Ctrl+N, the Actions menu, or the command
+  palette; with no note open use Ctrl+N or the command palette, or switch to Both or List
+  view to reach the button with the mouse. A category's right-click
   **New note in this category** starts writing there; Cancel keeps the previous view and draft.
 - **Categories**: create, rename, change colour, or delete when empty from the right-click menu.
   A fixed **+** beside the Categories heading creates a category; the command palette and Ex commands

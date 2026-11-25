@@ -121,3 +121,12 @@ Waivers none。
 - [Microsoft SetWindowPlacement](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowplacement)
 - [Microsoft CloseDesktop](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-closedesktop)
 - [Microsoft UI Automation threading](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-threading)
+
+## 2026-11-25 の補正（#1291。決定本文は書き換えない）
+
+[ADR0122](0122-sidebar-header-redesign.md) の「2段目で決めること」の8で、上の帯の左の「新しいノート」が、左の欄の検索の欄の右へ移った。
+
+1. 上の帯の左に釦は無い。「320幅では新規16–44」の新規は無くなり、左は「NENE FOLIO」（入るときだけ）と、窓を掴む領域になった。
+2. 表示の 3 択を chooser へ縮める判定で、3 択の左に残す幅（minimum）は、縁 16＋新規 28＋移動 24 の 68 から、縁 16＋移動 24 の 40 になった。縮める順（区画 44・群間 16 → 群間 8 → 区画 40）は変えていない。
+   3 択が残る下限の窓幅は、96 DPI の計算値で 384 から 356 へ動いた（区画 40×3・群間 8 のとき、表示群は 40–160）。320 幅の chooser 72–124 は変わらない。計算値であり、実物の絵では確かめていない。
+3. Tab の順は、先頭の新規が外れて、表示の一 slot → ヘルプ → 設定 → 最小化 → 最大化/復元 → 閉じる。F6 の上の帯の入口は、表示の選択（3 択の選んでいる配置、または chooser）。「新しいノート」は左の欄の Tab の順（検索の次）に入った。

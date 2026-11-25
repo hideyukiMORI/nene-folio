@@ -26,6 +26,7 @@
 #include "ui_text_request.h"
 #include "utf16_text.h"
 
+#include <commctrl.h>
 #include <commdlg.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -2068,6 +2069,19 @@ static LRESULT drawer_pointer_message(struct drawer_window *_Nonnull self, UINT 
     }
 }
 
+/* 出すたびに文を組む説明（「新しいノート」の作る先・#1291）は、主窓が答える。主窓へ回すのは
+ * その問い合わせ（TTN_GETDISPINFOW）だけで、ほかの知らせは既定の処理へ渡す。 */
+static LRESULT tooltip_notice(const struct drawer_window *_Nonnull self, WPARAM wparam,
+                              LPARAM lparam)
+{
+    const NMHDR *_Nonnull header = (const NMHDR *)lparam;
+    if (header->code != TTN_GETDISPINFOW)
+    {
+        return DefWindowProcW(self->handle, WM_NOTIFY, wparam, lparam);
+    }
+    return SendMessageW(GetParent(self->handle), WM_NOTIFY, wparam, lparam);
+}
+
 static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message, WPARAM wparam,
                               LPARAM lparam)
 {
@@ -2096,8 +2110,7 @@ static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message,
     case WM_ERASEBKGND:
         return 1;
     case WM_NOTIFY:
-        /* 出すたびに文を組む説明（「新しいノート」の作る先・#1291）は、主窓が答える。 */
-        return SendMessageW(GetParent(self->handle), WM_NOTIFY, wparam, lparam);
+        return tooltip_notice(self, wparam, lparam);
     case WM_DPICHANGED_AFTERPARENT:
         cancel(self);
         if (GetCapture() == self->handle)

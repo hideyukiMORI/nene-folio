@@ -4851,6 +4851,81 @@ static void layout_roundtrip(struct folio_window *_Nonnull window,
     require(used_chooser, "the roundtrip exercises the narrow chooser as well as visible choices");
 }
 
+static void new_note_mark_place(struct folio_window *_Nonnull window, const char *_Nonnull what);
+
+static bool root_focus_is(struct folio_window *_Nonnull window, enum accessible_kind kind)
+{
+    struct accessible_item focus = {0};
+    return folio_window_accessible_focus(window, ACCESSIBLE_WINDOW, &focus) == S_OK &&
+           focus.kind == kind;
+}
+
+/* #1291: the top band's left holds no button now: 30 DIP from the left, in the band's middle,
+ * the window is dragged. F6 enters the band at the selected layout choice. */
+static void header_left_is_caption(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    POINT point = {MulDiv(30, dpi, 96), MulDiv(22, dpi, 96)};
+    ClientToScreen(root, &point);
+    require(SendMessageW(root, WM_NCHITTEST, 0, MAKELPARAM(point.x, point.y)) == HTCAPTION,
+            "the left of the top band moves the window");
+    struct accessible_item both = {.kind = ACCESSIBLE_LAYOUT_BOTH};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &both, &view) == S_OK && !view.offscreen,
+            "the three layout choices are shown at this width");
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    favorite_key(window, VK_F6);
+    require(root_focus_is(window, ACCESSIBLE_LAYOUT_BOTH),
+            "F6 enters the top band at the selected layout choice");
+}
+
+/* A focus on the mark does not stay there when the drawer goes away; in the list alone (the
+ * narrow window) the mark still sits right of the search field. */
+static void new_note_mark_layouts(struct folio_window *_Nonnull window)
+{
+    const struct layout_step note = {FOLIO_LAYOUT_NOTE, ACCESSIBLE_LAYOUT_NOTE,
+                                     FOLIO_COMMAND_LAYOUT_NOTE, ACCESSIBLE_BODY, ACCESSIBLE_BODY};
+    const struct layout_step both = {FOLIO_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH,
+                                     FOLIO_COMMAND_LAYOUT_BOTH, ACCESSIBLE_BODY, ACCESSIBLE_BODY};
+    const struct layout_step list = {FOLIO_LAYOUT_DRAWER, ACCESSIBLE_LAYOUT_DRAWER,
+                                     FOLIO_COMMAND_LAYOUT_DRAWER, ACCESSIBLE_DRAWER,
+                                     ACCESSIBLE_DRAWER};
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_NEW_NOTE},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK &&
+                root_focus_is(window, ACCESSIBLE_NEW_NOTE),
+            "the new-note mark takes the focus");
+    (void)select_layout(window, &note);
+    require(!root_focus_is(window, ACCESSIBLE_NEW_NOTE) &&
+                GetFocus() == folio_window_accessible_window(window, ACCESSIBLE_BODY),
+            "with the note alone the focus leaves the hidden mark for the body");
+    (void)select_layout(window, &both);
+    (void)select_layout(window, &list);
+    new_note_mark_place(window, "in the list alone the mark sits right of the search field");
+    (void)select_layout(window, &both);
+}
+
+/* Tab from the search field stops on the mark, Shift+Tab from the chip row comes back to it,
+ * and Enter on it opens an untitled note. */
+static void new_note_mark_keys(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_FILTER));
+    favorite_key(window, VK_TAB);
+    require(root_focus_is(window, ACCESSIBLE_NEW_NOTE), "Tab from search stops on the mark");
+    favorite_key(window, VK_TAB);
+    require(root_focus_is(window, ACCESSIBLE_FILTER_FAVORITES), "the next Tab enters the chips");
+    (void)native_key_input_to(window, root, VK_TAB, FSHIFT);
+    require(root_focus_is(window, ACCESSIBLE_NEW_NOTE),
+            "Shift+Tab from the chip row comes back to the mark");
+    favorite_key(window, VK_RETURN);
+    require(folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_UNTITLED &&
+                GetFocus() == folio_window_accessible_window(window, ACCESSIBLE_BODY),
+            "Enter on the new-note mark opens an untitled note in the editor");
+}
+
 /* #711: Hiding and restoring the real editor must not save, reload or discard its undo history. */
 static void run_layout_case(struct native_fixture *_Nonnull fixture)
 {
@@ -4885,6 +4960,9 @@ static void run_layout_case(struct native_fixture *_Nonnull fixture)
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
     verify_history_unchanged(fixture, &history);
     require(controlled.requests == 0, "plain layout changes do not request image work");
+    header_left_is_caption(window);
+    new_note_mark_layouts(window);
+    new_note_mark_keys(window, fixture);
     folio_window_destroy(window);
     for (size_t version = 0; version <= note_history_depth; ++version)
         note_text_destroy(history.files[version]);
@@ -9595,28 +9673,34 @@ static bool expect_header_count(struct folio_window *_Nonnull window, struct hea
 }
 
 /* #1222: the main window draws the names of its buttons in the language's bundled face, not in
- * the monospace face. The "save" button is as wide as its name measured in that face (the
- * name is not ASCII, so no tracking is added), rounded the way every command part is. The
- * "new note" button, which this used to measure, is a mark without a name now (#1291). */
+ * the monospace face. The "find in this note" button is as wide as its name measured in that
+ * face (the name is not ASCII, so no tracking is added), rounded the way every command part
+ * is. The "new note" button, which this used to measure, is a mark without a name now (#1291).
+ * The name has nine full-width characters: the monospace face is chosen one size down (10
+ * against 11), so the two widths are expected to differ by about nine pixels at 96 DPI and at
+ * 120 DPI (an estimate, not a measurement at 96). The check below needs them to differ. */
 static void word_font_parts(struct folio_window *_Nonnull window)
 {
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
     UINT dpi = GetDpiForWindow(root);
     wchar_t face[LF_FACESIZE];
     ui_face_for(FOLIO_LANGUAGE_JA, face);
-    int name = header_text_width(root, L"保存", (struct header_font){face, 11, FW_NORMAL});
+    const wchar_t *label = L"このノート内を検索";
+    int name = header_text_width(root, label, (struct header_font){face, 11, FW_NORMAL});
     wchar_t mono[LF_FACESIZE];
     int mono_size = ui_face_mono(mono, 11);
-    int linked = header_text_width(root, L"保存", (struct header_font){mono, mono_size, FW_NORMAL});
-    struct accessible_item button = {.kind = ACCESSIBLE_SAVE};
+    int linked = header_text_width(root, label, (struct header_font){mono, mono_size, FW_NORMAL});
+    struct accessible_item button = {.kind = ACCESSIBLE_FIND};
     struct accessible_view view = {0};
     require(folio_window_accessible_read(window, &button, &view) == S_OK && !view.offscreen,
-            "the save button is visible");
+            "the find button is visible");
     int width = view.bounds.right - view.bounds.left;
-    printf("word-font save width=%d word=%d mono=%d dpi=%u\n", width,
+    printf("word-font find width=%d word=%d mono=%d dpi=%u\n", width,
            ui_part_command_width(name, true, dpi), ui_part_command_width(linked, true, dpi), dpi);
+    require(ui_part_command_width(name, true, dpi) != ui_part_command_width(linked, true, dpi),
+            "the name is wider or narrower in the monospace face at this DPI");
     require(width == ui_part_command_width(name, true, dpi),
-            "the save button is sized for its name in the language's face");
+            "the find button is sized for its name in the language's face");
 }
 
 static int breadcrumb_width(struct folio_window *_Nonnull window)
