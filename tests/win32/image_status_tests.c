@@ -15,6 +15,7 @@
 #include "folio_message.h"
 #include "folio_open_link.h"
 #include "folio_settings.h"
+#include "folio_shortcut.h"
 #include "folio_state.h"
 #include "folio_window.h"
 #include "font_bundle.h"
@@ -2632,8 +2633,10 @@ struct settings_edit_values
     enum folio_theme_choice theme;
 };
 
-static void select_setting_control(struct folio_window *_Nonnull window, size_t ordinal,
-                                   enum accessible_kind kind)
+/* The setting is applied inside the call. Nothing is dispatched after it, so what the change
+ * invalidated is still waiting to be painted when this returns. */
+static void select_setting_row(struct folio_window *_Nonnull window, size_t ordinal,
+                               enum accessible_kind kind)
 {
     struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
                                    .revision = folio_window_accessible_surface_revision(window)};
@@ -2653,6 +2656,12 @@ static void select_setting_control(struct folio_window *_Nonnull window, size_t 
     struct accessible_request request = {.item = row, .action = ACCESSIBLE_ACTION_SELECT};
     require(folio_window_accessible_action(window, &request) == S_OK,
             "Select applies the current setting through the public boundary");
+}
+
+static void select_setting_control(struct folio_window *_Nonnull window, size_t ordinal,
+                                   enum accessible_kind kind)
+{
+    select_setting_row(window, ordinal, kind);
     pump(window);
 }
 
@@ -18074,6 +18083,304 @@ static void band_ex_notice(struct folio_window *_Nonnull window)
     pump(window);
 }
 
+/* #1305: an empty field says what it is for over itself. The name is in the language's face;
+ * the key at its right end stays monospace. A field is read from the main window's rendering,
+ * as it paints itself: the placeholder is drawn after the EDIT's own painting. */
+struct field_ink
+{
+    struct ink_profile profile;
+    /* The highest and the lowest inked row: counted from the band's top (drawn) or from the
+     * line's baseline (sample). */
+    int top;
+    int bottom;
+};
+
+/* The band's inked rows, from `from`. The band has ink. */
+static void ink_rows(HDC dc, RECT band, int from, struct field_ink *_Nonnull ink)
+{
+    int top = band.bottom, bottom = band.top;
+    for (int y = band.top; y < band.bottom; ++y)
+    {
+        if (line_ink(dc, (RECT){band.left, y, band.right, y + 1}, ink->profile.ground) == 0)
+            continue;
+        top = y < top ? y : top;
+        bottom = y;
+    }
+    ink->top = top - from;
+    ink->bottom = bottom - from;
+}
+
+/* band is in the field's client area, and its top left pixel is ground. */
+static struct field_ink field_ink(HWND field, RECT band)
+{
+    HWND root = GetAncestor(field, GA_ROOT);
+    RECT client;
+    GetClientRect(root, &client);
+    MapWindowPoints(field, root, (POINT *)&band, 2);
+    HDC source = GetDC(root), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(root, dc, PW_CLIENTONLY), "render the main window with the field");
+    struct field_ink ink = {.profile = profile_of(dc, band)};
+    ink_rows(dc, band, band.top, &ink);
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(root, source);
+    return ink;
+}
+
+/* The same text as a field draws its placeholder: one line without tracking, on the drawn
+ * ground in the drawn ink. The sample's band is three times as high as the field and the line
+ * starts a field's height down, so nothing of the sample is cut. Its rows are counted from the
+ * line's baseline. */
+static struct field_ink field_sample(HWND root, const wchar_t *_Nonnull text,
+                                     struct header_font font,
+                                     const struct ink_profile *_Nonnull drawn)
+{
+    int dpi = (int)GetDpiForWindow(root);
+    RECT all = {0, 0, drawn->band.cx, drawn->band.cy * 3};
+    HDC source = GetDC(root), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, all.right, all.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    HBRUSH ground = CreateSolidBrush(drawn->ground);
+    FillRect(dc, &all, ground);
+    DeleteObject(ground);
+    HFONT handle = CreateFontW(-MulDiv(font.size, dpi, 96), 0, 0, 0, font.weight, FALSE, FALSE,
+                               FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                               CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, font.face);
+    HGDIOBJ previous = SelectObject(dc, handle);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, drawn->ink);
+    TEXTMETRICW metrics = {0};
+    require(GetTextMetricsW(dc, &metrics), "measure the sample's face");
+    RECT line = {MulDiv(4, dpi, 96), drawn->band.cy, all.right, all.bottom};
+    DrawTextW(dc, text, -1, &line, DT_SINGLELINE | DT_NOPREFIX);
+    struct field_ink sample = {.profile = profile_of(dc, all)};
+    ink_rows(dc, all, line.top + (int)metrics.tmAscent, &sample);
+    SelectObject(dc, previous);
+    DeleteObject(handle);
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(root, source);
+    return sample;
+}
+
+/* Where the baseline of the typed text is in the field: the ascent of the field's own face (a
+ * single-line EDIT draws its text at the top of its client area). */
+static int field_ascent(HWND field)
+{
+    HDC device = GetDC(field);
+    HGDIOBJ previous = SelectObject(device, (HFONT)SendMessageW(field, WM_GETFONT, 0, 0));
+    TEXTMETRICW metrics = {0};
+    require(GetTextMetricsW(device, &metrics), "measure the field's own face");
+    SelectObject(device, previous);
+    ReleaseDC(field, device);
+    return (int)metrics.tmAscent;
+}
+
+struct field_face
+{
+    RECT band; /* in the field's client area, from its top */
+    const wchar_t *_Nonnull text;
+    enum folio_language language; /* the words' face the text is compared with */
+    enum folio_language other;    /* a face it is not drawn in; the same language for none */
+    bool monospace;               /* the text is to be monospace, not in the words' face */
+    const char *_Nonnull message;
+};
+
+/* The text has the shapes of its face, and it stands on the baseline of the typed text: its
+ * highest and its lowest ink are as far from that baseline as the sample's are from its own.
+ * That also tells that the field cuts no row off the top or the bottom of the text (the shapes
+ * alone would let a row or two pass). Centred in the field instead, the taller words' face
+ * would stand two or three pixels lower and lose what is below its baseline. */
+static void field_face(HWND field, struct field_face expected)
+{
+    HWND root = GetAncestor(field, GA_ROOT);
+    wchar_t own[LF_FACESIZE], foreign[LF_FACESIZE], mono[LF_FACESIZE];
+    ui_face_for(expected.language, own);
+    ui_face_for(expected.other, foreign);
+    int mono_size = ui_face_mono(mono, 11);
+    struct field_ink drawn = field_ink(field, expected.band);
+    struct field_ink words =
+        field_sample(root, expected.text, (struct header_font){own, 11, FW_NORMAL}, &drawn.profile);
+    struct field_ink values = field_sample(
+        root, expected.text, (struct header_font){mono, mono_size, FW_NORMAL}, &drawn.profile);
+    const struct field_ink *same = expected.monospace ? &values : &words;
+    int baseline = field_ascent(field);
+    printf("field-face dpi=%u language=%u ink=%d width=%d words=%d monospace=%d height=%ld "
+           "baseline=%d rows=%d..%d sample=%d..%d\n",
+           GetDpiForWindow(root), (unsigned)expected.language, drawn.profile.total,
+           drawn.profile.width, words.profile.total, values.profile.total,
+           expected.band.bottom - expected.band.top, baseline, drawn.top, drawn.bottom, same->top,
+           same->bottom);
+    fflush(stdout);
+    require(drawn.profile.total > 0, "the empty field shows its placeholder");
+    require_face(&drawn.profile, &same->profile,
+                 expected.monospace ? &words.profile : &values.profile, expected.message);
+    require(drawn.bottom - baseline == same->bottom,
+            "the placeholder stands on the line of the typed text");
+    require(drawn.top - baseline == same->top, "the field cuts nothing off the placeholder's top");
+    if (expected.other == expected.language)
+        return;
+    struct field_ink strange = field_sample(
+        root, expected.text, (struct header_font){foreign, 11, FW_NORMAL}, &drawn.profile);
+    require_face(&drawn.profile, &words.profile, &strange.profile,
+                 "the placeholder's name is in the window's language's face");
+}
+
+/* How wide the key is in the field's own (monospace) face. */
+static int field_key_width(HWND field, const wchar_t *_Nonnull key)
+{
+    HDC device = GetDC(field);
+    HGDIOBJ previous = SelectObject(device, (HFONT)SendMessageW(field, WM_GETFONT, 0, 0));
+    SIZE size = {0};
+    require(GetTextExtentPoint32W(device, key, (int)wcslen(key), &size) != 0,
+            "measure the field's key");
+    SelectObject(device, previous);
+    ReleaseDC(field, device);
+    return size.cx;
+}
+
+static void field_drawer_width(struct folio_window *_Nonnull window, int width)
+{
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_SPLITTER},
+                                         .action = ACCESSIBLE_ACTION_SET_RANGE,
+                                         .range_value = width};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "a drawer width for the filter field");
+    pump(window);
+}
+
+/* The filter field's two texts. */
+struct filter_words
+{
+    wchar_t name[128];
+    wchar_t key[128];
+    enum folio_language language;
+};
+
+/* Where the name's band ends in the field. With the key shown, 3 DIP left of where the key
+ * starts: the key ends as far from the field's right edge as the name starts from its left
+ * edge. The left column is at most as wide as the window lets it be (its limit is the client
+ * width less 320 DIP, under 400 DIP from 144 DPI up in this window); where it is narrower than
+ * 400 DIP and the field has no room for the name, the key and two lines between them, the key
+ * may be left out, and the band ends 3 DIP after the name. */
+static LONG filter_split(HWND field, const struct filter_words *_Nonnull words,
+                         bool *_Nonnull keyed)
+{
+    HWND root = GetAncestor(field, GA_ROOT);
+    int dpi = (int)GetDpiForWindow(field);
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(words->language, face);
+    RECT client, text = {0};
+    GetClientRect(field, &client);
+    SendMessageW(field, EM_GETRECT, 0, (LPARAM)&text);
+    int name = header_text_width(root, words->name, (struct header_font){face, 11, FW_NORMAL});
+    int key = field_key_width(field, words->key);
+    LONG room = client.right - 2 * text.left;
+    LONG need = name + key + 2 * band_line_height(root, words->language);
+    *keyed = *keyed || room >= need;
+    printf("field-room dpi=%d room=%ld need=%ld keyed=%d\n", dpi, room, need, (int)*keyed);
+    fflush(stdout);
+    LONG split =
+        *keyed ? client.right - text.left - key : text.left + name + 2 * MulDiv(3, dpi, 96);
+    split -= MulDiv(3, dpi, 96);
+    return split < client.right ? split : client.right;
+}
+
+/* The filter field at the head of the left column: its name ("すべてのノートを検索") and, at
+ * the right end, the key that focuses it. The key is left out where the field is too narrow
+ * for both, as it is at the default 240 DIP: the left column is 400 DIP wide for this check
+ * (or as wide as the window lets it be) and as wide as it was after it. */
+static void filter_placeholder_faces(struct folio_window *_Nonnull window,
+                                     enum folio_language language, enum folio_language other)
+{
+    HWND field = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
+    require(IsWindowVisible(field) && GetWindowTextLengthW(field) == 0,
+            "the filter field is shown and empty");
+    struct accessible_view splitter = header_part(window, ACCESSIBLE_SPLITTER);
+    int wide = splitter.range_maximum < 400 ? splitter.range_maximum : 400;
+    field_drawer_width(window, wide);
+    struct filter_words words = {.language = language};
+    band_words(UI_TEXT_PLACEHOLDER_FILTER, language, words.name);
+    require(MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_FILTER, language),
+                                -1, words.key, 128) > 1,
+            "the filter field has a key");
+    RECT client;
+    GetClientRect(field, &client);
+    bool keyed = wide == 400;
+    LONG split = filter_split(field, &words, &keyed);
+    field_face(field, (struct field_face){{0, 0, split, client.bottom},
+                                          words.name,
+                                          language,
+                                          other,
+                                          false,
+                                          "the filter field's name is in the language's face"});
+    if (keyed)
+        field_face(field, (struct field_face){{split, 0, client.right, client.bottom},
+                                              words.key,
+                                              language,
+                                              language,
+                                              true,
+                                              "the filter field's key stays monospace"});
+    else
+        printf("field-room: the left column is %d DIP at most; the key is not checked\n", wide);
+    field_drawer_width(window, splitter.range_value);
+}
+
+/* The settings surface stays open when one of its language rows is adopted, and nothing is laid
+ * out again (the ":" line closes, and laying the window out again invalidates the field
+ * whatever changed). The filter field shows through the surface's veil, and the main window's
+ * invalidation does not reach a child: the change itself asks the field to paint its
+ * placeholder in the new language. Read before anything is dispatched. */
+static void filter_language_from_settings(struct folio_window *_Nonnull window,
+                                          struct native_fixture *_Nonnull fixture)
+{
+    HWND filter = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
+    struct accessible_request settings = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                          .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &settings) == S_OK,
+            "open settings over the filter field");
+    pump(window);
+    require(IsWindowVisible(filter) && GetUpdateRect(filter, nullptr, FALSE) == 0,
+            "the filter field has nothing to paint before the language changes");
+    select_setting_row(window, 3 + (size_t)FOLIO_LANGUAGE_ZH_HANS, ACCESSIBLE_SURFACE_LANGUAGE);
+    bool waiting = GetUpdateRect(filter, nullptr, FALSE) != 0;
+    pump(window);
+    select_setting_control(window, 3 + (size_t)FOLIO_LANGUAGE_JA, ACCESSIBLE_SURFACE_LANGUAGE);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    require(folio_state_language(fixture->state) == FOLIO_LANGUAGE_JA,
+            "the settings surface changes the language back");
+    require(waiting, "a language row of the open settings paints the filter field again");
+}
+
+/* The finder's input has a name and no key. The window is in Japanese. The input has the
+ * focus, and its caret stands where the name starts: it is hidden while the field is read. */
+static void finder_input_placeholder(struct folio_window *_Nonnull window,
+                                     struct native_fixture *_Nonnull fixture)
+{
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    pump(window);
+    HWND field = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(IsWindowVisible(field) && GetWindowTextLengthW(field) == 0,
+            "the finder opens with an empty input");
+    bool body = folio_state_discovery_summary(fixture->state).mode == DISCOVERY_MODE_BODY;
+    wchar_t name[128];
+    band_words(body ? UI_TEXT_DISCOVERY_BODY_INPUT : UI_TEXT_DISCOVERY_INPUT, FOLIO_LANGUAGE_JA,
+               name);
+    RECT client;
+    GetClientRect(field, &client);
+    require(GetFocus() == field && HideCaret(field), "hide the focused input's caret");
+    field_face(field,
+               (struct field_face){client, name, FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_JA, false,
+                                   "the finder's input names itself in the language's face"});
+    require(ShowCaret(field), "show the input's caret again");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
 /* The words' faces are made again when the language changes, and the band is measured again
  * with them: its label is then in the new language's face (the Japanese face lacks glyphs of
  * the Chinese label), and the field starts where it did (the label's column is as wide as the
@@ -18084,6 +18391,7 @@ static void band_language_switch(struct folio_window *_Nonnull window,
     submit_ex(window, L":set language=zh-Hans");
     require(folio_state_language(fixture->state) == FOLIO_LANGUAGE_ZH_HANS,
             "the line changes the language");
+    filter_placeholder_faces(window, FOLIO_LANGUAGE_ZH_HANS, FOLIO_LANGUAGE_JA);
     LONG chinese = band_search_faces(window, FOLIO_LANGUAGE_ZH_HANS, FOLIO_LANGUAGE_JA);
     submit_ex(window, L":set language=ja");
     require(folio_state_language(fixture->state) == FOLIO_LANGUAGE_JA,
@@ -18103,8 +18411,11 @@ static void band_fonts_case(struct native_fixture *_Nonnull fixture)
     require(SetWindowPos(root, nullptr, 20, 20, 1050, 720, SWP_NOZORDER | SWP_NOACTIVATE),
             "a wide window for the bands");
     pump(window);
+    filter_placeholder_faces(window, FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_JA);
+    finder_input_placeholder(window, fixture);
     LONG field = band_search_faces(window, FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_JA);
     band_ex_notice(window);
+    filter_language_from_settings(window, fixture);
     band_language_switch(window, fixture, field);
     folio_window_destroy(window);
 }
