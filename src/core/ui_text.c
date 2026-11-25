@@ -1045,7 +1045,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     /* 行に描く見出しは短い字（日本語の既定の幅 240 でも 2 択と 1 行に入る）。 */
     [UI_TEXT_SEARCH_SCOPE_LABEL] = {"範囲", "Search in", "范围"},
     [UI_TEXT_SEARCH_SCOPE_ALL] = {"すべてのノート", "All notes", "全部笔记"},
-    [UI_TEXT_SEARCH_SCOPE_FILTERED] = {"絞り込みの中", "In filter", "筛选范围内"},
+    [UI_TEXT_SEARCH_SCOPE_FILTERED] = {"絞り込みの中", "Filtered notes", "筛选结果中"},
     [UI_TEXT_SEARCH_SCOPE_ALL_HELP] =
         {"お気に入りとタグの条件を掛けずに、すべてのノートから探します",
          "Searches all notes, ignoring the favorites and tag filters",

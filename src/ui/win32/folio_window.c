@@ -484,6 +484,8 @@ static const struct
                                      UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_FILTER_MATCH_ANY] = {ACCESSIBLE_FILTER_MATCH_GROUP, UI_TEXT_TAG_ANY, true,
                                      UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
+    [ACCESSIBLE_FILTER_CLEAR] = {ACCESSIBLE_DRAWER, UI_TEXT_FILTER_CLEAR_NAME, true, UI_TEXT_EMPTY,
+                                 ACCESSIBLE_MAIN_NONE},
     /* 検索の範囲の 2 択（#1292）。名前は行の字と同じ。hint は、説明（tooltip と UIA の help）。 */
     [ACCESSIBLE_SEARCH_SCOPE_GROUP] = {ACCESSIBLE_DRAWER, UI_TEXT_SEARCH_SCOPE_GROUP, false,
                                        UI_TEXT_EMPTY, ACCESSIBLE_MAIN_NONE},
@@ -492,8 +494,6 @@ static const struct
     [ACCESSIBLE_SEARCH_SCOPE_FILTERED] = {ACCESSIBLE_SEARCH_SCOPE_GROUP,
                                           UI_TEXT_SEARCH_SCOPE_FILTERED, true,
                                           UI_TEXT_SEARCH_SCOPE_FILTERED_HELP, ACCESSIBLE_MAIN_NONE},
-    [ACCESSIBLE_FILTER_CLEAR] = {ACCESSIBLE_DRAWER, UI_TEXT_FILTER_CLEAR_NAME, true, UI_TEXT_EMPTY,
-                                 ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_INDEX_COUNT] = {ACCESSIBLE_DRAWER, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
                                 ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_NEW_CATEGORY] = {ACCESSIBLE_DRAWER, UI_TEXT_COMMAND_NEW_CATEGORY, true,

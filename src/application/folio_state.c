@@ -1610,13 +1610,25 @@ enum note_scope folio_state_note_scope(const struct folio_state *_Nonnull state)
     return state->note_scope;
 }
 
+/* 一覧に掛かるお気に入りの範囲が before から変わっていたら、行の配置の改訂を進める（#1292）。
+ * 検索語の出入り（準備の開始・取り消し・失敗）で、条件に触らなくても範囲は変わる。読み上げの
+ * 木・hover・星の押下の照合が、この改訂を見る。 */
+static void listed_scope_settled(struct folio_state *_Nonnull state, enum note_scope before)
+{
+    if (listed_scope(state) != before)
+        layout_changed(state);
+}
+
 void folio_state_set_note_scope(struct folio_state *_Nonnull state, enum note_scope scope)
 {
     if (state->note_scope == scope)
         return;
+    enum note_scope before = listed_scope(state);
     state->note_scope = scope;
+    layout_changed(state); /* 札の点き方は必ず変わる */
+    if (listed_scope(state) == before)
+        return; /* 検索語がすべてのノートから探している。一覧は同じなので、先頭へ飛ばさない */
     state->scroll = 0;
-    layout_changed(state);
     settle_cursor(state);
 }
 
@@ -4996,8 +5008,8 @@ static enum folio_state_outcome synchronize_filter(struct folio_state *_Nonnull 
     return state->rename != nullptr || state->copy_pending ? synchronize(state) : FOLIO_STATE_READY;
 }
 
-enum folio_state_outcome folio_state_set_index_filter(struct folio_state *_Nonnull state,
-                                                      const char16_t *_Nonnull units, size_t count)
+static enum folio_state_outcome request_index_filter(struct folio_state *_Nonnull state,
+                                                     const char16_t *_Nonnull units, size_t count)
 {
     if (count == 0 && (state->index_tags == nullptr || note_tags_count(state->index_tags) == 0))
     {
@@ -5027,6 +5039,15 @@ enum folio_state_outcome folio_state_set_index_filter(struct folio_state *_Nonnu
     state->index_request = term;
     state->scroll = 0;
     return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_set_index_filter(struct folio_state *_Nonnull state,
+                                                      const char16_t *_Nonnull units, size_t count)
+{
+    enum note_scope before = listed_scope(state);
+    enum folio_state_outcome outcome = request_index_filter(state, units, count);
+    listed_scope_settled(state, before);
+    return outcome;
 }
 
 static void adopt_tag_query(struct folio_state *_Nonnull state, struct note_tags *_Nonnull tags,
@@ -5282,7 +5303,7 @@ static enum folio_state_outcome prepare_index_corpus(struct folio_state *_Nonnul
     return FOLIO_STATE_READY;
 }
 
-enum folio_state_outcome folio_state_continue_index_filter(struct folio_state *_Nonnull state)
+static enum folio_state_outcome step_index_work(struct folio_state *_Nonnull state)
 {
     if (!folio_state_index_work_pending(state))
         return FOLIO_STATE_READY;
@@ -5306,6 +5327,14 @@ enum folio_state_outcome folio_state_continue_index_filter(struct folio_state *_
     step_filter(state, state->index_build, &progress);
     state->index_cursor = progress.cursor;
     return finish_index_request(state);
+}
+
+enum folio_state_outcome folio_state_continue_index_filter(struct folio_state *_Nonnull state)
+{
+    enum note_scope before = listed_scope(state);
+    enum folio_state_outcome outcome = step_index_work(state);
+    listed_scope_settled(state, before);
+    return outcome;
 }
 
 bool folio_state_index_filter_pending(const struct folio_state *_Nonnull state)
