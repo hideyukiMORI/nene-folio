@@ -1021,13 +1021,18 @@ static void band_tag_visibility(struct folio_window *_Nonnull window, bool visib
     size_t visited = 0;
     while (result == S_OK && visited < 20)
     {
-        found |= child.kind == ACCESSIBLE_TAG_EDIT;
+        found |= child.kind == ACCESSIBLE_NOTE_TAG_GROUP; /* #1309: the tag row is a group */
         ++visited;
         result =
             folio_window_accessible_navigate(window, &child, ACCESSIBLE_NAVIGATION_NEXT, &child);
     }
     require(result == S_FALSE && found == visible,
             "UIA child enumeration agrees with tag visibility");
+    /* #1309: the entry is the row's last child; a row that is not shown has no children. */
+    struct accessible_item row = {.kind = ACCESSIBLE_NOTE_TAG_GROUP};
+    result = folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_LAST, &child);
+    require(visible ? result == S_OK && child.kind == ACCESSIBLE_TAG_EDIT : result == S_FALSE,
+            "the tag row's group holds the entry while the row is shown");
     if (visible)
     {
         struct accessible_view group = band_view(window, ACCESSIBLE_PANE_TOOLS);
@@ -2931,8 +2936,9 @@ static void header_toggle(struct folio_window *_Nonnull window)
 
 /* The parts that collapsing the note's top hides: the mode pair, the action row, the tags. */
 static const enum accessible_kind header_hidden[] = {
-    ACCESSIBLE_MODE_GROUP, ACCESSIBLE_VIEW, ACCESSIBLE_EDIT, ACCESSIBLE_ACTION_GROUP,
-    ACCESSIBLE_SAVE,       ACCESSIBLE_FIND, ACCESSIBLE_MENU, ACCESSIBLE_TAG_EDIT};
+    ACCESSIBLE_MODE_GROUP,   ACCESSIBLE_VIEW,     ACCESSIBLE_EDIT,
+    ACCESSIBLE_ACTION_GROUP, ACCESSIBLE_SAVE,     ACCESSIBLE_FIND,
+    ACCESSIBLE_MENU,         ACCESSIBLE_TAG_EDIT, ACCESSIBLE_NOTE_TAG_GROUP};
 
 static void header_parts_shown(struct folio_window *_Nonnull window, bool shown)
 {
@@ -12510,6 +12516,288 @@ static void note_tag_labels(struct folio_window *_Nonnull window)
             "the row's button ends inside the pane's edge");
 }
 
+/* #1309: each tag label above the note, and the folded "+N", is an element of its own. */
+constexpr size_t note_tag_child_limit = 40;
+
+/* The tag row's children as UIA walks them, first to last. */
+static size_t note_tag_children(struct folio_window *_Nonnull window,
+                                struct accessible_item *_Nonnull out)
+{
+    struct accessible_item group = {.kind = ACCESSIBLE_NOTE_TAG_GROUP};
+    struct accessible_item child = {0};
+    size_t count = 0;
+    HRESULT result =
+        folio_window_accessible_navigate(window, &group, ACCESSIBLE_NAVIGATION_FIRST, &child);
+    while (result == S_OK && count < note_tag_child_limit)
+    {
+        out[count++] = child;
+        result =
+            folio_window_accessible_navigate(window, &child, ACCESSIBLE_NAVIGATION_NEXT, &child);
+    }
+    return count;
+}
+
+static struct accessible_view note_tag_view(struct folio_window *_Nonnull window,
+                                            struct accessible_item item)
+{
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && !view.offscreen,
+            "an element of the tag row answers while the row shows it");
+    return view;
+}
+
+static bool note_tag_gone(struct folio_window *_Nonnull window, struct accessible_item item)
+{
+    struct accessible_view view = {0};
+    return folio_window_accessible_read(window, &item, &view) == accessibility_node_unavailable;
+}
+
+/* The element under the middle of a rectangle in screen coordinates. */
+static struct accessible_item note_tag_under(struct folio_window *_Nonnull window, RECT bounds)
+{
+    POINT middle = {(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
+    struct accessible_item hit = {0};
+    require(folio_window_accessible_at(window, ACCESSIBLE_WINDOW, middle, &hit) == S_OK,
+            "a point on the tag row has an element under it");
+    return hit;
+}
+
+/* Invoking an element of the row opens the tag editor, as pressing the row does (#1263). */
+static void note_tag_opens(struct folio_window *_Nonnull window,
+                           struct native_fixture *_Nonnull fixture, struct accessible_item item)
+{
+    struct accessible_request request = {.item = item, .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_state_edit_tags(fixture->state) == nullptr &&
+                folio_window_accessible_action(window, &request) == S_OK,
+            "an element of the tag row accepts Invoke");
+    pump(window);
+    tags_settle(window, fixture->state);
+    require(folio_state_edit_tags(fixture->state) != nullptr,
+            "invoking an element of the tag row opens the tag editor");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_CANCEL);
+    require(folio_state_edit_tags(fixture->state) == nullptr, "the tag editor closes again");
+}
+
+/* The names of the row's first two labels, and that the entry follows them. */
+static void note_tag_names(struct folio_window *_Nonnull window, const wchar_t *_Nonnull first,
+                           const wchar_t *_Nonnull second)
+{
+    struct accessible_item items[note_tag_child_limit];
+    require(note_tag_children(window, items) == 3 && items[0].kind == ACCESSIBLE_NOTE_TAG &&
+                items[1].kind == ACCESSIBLE_NOTE_TAG && items[2].kind == ACCESSIBLE_TAG_EDIT,
+            "the tag row's children are its two labels and the entry, in that order");
+    struct accessible_view one = note_tag_view(window, items[0]);
+    struct accessible_view two = note_tag_view(window, items[1]);
+    require(wcscmp((const wchar_t *)one.name, first) == 0 &&
+                wcscmp((const wchar_t *)two.name, second) == 0 && one.position == 1 &&
+                two.position == 2 && one.set_size == 2,
+            "a tag label is named by its tag and knows its place among the note's tags");
+}
+
+/* Where the labels are: the rectangles the row draws them in (note_tag_labels measures the
+ * ink at the same places), inside the group, left to right, one gap apart. */
+static void note_tag_places(struct folio_window *_Nonnull window,
+                            const struct accessible_item *_Nonnull items)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
+    struct accessible_view group =
+        note_tag_view(window, (struct accessible_item){.kind = ACCESSIBLE_NOTE_TAG_GROUP});
+    struct accessible_view red = note_tag_view(window, items[0]);
+    struct accessible_view blue = note_tag_view(window, items[1]);
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    struct header_font words = {face, 11, FW_NORMAL};
+    int width = MulDiv(18 + 9, dpi, 96) + header_text_width(root, L"red", words);
+    printf("tag-element red=%ld..%ld blue=%ld..%ld expected-width=%d\n", red.bounds.left,
+           red.bounds.right, blue.bounds.left, blue.bounds.right, width);
+    require(wcscmp((const wchar_t *)group.name, L"このノートのタグ") == 0 && !group.focusable &&
+                red.bounds.left == group.bounds.left && blue.bounds.right < group.bounds.right &&
+                group.bounds.top < red.bounds.top && red.bounds.bottom < group.bounds.bottom,
+            "the group is the row; its labels start at its left end and stay inside it");
+    require(red.bounds.right - red.bounds.left >= width - 2 &&
+                red.bounds.right - red.bounds.left <= width + 2 &&
+                red.bounds.bottom - red.bounds.top == MulDiv(20, dpi, 96) &&
+                blue.bounds.left - red.bounds.right == MulDiv(6, dpi, 96) &&
+                blue.bounds.top == red.bounds.top && blue.bounds.bottom == red.bounds.bottom,
+            "a label's rectangle is the drawn label: its lead, name and trail wide, 20 DIP high, "
+            "the next one a gap after it");
+    RECT gap = {red.bounds.right, red.bounds.top, blue.bounds.left, red.bounds.bottom};
+    require(accessible_item_equal(note_tag_under(window, red.bounds), items[0]) &&
+                accessible_item_equal(note_tag_under(window, blue.bounds), items[1]) &&
+                note_tag_under(window, gap).kind == ACCESSIBLE_TAG_EDIT,
+            "a point on a label is that label; between two labels it is the row's entry");
+}
+
+/* What a label is to UIA: a button that is not a keyboard stop, a child of the row's group. */
+static void note_tag_role(struct folio_window *_Nonnull window,
+                          const struct accessible_item *_Nonnull items)
+{
+    struct accessible_view red = note_tag_view(window, items[0]);
+    struct accessible_item up = {0};
+    struct accessible_item back = {0};
+    require(red.enabled && !red.focusable && !red.focused &&
+                wcscmp((const wchar_t *)red.help, L"タグを編集") == 0,
+            "a label is enabled, says what invoking it does, and is not a keyboard stop");
+    require(folio_window_accessible_navigate(window, &items[0], ACCESSIBLE_NAVIGATION_PARENT,
+                                             &up) == S_OK &&
+                up.kind == ACCESSIBLE_NOTE_TAG_GROUP &&
+                folio_window_accessible_navigate(window, &up, ACCESSIBLE_NAVIGATION_PARENT, &up) ==
+                    S_OK &&
+                up.kind == ACCESSIBLE_PANE_TOOLS,
+            "a label's parent is the row's group, a child of the note's tools");
+    require(folio_window_accessible_navigate(window, &items[1], ACCESSIBLE_NAVIGATION_PREVIOUS,
+                                             &back) == S_OK &&
+                accessible_item_equal(back, items[0]) &&
+                folio_window_accessible_navigate(window, &items[0], ACCESSIBLE_NAVIGATION_PREVIOUS,
+                                                 &back) == S_FALSE,
+            "the labels walk backwards too, and the first has nothing before it");
+    struct accessible_item focus = {0};
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SetFocus(root);
+    require(folio_window_accessible_focus(window, ACCESSIBLE_WINDOW, &focus) != S_OK ||
+                focus.kind != ACCESSIBLE_NOTE_TAG,
+            "the keyboard never rests on a label");
+}
+
+/* Opens another note of the first category from its row in the index. The row is named by the
+ * rows' own revision: the window's revision is behind it on a run that starts from the data an
+ * earlier run left (seen 2026-11-25; every row then reads as unavailable). */
+static void note_tag_switch(struct folio_window *_Nonnull window,
+                            struct native_fixture *_Nonnull fixture, size_t row)
+{
+    struct accessible_request request = {
+        .item = {.kind = ACCESSIBLE_NOTE,
+                 .ref = {.category = 0, .note = row},
+                 .revision = folio_state_row_revision(fixture->state)},
+        .action = ACCESSIBLE_ACTION_SELECT};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "select another note from its row in the index");
+    pump(window);
+}
+
+/* A label belongs to one note's tags: after another note is opened, the labels of the note
+ * before do not answer, even where the new note has a label with the same number. */
+static void note_tag_other_note(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture,
+                                const struct accessible_item *_Nonnull old)
+{
+    note_tag_switch(window, fixture, 1);
+    require(note_tag_gone(window, old[0]) && note_tag_gone(window, old[1]),
+            "the labels of the note before do not answer for the note now open");
+    note_tag_names(window, L"blue", L"green");
+    note_tag_switch(window, fixture, 0);
+    require(note_tag_gone(window, old[0]) && note_tag_gone(window, old[1]),
+            "coming back makes new labels; the old ones stay gone");
+    note_tag_names(window, L"red", L"blue");
+}
+
+/* While the note's top is collapsed (#1264) the row is not drawn, so it has no elements. */
+static void note_tag_collapsed(struct folio_window *_Nonnull window)
+{
+    struct accessible_item items[note_tag_child_limit];
+    require(note_tag_children(window, items) == 3, "the open note header shows the tag row");
+    RECT place = note_tag_view(window, items[0]).bounds;
+    header_toggle(window);
+    struct accessible_item shown[note_tag_child_limit];
+    struct accessible_view group = {0};
+    struct accessible_item row = {.kind = ACCESSIBLE_NOTE_TAG_GROUP};
+    require(note_tag_gone(window, items[0]) && note_tag_gone(window, items[1]) &&
+                note_tag_children(window, shown) == 0 &&
+                folio_window_accessible_read(window, &row, &group) == S_OK && group.offscreen,
+            "a collapsed note header has no tag labels and no tag row");
+    POINT middle = {(place.left + place.right) / 2, (place.top + place.bottom) / 2};
+    struct accessible_item hit = {0};
+    (void)folio_window_accessible_at(window, ACCESSIBLE_WINDOW, middle, &hit);
+    enum accessible_kind under = hit.kind;
+    require(under != ACCESSIBLE_NOTE_TAG && under != ACCESSIBLE_NOTE_TAG_MORE &&
+                under != ACCESSIBLE_TAG_EDIT,
+            "where a label was, a collapsed note header has no element of the row");
+    header_toggle(window);
+    require(wcscmp((const wchar_t *)note_tag_view(window, items[0]).name, L"red") == 0,
+            "the same labels answer again when the note header is shown again");
+}
+
+/* Eight tags, each as wide as a label gets: more than a row holds at any window width here. */
+static const wchar_t note_tag_many[] =
+    L"---\rtags: [alphaalphaalphaalphaalpha1, alphaalphaalphaalphaalpha2, "
+    L"alphaalphaalphaalphaalpha3, alphaalphaalphaalphaalpha4, alphaalphaalphaalphaalpha5, "
+    L"alphaalphaalphaalphaalpha6, alphaalphaalphaalphaalpha7, omegaomegaomegaomegaomega8]\r---\r"
+    L"Body";
+
+/* The folded "+N": after the labels that fit, named by how many it folds, its help the folded
+ * names; a point on it is it. Returns it for the caller to invoke. */
+static struct accessible_item note_tag_more(struct folio_window *_Nonnull window)
+{
+    struct accessible_item items[note_tag_child_limit];
+    size_t count = note_tag_children(window, items);
+    require(count >= 2 && count < 9 && items[count - 2].kind == ACCESSIBLE_NOTE_TAG_MORE &&
+                items[count - 1].kind == ACCESSIBLE_TAG_EDIT,
+            "a row that cannot hold every label ends with the folded element and the entry");
+    size_t placed = count - 2;
+    struct accessible_view more = note_tag_view(window, items[placed]);
+    wchar_t name[64];
+    swprintf(name, 64, L"ほか %zu 個のタグ", 8 - placed);
+    printf("tag-element placed=%zu folded=%ls\n", placed, (const wchar_t *)more.name);
+    require(wcscmp((const wchar_t *)more.name, name) == 0 && !more.focusable && more.enabled &&
+                wcsstr((const wchar_t *)more.help, L"omegaomegaomegaomegaomega8") != nullptr &&
+                wcsstr((const wchar_t *)more.help, L"alphaalphaalphaalphaalpha1") == nullptr,
+            "the folded element counts the tags it folds and lists them, not the placed ones");
+    for (size_t at = 0; at < placed; ++at)
+    {
+        struct accessible_view label = note_tag_view(window, items[at]);
+        require(items[at].kind == ACCESSIBLE_NOTE_TAG && items[at].slot == at &&
+                    label.bounds.right < more.bounds.left && label.set_size == 8,
+                "the placed labels come first, left of the folded element");
+    }
+    require(note_tag_under(window, more.bounds).kind == ACCESSIBLE_NOTE_TAG_MORE,
+            "a point on the folded element is the folded element");
+    return items[placed];
+}
+
+/* A note whose tags do not fit the row. The text is typed in EDIT and undone again, so the
+ * cases after this one start from the fixture's note. */
+static void note_tag_fold(struct folio_window *_Nonnull window,
+                          struct native_fixture *_Nonnull fixture)
+{
+    struct accessible_item before[note_tag_child_limit];
+    require(note_tag_children(window, before) == 3, "the fixture's note shows its two labels");
+    action(window, ACCESSIBLE_EDIT);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SendMessageW(body, EM_SETSEL, 0, -1);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)note_tag_many);
+    pump(window);
+    require(note_tag_gone(window, before[0]), "typed tags replace the labels of the saved text");
+    note_tag_opens(window, fixture, note_tag_more(window));
+    require(SendMessageW(body, EM_UNDO, 0, 0), "undo the typed tags");
+    pump(window);
+    tags_expect_text(window, tags_original);
+    action(window, ACCESSIBLE_VIEW);
+    note_tag_names(window, L"red", L"blue");
+}
+
+/* #1309: the tag row is a group; its children are one element per placed label, the folded
+ * "+N" when labels are folded, and the entry that was the row's only element before. */
+static void note_tag_elements(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture)
+{
+    struct accessible_item items[note_tag_child_limit];
+    note_tag_names(window, L"red", L"blue");
+    require(note_tag_children(window, items) == 3, "two labels and the entry");
+    note_tag_places(window, items);
+    note_tag_role(window, items);
+    note_tag_opens(window, fixture, items[1]);
+    /* The pointer does the same: a press on a label opens the tag editor (#1263). */
+    header_click(window, note_tag_view(window, items[0]).bounds);
+    tags_settle(window, fixture->state);
+    require(folio_state_edit_tags(fixture->state) != nullptr,
+            "a press on a label opens the tag editor");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_CANCEL);
+    note_tag_other_note(window, fixture, items);
+    note_tag_collapsed(window);
+    note_tag_fold(window, fixture);
+}
+
 static void run_tags_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -12544,6 +12832,7 @@ static void run_tags_case(struct native_fixture *_Nonnull fixture)
             "tag native window on dedicated desktop");
     pump(window);
     note_tag_labels(window);
+    note_tag_elements(window, fixture);
     tags_edit_roundtrip(window, fixture);
     tags_view_save(window, fixture);
     tags_keyboard(window, fixture);

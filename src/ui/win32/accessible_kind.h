@@ -31,6 +31,9 @@ enum accessible_kind : unsigned char
     ACCESSIBLE_SAVE,
     ACCESSIBLE_FIND,
     ACCESSIBLE_MENU,
+    ACCESSIBLE_NOTE_TAG_GROUP, /* ノートのタグの行（#1309）。子は下の 3 つで、列挙で連続 */
+    ACCESSIBLE_NOTE_TAG,       /* 荷札 1 つ。番号と、荷札の写しの改訂で 1 つを指す */
+    ACCESSIBLE_NOTE_TAG_MORE,  /* 畳んだ荷札の「+N」。畳んだ分があるときだけある */
     ACCESSIBLE_TAG_EDIT,
     ACCESSIBLE_FILTER_GROUP,       /* 絞り込みの札の行（#1199）。子は下の 4 つで、列挙で連続 */
     ACCESSIBLE_FILTER_FAVORITES,   /* お気に入りの札（Toggle） */
