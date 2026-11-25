@@ -4749,10 +4749,15 @@ static void surface_button_text(const struct folio_window *_Nonnull self, HDC de
         discovery_text_tag(self->state, self->discovery_tag, discovery, sizeof discovery);
         text = discovery;
     }
-    if (slot == ACCESSIBLE_SURFACE_DISCOVERY_PREVIOUS_TAG)
-        text = "<";
-    if (slot == ACCESSIBLE_SURFACE_DISCOVERY_NEXT_TAG)
-        text = ">";
+    if (slot == ACCESSIBLE_SURFACE_DISCOVERY_PREVIOUS_TAG ||
+        slot == ACCESSIBLE_SURFACE_DISCOVERY_NEXT_TAG)
+    {
+        /* タグを送る印は、言葉ではないので等幅のまま（#1299）。 */
+        HGDIOBJ words = SelectObject(device, self->mono_font);
+        draw_utf8(device, slot == ACCESSIBLE_SURFACE_DISCOVERY_PREVIOUS_TAG ? "<" : ">", label);
+        SelectObject(device, words);
+        return;
+    }
     if (tag_surface(self) && slot >= ACCESSIBLE_SURFACE_TAG_ADD)
     {
         int height = wrapped_text(device, text, label, false);
@@ -24273,16 +24278,30 @@ static void draw_discovery_status(const struct folio_window *_Nonnull self, HDC 
         (void)bounded_text_copy(
             text, sizeof text,
             folio_state_failure_line(self->command_failure, folio_state_language(self->state)));
+    /* 折り返した行は、矩形の下へ出ることがある（言葉の書体の 2 行は、144 DPI で 2 画素高い）。
+     * この面は変わった所だけを描き直すので、矩形の外へ出た字の端は、次の描き直しで消えない。
+     * 矩形で切り抜いて描く（#1299）。1 行の描き方（draw_utf8）は、自分の矩形で切られる。
+     * 切り抜きを戻せないとき（SaveDC の失敗）は、描かない。 */
+    int saved = SaveDC(device);
+    if (saved == 0)
+        return;
+    IntersectClipRect(device, layout->status.left, layout->status.top, layout->status.right,
+                      layout->status.bottom);
     SetTextColor(device, self->palette.current_text);
     if (layout->compact)
         draw_utf8(device, text, layout->status);
     if (!layout->compact)
         (void)wrapped_text(device, text, layout->status, true);
+    RestoreDC(device, saved);
 }
 
+/* 「ノートを探す」の面。題・タブ・条件と状態・一覧の行・下見の題と状態・釦の名前・絞り込みの札は
+ * 言葉の書体（#1299）。下見の行番号（draw_discovery_gutter）とタグを送る印（surface_button_text）は、
+ * 描く所で等幅に替える。入力欄と下見の欄（EDIT）は、自分の書体（等幅）のまま。 */
 static void draw_discovery(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     ui_part_draw_surface(device, &self->palette, bounds);
+    HGDIOBJ previous = SelectObject(device, word_font(self));
     draw_command_guidance(self, device);
     draw_floating_header(self, device, UI_TEXT_COMMAND_DISCOVER_NOTES);
     struct discovery_layout layout = discovery_geometry(self);
@@ -24297,6 +24316,7 @@ static void draw_discovery(const struct folio_window *_Nonnull self, HDC device,
         if (surface_button_visible(self, slot))
             draw_surface_button(self, device, slot);
     draw_discovery_motion(self, device, bounds);
+    SelectObject(device, previous);
 }
 
 static void click_discovery(struct folio_window *_Nonnull self, POINT point)

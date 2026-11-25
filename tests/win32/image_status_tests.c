@@ -14422,6 +14422,15 @@ static struct ink_profile surface_profile(struct folio_window *_Nonnull window, 
     return profile;
 }
 
+/* The layer draws a line with tracking only when every character of it is ASCII. */
+static bool reference_tracked(const wchar_t *_Nonnull text)
+{
+    for (; *text != L'\0'; ++text)
+        if (*text >= 0x80)
+            return false;
+    return true;
+}
+
 static void reference_line(HDC dc, const wchar_t *_Nonnull text, struct header_font font, int dpi)
 {
     RECT line = {0};
@@ -14432,7 +14441,7 @@ static void reference_line(HDC dc, const wchar_t *_Nonnull text, struct header_f
                                CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, font.face);
     HGDIOBJ previous = SelectObject(dc, handle);
     SetBkMode(dc, TRANSPARENT);
-    SetTextCharacterExtra(dc, text[0] < 0x80 ? MulDiv(1, dpi, 96) : 0);
+    SetTextCharacterExtra(dc, reference_tracked(text) ? MulDiv(1, dpi, 96) : 0);
     DrawTextW(dc, text, -1, &line, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     SelectObject(dc, previous);
     DeleteObject(handle);
@@ -17620,6 +17629,230 @@ static void body_discovery_preview_visible(HWND preview)
             "the selected first match is actually visible after native preview layout");
 }
 
+/* #1299: the finder says its words in the language's face, and the numbers beside the source
+ * stay monospace. A band is read from the surface's own window and compared, column by column,
+ * with the same text drawn in each of the two faces: the shapes differ at every scale, while the
+ * widths may not at 96 DPI, where the required CI runs. band is a screen rectangle whose top
+ * left pixel is ground. The window is in Japanese. */
+struct finder_face
+{
+    RECT band;
+    const char *_Nonnull text; /* UTF-8 */
+    bool monospace;            /* the face the text is to be drawn in */
+    const char *_Nonnull message;
+};
+
+/* What a band shows, and the same text in the language's face and in the monospace face. */
+struct finder_inks
+{
+    struct ink_profile drawn;
+    struct ink_profile words;
+    struct ink_profile values;
+};
+
+static struct finder_inks finder_inks(struct folio_window *_Nonnull window, RECT band,
+                                      const char *_Nonnull utf8)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    wchar_t text[512];
+    require(MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, -1, text, 512) > 1,
+            "the finder's text is there to compare");
+    wchar_t face[LF_FACESIZE], mono[LF_FACESIZE];
+    ui_face_for(FOLIO_LANGUAGE_JA, face);
+    int mono_size = ui_face_mono(mono, 11);
+    struct finder_inks inks = {.drawn = surface_profile(window, band)};
+    inks.words =
+        reference_profile(root, text, (struct header_font){face, 11, FW_NORMAL}, &inks.drawn);
+    inks.values = reference_profile(root, text, (struct header_font){mono, mono_size, FW_NORMAL},
+                                    &inks.drawn);
+    return inks;
+}
+
+static void finder_face(struct folio_window *_Nonnull window, struct finder_face expected)
+{
+    struct finder_inks inks = finder_inks(window, expected.band, expected.text);
+    printf("finder-face ink=%d width=%d words=%d monospace=%d\n", inks.drawn.total,
+           inks.drawn.width, inks.words.total, inks.values.total);
+    fflush(stdout);
+    require(inks.drawn.total > 0, "the finder shows the text");
+    require_face(&inks.drawn, expected.monospace ? &inks.values : &inks.words,
+                 expected.monospace ? &inks.words : &inks.values, expected.message);
+}
+
+/* The second row (not the selected one): its name in the upper 22 DIP, its match in the lower
+ * 22; both start 8 DIP in. The name is all ASCII in this fixture ("schedule / two"), and the
+ * match line starts with Japanese words. */
+static void finder_row_faces(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture)
+{
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    RECT row = tags_view(window, ACCESSIBLE_SURFACE_CHOICE, 1).bounds;
+    int side = MulDiv(4, dpi, 96), edge = MulDiv(2, dpi, 96), half = MulDiv(22, dpi, 96);
+    char name[512], match[512];
+    discovery_text_name(fixture->state, 1, name, sizeof name);
+    discovery_text_match(fixture->state, 1, match, sizeof match);
+    require((unsigned char)match[0] >= 0x80, "the match line starts with the language's words");
+    finder_face(window, (struct finder_face){
+                            {row.left + side, row.top + edge, row.right - side, row.top + half},
+                            name,
+                            false,
+                            "a finder row's name is in the language's face"});
+    finder_face(window, (struct finder_face){
+                            {row.left + side, row.top + half, row.right - side, row.bottom - edge},
+                            match,
+                            false,
+                            "a finder row's match is in the language's face"});
+}
+
+/* The conditions line is the 20 DIP above the status line while no condition control is shown
+ * (all notes, no tag). */
+static void finder_conditions_face(struct folio_window *_Nonnull window,
+                                   struct native_fixture *_Nonnull fixture)
+{
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    RECT status = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0).bounds;
+    char conditions[512];
+    discovery_text_conditions(fixture->state, conditions, sizeof conditions);
+    const struct note_tags *_Nullable tags = folio_state_discovery_tags(fixture->state);
+    require(folio_state_discovery_scope(fixture->state) == NOTE_SCOPE_ALL &&
+                (tags == nullptr || note_tags_count(tags) == 0) &&
+                (unsigned char)conditions[0] >= 0x80,
+            "the conditions line sits right above the status line and starts with words");
+    finder_face(window,
+                (struct finder_face){{status.left - MulDiv(2, dpi, 96),
+                                      status.top - MulDiv(20, dpi, 96), status.right, status.top},
+                                     conditions,
+                                     false,
+                                     "the finder's conditions are in the language's face"});
+}
+
+/* The status line: one line at the top of its 32 DIP in the wide window. It starts with a count
+ * ("3件の…"), and has no tracking: only an all-ASCII line has. */
+static void finder_status_face(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    RECT status = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0).bounds;
+    char line[512];
+    discovery_text_status(fixture->state, line, sizeof line);
+    require(line[0] >= '0' && line[0] <= '9', "the status line starts with a count");
+    finder_face(window, (struct finder_face){{status.left - MulDiv(2, dpi, 96), status.top,
+                                              status.right, status.bottom},
+                                             line,
+                                             false,
+                                             "the finder's status is in the language's face"});
+}
+
+/* The default button ("一致行を開く Enter" while the bodies are searched). The same drawing
+ * names the buttons of the other surfaces. The band is inside the button's frame. */
+static void finder_button_face(struct folio_window *_Nonnull window)
+{
+    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    RECT button =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_OPEN).bounds;
+    int inset = MulDiv(5, dpi, 96);
+    finder_face(window,
+                (struct finder_face){{button.left + inset, button.top + inset, button.right - inset,
+                                      button.bottom - inset},
+                                     ui_text_line(UI_TEXT_DISCOVERY_BODY_OPEN, FOLIO_LANGUAGE_JA),
+                                     false,
+                                     "a finder button's name is in the language's face"});
+}
+
+/* The numbers of four lines are read one by one and compared side by side: each has a slot. */
+constexpr int gutter_rows = 4;
+constexpr int gutter_slot = 64;
+
+static void profile_append(struct ink_profile *_Nonnull whole,
+                           const struct ink_profile *_Nonnull part, int at)
+{
+    require(part->width < gutter_slot && at + gutter_slot <= profile_limit,
+            "a line number fits its slot");
+    for (int x = 0; x < part->width; ++x)
+        whole->columns[at + x] = part->columns[x];
+    whole->total += part->total;
+    whole->width = at + part->width;
+}
+
+static int preview_line_height(HWND preview)
+{
+    HDC device = GetDC(preview);
+    HGDIOBJ previous = SelectObject(device, (HFONT)SendMessageW(preview, WM_GETFONT, 0, 0));
+    TEXTMETRICW metrics = {0};
+    require(GetTextMetricsW(device, &metrics), "measure a line of the preview");
+    SelectObject(device, previous);
+    ReleaseDC(preview, device);
+    return (int)metrics.tmHeight;
+}
+
+/* The preview's rows 1 to gutter_rows each start a line of the source (no line before them is
+ * wrapped), so the numbers beside them are 2 to gutter_rows + 1. */
+static void preview_rows_are_lines(HWND preview)
+{
+    wchar_t source[2048];
+    int length = GetWindowTextW(preview, source, 2048);
+    require(SendMessageW(preview, EM_GETFIRSTVISIBLELINE, 0, 0) == 0,
+            "the short source shows its first line");
+    for (int row = 1; row <= gutter_rows; ++row)
+    {
+        LRESULT start = SendMessageW(preview, EM_LINEINDEX, (WPARAM)row, 0);
+        require(start > 0 && start < length && source[start - 1] == L'\n',
+                "a row of the short source starts a line");
+    }
+}
+
+/* The numbers of the source's second to fifth line, in the gutter at the preview's left (the
+ * first line's band would start on the field's frame). The EDIT starts where the gutter (32 DIP
+ * or more) ends, and a number is drawn beside its line, as high as a line of the EDIT's own
+ * (monospace) face. One digit differs by a few pixels between the two faces at 96 DPI, so four
+ * are compared together. */
+static void finder_gutter_face(struct folio_window *_Nonnull window)
+{
+    HWND preview = folio_window_accessible_window(window, ACCESSIBLE_DISCOVERY_PREVIEW);
+    int dpi = (int)GetDpiForWindow(preview);
+    RECT text = {0};
+    SendMessageW(preview, EM_GETRECT, 0, (LPARAM)&text);
+    MapWindowPoints(preview, nullptr, (POINT *)&text, 2);
+    RECT edit = {0};
+    require(GetWindowRect(preview, &edit), "the preview's place on the screen");
+    int height = preview_line_height(preview);
+    require(text.top + (gutter_rows + 1) * height <= text.bottom, "the preview shows five lines");
+    preview_rows_are_lines(preview);
+    struct finder_inks all = {0};
+    for (int row = 1; row <= gutter_rows; ++row)
+    {
+        char number[8];
+        require(snprintf(number, sizeof number, "%d", row + 1) > 0, "a line's number");
+        RECT band = {edit.left - MulDiv(24, dpi, 96), text.top + row * height, edit.left,
+                     text.top + (row + 1) * height};
+        struct finder_inks one = finder_inks(window, band, number);
+        require(one.drawn.total > 0, "a number beside each line of the source");
+        profile_append(&all.drawn, &one.drawn, (row - 1) * gutter_slot);
+        profile_append(&all.words, &one.words, (row - 1) * gutter_slot);
+        profile_append(&all.values, &one.values, (row - 1) * gutter_slot);
+    }
+    printf("finder-gutter dpi=%d ink=%d words=%d monospace=%d apart-pixels=%d\n", dpi,
+           all.drawn.total, all.words.total, all.values.total,
+           MulDiv(profile_distance(&all.values, &all.words), all.values.total, 1000));
+    fflush(stdout);
+    require_face(&all.drawn, &all.values, &all.words, "the source's line numbers stay monospace");
+}
+
+static void body_discovery_fonts(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture)
+{
+    body_discovery_open(window, fixture, L"needle");
+    require(folio_state_discovery_summary(fixture->state).shown >= 2 &&
+                folio_state_discovery_summary(fixture->state).selected == 0,
+            "the finder lists a second row beside the selected one");
+    finder_row_faces(window, fixture);
+    finder_conditions_face(window, fixture);
+    finder_status_face(window, fixture);
+    finder_button_face(window);
+    finder_gutter_face(window);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
 static void body_discovery_preview_selection(struct folio_window *_Nonnull window,
                                              const wchar_t *_Nonnull query)
 {
@@ -18515,6 +18748,7 @@ static void run_body_discovery_case(struct native_fixture *_Nonnull fixture)
         body_discovery_mode_keys(window, fixture);
         body_discovery_typing_rows(window, fixture);
         body_discovery_typing_preview(window, fixture);
+        body_discovery_fonts(window, fixture);
         body_discovery_view_open(window, fixture);
         body_discovery_narrow_switch(window, fixture);
         body_discovery_same_editor(window, fixture);
