@@ -26,6 +26,7 @@
 #include "ui_text_request.h"
 #include "utf16_text.h"
 
+#include <commctrl.h>
 #include <commdlg.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -118,6 +119,7 @@ constexpr size_t chip_text_limit = 512;
 constexpr int base_category_band_height = 36;
 constexpr int base_filter_inset = 16; /* 欄の左右の余白（窓の縁 16・#349） */
 constexpr int base_filter_margin = 4; /* 欄の上下に空ける間 */
+constexpr int base_new_note_gap = 8;  /* 検索の欄と、右の「新しいノート」の印の間（#1291） */
 /* 「一致 / 総数」の 1 行が要る大きさ（20 桁 2 つ ＋ 区切り ＋ 終端で足りる）。 */
 constexpr size_t filter_count_capacity = 48;
 constexpr int base_unit_gap = 6; /* 見出しの行の、数の単位と数の間 */
@@ -210,6 +212,19 @@ static RECT new_category_rect(const struct drawer_window *_Nonnull self)
                   middle - box / 2 + box};
 }
 
+/* 「新しいノート」の印（#1291・ADR0122 の決定 1）。検索の欄の右、欄の帯の上下の中央。C 様式の
+ * 28 角で、右端は窓の縁 16。検索の欄は、この印と間のぶんだけ狭くなる。 */
+static RECT new_note_rect(const struct drawer_window *_Nonnull self)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT client;
+    GetClientRect(self->handle, &client);
+    int box = scale(ui_part_height, dpi);
+    int right = client.right - scale(base_filter_inset, dpi);
+    int top = (scale(base_filter_height, dpi) - box) / 2;
+    return (RECT){right - box, top, right, top + box};
+}
+
 static RECT filter_rect(const struct drawer_window *_Nonnull drawer)
 {
     RECT bounds = {0, 0, 0, 0};
@@ -224,7 +239,7 @@ static RECT filter_rect(const struct drawer_window *_Nonnull drawer)
     int margin = scale(base_filter_margin, dpi);
     bounds.left = inset;
     bounds.top = margin;
-    bounds.right = client.right - inset;
+    bounds.right = new_note_rect(drawer).left - scale(base_new_note_gap, dpi);
     bounds.bottom = scale(base_filter_height, dpi) - margin;
     return bounds;
 }
@@ -888,11 +903,29 @@ static void draw_category_band(const struct drawer_window *_Nonnull self, HDC de
     ui_part_draw(device, &self->palette, &part);
 }
 
+/* 「新しいノート」の印は C 様式。「新しいカテゴリ」の＋と同じ 1 本を通る（#1291）。 */
+static void draw_new_note(const struct drawer_window *_Nonnull self, HDC device)
+{
+    bool pressed = self->header_pressed == DRAWER_HEADER_NEW_NOTE;
+    struct ui_part_paint part = {
+        .bounds = new_note_rect(self),
+        .style = UI_PART_STYLE_ICON,
+        .dpi = GetDpiForWindow(self->handle),
+        .has_icon = true,
+        .icon = ICON_PAINT_NEW_NOTE,
+        .hovered = self->header_hover == DRAWER_HEADER_NEW_NOTE && !pressed,
+        .pressed = pressed && self->header_inside,
+        .focused = control_focused(self, ACCESSIBLE_NEW_NOTE),
+    };
+    ui_part_draw(device, &self->palette, &part);
+}
+
 /* 固定帯。共通のブランド/窓操作の頭は親が所有する（ADR0047）。 */
 static void draw_header(const struct drawer_window *_Nonnull self, HDC device)
 {
     SetTextCharacterExtra(device, 0);
     draw_filter_frame(self, device);
+    draw_new_note(self, device);
     struct drawer_filter_band band = filter_band(self);
     draw_favorites_chip(self, device, band.favorites);
     for (size_t slot = 0; slot < band.shown; ++slot)
@@ -1463,6 +1496,8 @@ static RECT header_button_rect(const struct drawer_window *_Nonnull self,
     {
     case DRAWER_HEADER_NONE:
         return (RECT){0, 0, 0, 0};
+    case DRAWER_HEADER_NEW_NOTE:
+        return new_note_rect(self);
     case DRAWER_HEADER_FAVORITES:
         return filter_band(self).favorites;
     case DRAWER_HEADER_TAG:
@@ -1489,6 +1524,8 @@ static enum accessible_kind header_kind(enum drawer_header_button button)
     {
     case DRAWER_HEADER_NONE:
         return ACCESSIBLE_DRAWER;
+    case DRAWER_HEADER_NEW_NOTE:
+        return ACCESSIBLE_NEW_NOTE;
     case DRAWER_HEADER_FAVORITES:
         return ACCESSIBLE_FILTER_FAVORITES;
     case DRAWER_HEADER_TAG:
@@ -1540,6 +1577,9 @@ static struct drawer_header_hit header_hit_at(const struct drawer_window *_Nonnu
         if (PtInRect(&bounds[at], point))
             return (struct drawer_header_hit){buttons[at], 0};
     }
+    RECT fresh = new_note_rect(self);
+    if (PtInRect(&fresh, point))
+        return (struct drawer_header_hit){DRAWER_HEADER_NEW_NOTE, 0};
     RECT add = new_category_rect(self);
     return (struct drawer_header_hit){
         PtInRect(&add, point) ? DRAWER_HEADER_NEW_CATEGORY : DRAWER_HEADER_NONE, 0};
@@ -1873,6 +1913,7 @@ static void run_header(struct drawer_window *_Nonnull self, enum drawer_header_b
     {
     case DRAWER_HEADER_NONE:
         return;
+    case DRAWER_HEADER_NEW_NOTE: /* キーボード・読み上げと同じ「新しいノート」の道（#1291） */
     case DRAWER_HEADER_FAVORITES:
     case DRAWER_HEADER_TAG:
     case DRAWER_HEADER_MORE:
@@ -2028,6 +2069,19 @@ static LRESULT drawer_pointer_message(struct drawer_window *_Nonnull self, UINT 
     }
 }
 
+/* 出すたびに文を組む説明（「新しいノート」の作る先・#1291）は、主窓が答える。主窓へ回すのは
+ * その問い合わせ（TTN_GETDISPINFOW）だけで、ほかの知らせは既定の処理へ渡す。 */
+static LRESULT tooltip_notice(const struct drawer_window *_Nonnull self, WPARAM wparam,
+                              LPARAM lparam)
+{
+    const NMHDR *_Nonnull header = (const NMHDR *)lparam;
+    if (header->code != TTN_GETDISPINFOW)
+    {
+        return DefWindowProcW(self->handle, WM_NOTIFY, wparam, lparam);
+    }
+    return SendMessageW(GetParent(self->handle), WM_NOTIFY, wparam, lparam);
+}
+
 static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message, WPARAM wparam,
                               LPARAM lparam)
 {
@@ -2055,6 +2109,8 @@ static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message,
         return 0;
     case WM_ERASEBKGND:
         return 1;
+    case WM_NOTIFY:
+        return tooltip_notice(self, wparam, lparam);
     case WM_DPICHANGED_AFTERPARENT:
         cancel(self);
         if (GetCapture() == self->handle)
@@ -2392,6 +2448,10 @@ static RECT accessible_fixed_rect(const struct drawer_window *_Nonnull self,
     if (kind == ACCESSIBLE_NEW_CATEGORY)
     {
         return new_category_rect(self);
+    }
+    if (kind == ACCESSIBLE_NEW_NOTE)
+    {
+        return new_note_rect(self);
     }
     if (kind == ACCESSIBLE_INDEX_COUNT)
     {

@@ -135,8 +135,7 @@
 | 画像の取り込みの進行 | 走っている、の印と、止める前に主窓が有効だったか、落とした点の本文の文字の位置、パスにできなかった数 | ui/win32（`folio_window`） | 投下のメッセージで立て、入力待ちの入口が1件ずつ進め、終わりに下げる。走っているあいだは主窓への入力を止める。何を写し何を書くかはapplication（`image_adoption`）が持ち、UIは位置と印だけを持つ（ADR0120） |
 | 無題を置き換える許可 | 無題保護／明示破棄の閉じた値 | 同期呼出し元のローカル | 退出用の名前入力面から受け、既存の選択・新規の意図へ一回だけ渡す。次文書の準備後に採用し、永続状態や継続キューを作らない（ADR0050） |
 | ドロワーのスクロール量 | 画素 | application（レイアウト値の一部） | ホイール・キーの意図。上限は core が計算 |
-| 共通ヘッダーの新規押下 | 新規ボタンのcapture中の押下状態 | ui/win32（`folio_window`） | 同じ矩形で押下と解放を照合し、capture喪失で解除する。共通NEWコマンドへ渡し、文書状態を複製しない（ADR0059） |
-| ドロワーの固定ボタン押下 | NONE / FAVORITES / TAG_FILTER / CLEAR / NEW_CATEGORYの閉じた値 | ui/win32（`drawer_window`） | 同じ矩形で押下と解放を照合し、capture喪失で解除する。札・開く札・解除は共通の実行の道（読み上げのInvokeと同じ）、カテゴリ追加は既存受け口へ渡す（ADR0051/0059/0091/0122） |
+| ドロワーの固定ボタン押下 | NONE / NEW_NOTE / FAVORITES / TAG / MORE / TAG_FILTER / MATCH_ALL / MATCH_ANY / CLEAR / NEW_CATEGORYの閉じた値（`drawer_header_button`。TAGは札の番号と条件の改訂も持つ） | ui/win32（`drawer_window`の`header_pressed`） | 同じ矩形で押下と解放を照合し、capture喪失で解除する。「新しいノート」の印（検索の欄の右。前は共通ヘッダーの釦で`folio_window`が持っていた・#1291）・札・開く札・2択・解除は共通の実行の道（読み上げのInvoke/Selectと同じ）で、新規は共通NEWコマンドへ渡り、文書状態を複製しない。カテゴリ追加は既存受け口へ渡す（ADR0051/0059/0091/0122） |
 | 検索語と一致集合 | 文字列と文書 ID の列 | application | 検索窓の入力 |
 | テーマの名前と配色 | 127固定配色の識別子・UI/RTF用RGB | core（`folio_theme`の`theme_palette`表） | `folio_theme_choice`がsystemを含む選択・名前解析を集約し、UIはCOLORREFへの変換だけ行う（ADR0049） |
 | テーマの選択とOS外観 | 保存する`folio_theme_choice`、最後の有効appearance_snapshot、実効theme_paletteと改訂番号 | application（`folio_state`） | 設定は書込み成功後、OS外観はRTF準備成功後だけ採用する。HCを優先して同じpaletteをUI/RTFへ渡し、選択/カテゴリ保存色は変えない。取得失敗とHC_OFFを区別する（ADR0057） |
