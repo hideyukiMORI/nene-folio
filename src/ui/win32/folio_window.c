@@ -24280,8 +24280,11 @@ static void draw_discovery_status(const struct folio_window *_Nonnull self, HDC 
             folio_state_failure_line(self->command_failure, folio_state_language(self->state)));
     /* 折り返した行は、矩形の下へ出ることがある（言葉の書体の 2 行は、144 DPI で 2 画素高い）。
      * この面は変わった所だけを描き直すので、矩形の外へ出た字の端は、次の描き直しで消えない。
-     * 矩形で切り抜いて描く（#1299）。1 行の描き方（draw_utf8）は、自分の矩形で切られる。 */
+     * 矩形で切り抜いて描く（#1299）。1 行の描き方（draw_utf8）は、自分の矩形で切られる。
+     * 切り抜きを戻せないとき（SaveDC の失敗）は、描かない。 */
     int saved = SaveDC(device);
+    if (saved == 0)
+        return;
     IntersectClipRect(device, layout->status.left, layout->status.top, layout->status.right,
                       layout->status.bottom);
     SetTextColor(device, self->palette.current_text);
