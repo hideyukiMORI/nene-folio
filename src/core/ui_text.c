@@ -1039,6 +1039,19 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_FILTER_MATCH_GROUP] = {"タグの条件", "Tag match", "标签条件"},
     [UI_TEXT_FILTER_MATCH_ALL] = {"すべて含む", "All", "全部"},
     [UI_TEXT_FILTER_MATCH_ANY] = {"いずれか", "Any", "任一"},
+    /* 検索の範囲の 2 択（#1292・ADR0122 の決定 6）。見出し（群の名前）、行に描く字（読み上げの
+     * 名前も同じ）、説明。条件と検索語の両方があるあいだだけ出る。 */
+    [UI_TEXT_SEARCH_SCOPE_GROUP] = {"探す範囲", "Search in", "搜索范围"},
+    [UI_TEXT_SEARCH_SCOPE_ALL] = {"すべてのノート", "All notes", "全部笔记"},
+    [UI_TEXT_SEARCH_SCOPE_FILTERED] = {"絞り込みの中", "In filter", "筛选范围内"},
+    [UI_TEXT_SEARCH_SCOPE_ALL_HELP] =
+        {"お気に入りとタグの条件を掛けずに、すべてのノートから探します",
+         "Searches all notes, ignoring the favorites and tag filters",
+         "不套用收藏和标签条件，在全部笔记中搜索"},
+    [UI_TEXT_SEARCH_SCOPE_FILTERED_HELP] =
+        {"お気に入りとタグの条件に合うノートの中から探します",
+         "Searches only the notes that match the favorites and tag filters",
+         "只在符合收藏和标签条件的笔记中搜索"},
     [UI_TEXT_EMPTY_FAVORITES] = {"お気に入りはありません。\nノートの星で追加できます。",
                                  "No favorites yet.\nAdd one with the star beside a note.",
                                  "还没有收藏。\n点击笔记旁的星标即可添加。"},

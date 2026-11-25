@@ -30,8 +30,8 @@ struct accessibility_host
     bool pending;
     bool had_focus;
     struct accessible_item focused;
-    struct accessible_item selections[7];
-    bool had_selection[7];
+    struct accessible_item selections[8];
+    bool had_selection[8];
     uint64_t surface_revision;
     uint64_t outline_revision; /* #975: the headings column's rows as last published */
     uint64_t filter_revision;  /* #1247: the tag chips of the filter row as last published */
@@ -526,9 +526,13 @@ static void refresh_filter_tags(struct accessibility_host *_Nonnull host)
 static void refresh_visibility(struct accessibility_host *_Nonnull host)
 {
     /* 解除（#1199）は、左の欄の固定の子で、条件が効いているあいだだけある。 */
-    const enum accessible_kind kinds[] = {ACCESSIBLE_DRAWER,       ACCESSIBLE_PANE_TOOLS,
-                                          ACCESSIBLE_FIND,         ACCESSIBLE_OUTLINE,
-                                          ACCESSIBLE_FILTER_CLEAR, ACCESSIBLE_FILTER_MATCH_GROUP};
+    const enum accessible_kind kinds[] = {ACCESSIBLE_DRAWER,
+                                          ACCESSIBLE_PANE_TOOLS,
+                                          ACCESSIBLE_FIND,
+                                          ACCESSIBLE_OUTLINE,
+                                          ACCESSIBLE_FILTER_CLEAR,
+                                          ACCESSIBLE_FILTER_MATCH_GROUP,
+                                          ACCESSIBLE_SEARCH_SCOPE_GROUP};
     unsigned visibility = 0;
     for (size_t index = 0; index < sizeof kinds / sizeof kinds[0]; ++index)
     {
@@ -567,9 +571,9 @@ static void refresh_header(struct accessibility_host *_Nonnull host)
 static void observe_selection(struct accessibility_host *_Nonnull host, size_t index)
 {
     const enum accessible_kind groups[] = {
-        ACCESSIBLE_LAYOUT_GROUP,      ACCESSIBLE_MODE_GROUP,   ACCESSIBLE_TREE,
-        ACCESSIBLE_SURFACE_LIST,      ACCESSIBLE_SURFACE_TABS, ACCESSIBLE_OUTLINE,
-        ACCESSIBLE_FILTER_MATCH_GROUP};
+        ACCESSIBLE_LAYOUT_GROUP,       ACCESSIBLE_MODE_GROUP,        ACCESSIBLE_TREE,
+        ACCESSIBLE_SURFACE_LIST,       ACCESSIBLE_SURFACE_TABS,      ACCESSIBLE_OUTLINE,
+        ACCESSIBLE_FILTER_MATCH_GROUP, ACCESSIBLE_SEARCH_SCOPE_GROUP};
     struct accessible_item group = {.kind = groups[index],
                                     .revision = groups[index] == ACCESSIBLE_SURFACE_LIST ||
                                                         groups[index] == ACCESSIBLE_SURFACE_TABS

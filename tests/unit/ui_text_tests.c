@@ -792,6 +792,12 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FILTER_MATCH_GROUP] = "タグの条件",
     [UI_TEXT_FILTER_MATCH_ALL] = "すべて含む",
     [UI_TEXT_FILTER_MATCH_ANY] = "いずれか",
+    [UI_TEXT_SEARCH_SCOPE_GROUP] = "探す範囲",
+    [UI_TEXT_SEARCH_SCOPE_ALL] = "すべてのノート",
+    [UI_TEXT_SEARCH_SCOPE_FILTERED] = "絞り込みの中",
+    [UI_TEXT_SEARCH_SCOPE_ALL_HELP] =
+        "お気に入りとタグの条件を掛けずに、すべてのノートから探します",
+    [UI_TEXT_SEARCH_SCOPE_FILTERED_HELP] = "お気に入りとタグの条件に合うノートの中から探します",
     [UI_TEXT_EMPTY_FAVORITES] = "お気に入りはありません。\nノートの星で追加できます。",
     [UI_TEXT_EMPTY_FAVORITES_FILTER] =
         "一致するお気に入りはありません。\n検索語を変えるか、絞り込みを解除します。",

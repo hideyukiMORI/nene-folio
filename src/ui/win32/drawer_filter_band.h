@@ -20,7 +20,12 @@ struct drawer_filter_band
     RECT match_all; /* 「すべて含む」。タグの条件が 2 つ未満のときは空（#1249） */
     RECT match_any; /* 「いずれか」。同じ */
     RECT clear;     /* 「× 解除」。条件が効いていないときは空 */
-    int bottom;     /* 札の行（と解除の行）の下端＝カテゴリの段の上端 */
+    /* 検索の範囲の行（#1292）。条件と検索語の両方があるときだけ。無いときは 3 つとも空。
+     * 見出しは、2 択と 1 行に入らない幅でも空 */
+    RECT scope_label;
+    RECT scope_all;      /* 「すべてのノート」 */
+    RECT scope_filtered; /* 「絞り込みの中」 */
+    int bottom;          /* 札の行（と解除の行・検索の範囲の行）の下端＝カテゴリの段の上端 */
 };
 
 #endif
