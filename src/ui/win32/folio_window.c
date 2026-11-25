@@ -24278,11 +24278,18 @@ static void draw_discovery_status(const struct folio_window *_Nonnull self, HDC 
         (void)bounded_text_copy(
             text, sizeof text,
             folio_state_failure_line(self->command_failure, folio_state_language(self->state)));
+    /* 折り返した行は、矩形の下へ出ることがある（言葉の書体の 2 行は、144 DPI で 2 画素高い）。
+     * この面は変わった所だけを描き直すので、矩形の外へ出た字の端は、次の描き直しで消えない。
+     * 矩形で切り抜いて描く（#1299）。1 行の描き方（draw_utf8）は、自分の矩形で切られる。 */
+    int saved = SaveDC(device);
+    IntersectClipRect(device, layout->status.left, layout->status.top, layout->status.right,
+                      layout->status.bottom);
     SetTextColor(device, self->palette.current_text);
     if (layout->compact)
         draw_utf8(device, text, layout->status);
     if (!layout->compact)
         (void)wrapped_text(device, text, layout->status, true);
+    RestoreDC(device, saved);
 }
 
 /* 「ノートを探す」の面。題・タブ・条件と状態・一覧の行・下見の題と状態・釦の名前・絞り込みの札は
