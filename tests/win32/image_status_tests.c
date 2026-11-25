@@ -17894,26 +17894,63 @@ static RECT band_result(struct folio_window *_Nonnull window)
     return status.bounds;
 }
 
+/* How high a line of a language's words is: its face at the words' size (11). */
+static int band_line_height(HWND root, enum folio_language language)
+{
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(language, face);
+    HFONT font = CreateFontW(-MulDiv(11, (int)GetDpiForWindow(root), 96), 0, 0, 0, FW_NORMAL, FALSE,
+                             FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, face);
+    HDC device = GetDC(root);
+    HGDIOBJ previous = SelectObject(device, font);
+    TEXTMETRICW metrics = {0};
+    require(GetTextMetricsW(device, &metrics), "measure a line of the band's words");
+    SelectObject(device, previous);
+    ReleaseDC(root, device);
+    DeleteObject(font);
+    return (int)metrics.tmHeight;
+}
+
+/* Three lines of the highest of the three languages' faces, rounded as the band rounds its
+ * result: up to 4 DIP. */
+static int band_three_lines(HWND root)
+{
+    int dpi = (int)GetDpiForWindow(root);
+    int line = 0;
+    for (size_t language = 0; language < folio_language_count; ++language)
+    {
+        int height = band_line_height(root, (enum folio_language)language);
+        line = height > line ? height : line;
+    }
+    int logical = (line * 3 * 96 + dpi - 1) / dpi;
+    return MulDiv((logical + 3) / 4 * 4, dpi, 96);
+}
+
 /* What is measured and what is drawn agree: the result is drawn inside its rectangle, and
  * nothing of it is in the margin below. The rectangle is as high as the longest reason of the
- * three languages, each measured in its language's face. Three lines of the words' face are
- * 48 DIP (52 where a line rounds up, at 144 DPI); the monospace face needed 52 for four lines,
- * and the smallest window keeps its body with that. A reason that wraps to a fourth line makes
- * it 64 or more: this is what tells when a reason was added or made longer. */
+ * three languages, each measured in its language's face: exactly three lines of the words'
+ * face (48 DIP; 52 where a line rounds up, at 144 DPI). A reason that wraps to a fourth line
+ * makes it 64 or more, which tells when a reason was added or made longer; measuring in the
+ * monospace face makes it 40 or 52, which the upper bound alone would let through. 52 is what
+ * the monospace face needed for four lines, and the smallest window keeps its body with that. */
 static void band_result_fits(struct folio_window *_Nonnull window)
 {
-    int dpi = (int)GetDpiForWindow(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int dpi = (int)GetDpiForWindow(root);
     RECT result = band_result(window);
+    int lines = band_three_lines(root);
     int height = result.bottom - result.top;
     RECT inside = {result.left - MulDiv(2, dpi, 96), result.top, result.right, result.bottom};
     RECT below = {inside.left, result.bottom, result.right, result.bottom + MulDiv(6, dpi, 96)};
     int shown = surface_profile(window, inside).total;
     int spilled = surface_profile(window, below).total;
-    printf("band-result dpi=%d height=%d dip=%d ink=%d below=%d\n", dpi, height,
-           MulDiv(height, 96, dpi), shown, spilled);
+    printf("band-result dpi=%d height=%d dip=%d three-lines=%d ink=%d below=%d\n", dpi, height,
+           MulDiv(height, 96, dpi), lines, shown, spilled);
     fflush(stdout);
     require(height > 0 && height <= MulDiv(52, dpi, 96),
             "every reason of the three languages fits three lines of the band's result");
+    require(height == lines, "the band's result is measured in the words' faces");
     require(shown > 0 && spilled == 0, "the band's result is drawn inside its rectangle");
 }
 

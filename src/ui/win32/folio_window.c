@@ -8108,33 +8108,46 @@ static HFONT _Nullable band_measure_font(const struct folio_window *_Nonnull sel
                                                          : language_font(self, language);
 }
 
+/* 1 つの言語の全部の文を、device にいま選んである書体で測る。 */
+static bool band_language_height(HDC device, enum folio_language language, RECT bounds,
+                                 int *_Nonnull maximum)
+{
+    return band_outcomes_height(device, language, bounds, maximum) &&
+           band_commands_height(device, language, bounds, maximum) &&
+           band_status_height(device, language, bounds, maximum) &&
+           band_offset_height(device, language, bounds, maximum);
+}
+
 /* 結果の文の高さ。3 言語の全部の文を、それぞれの言語の書体で測った最大で、言語によらない。
- * device の書体は替えたまま返す（呼び出し側の refresh_band_layout が戻す）。 */
+ * device の書体は、入ったときのものに戻して返す。 */
 static bool band_reason_height(const struct folio_window *_Nonnull self, HDC device,
                                struct command_band_layout *_Nonnull layout)
 {
     RECT bounds = {0, 0, layout->measured_width, 0};
     int maximum = 0;
-    for (size_t column = 0; column < folio_language_count; ++column)
+    bool measured = true;
+    HGDIOBJ entered = GetCurrentObject(device, OBJ_FONT);
+    for (size_t column = 0; measured && column < folio_language_count; ++column)
     {
         enum folio_language language = (enum folio_language)column;
         SelectObject(device, band_measure_font(self, language));
-        if (!band_outcomes_height(device, language, bounds, &maximum) ||
-            !band_commands_height(device, language, bounds, &maximum) ||
-            !band_status_height(device, language, bounds, &maximum) ||
-            !band_offset_height(device, language, bounds, &maximum))
-            return false;
+        measured = band_language_height(device, language, bounds, &maximum);
     }
+    SelectObject(device, entered);
+    if (!measured)
+        return false;
     int logical = (maximum * 96 + (int)layout->dpi - 1) / (int)layout->dpi;
     layout->result_height = scale((logical + 3) / 4 * 4, layout->dpi);
     return layout->result_height > 0;
 }
 
-/* 札の幅。3 言語の札を、それぞれの言語の書体で測った最大（device の書体は替えたまま返す）。 */
+/* 札の幅。3 言語の札を、それぞれの言語の書体で測った最大。device の書体は、入ったときのものに
+ * 戻して返す。 */
 static int band_label_width(const struct folio_window *_Nonnull self, HDC device,
                             enum ui_text first, enum ui_text second)
 {
     int maximum = 0;
+    HGDIOBJ entered = GetCurrentObject(device, OBJ_FONT);
     for (size_t column = 0; column < folio_language_count; ++column)
     {
         SelectObject(device, band_measure_font(self, (enum folio_language)column));
@@ -8143,6 +8156,7 @@ static int band_label_width(const struct folio_window *_Nonnull self, HDC device
         int width = a > b ? a : b;
         maximum = width > maximum ? width : maximum;
     }
+    SelectObject(device, entered);
     return maximum;
 }
 
