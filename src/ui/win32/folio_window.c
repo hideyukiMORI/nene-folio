@@ -4085,13 +4085,16 @@ static void draw_slim_title(const struct folio_window *_Nonnull self, HDC device
     }
     const char *_Nonnull note = breadcrumb_note(title, folio_state_language(self->state));
     RECT label = caption;
-    label.right = breadcrumb_limit(self) - unsaved_mark_room(self);
+    int limit = breadcrumb_limit(self);
+    label.right = limit - unsaved_mark_room(self);
+    /* 右の部品へ出さない。とても狭い窓で題の場所が無いときは、印も描かない。 */
+    IntersectClipRect(device, caption.left, caption.top, limit, caption.bottom);
     SelectObject(device, word_font(self));
     bool recovering =
         self->palette.contrast != FOLIO_CONTRAST_HIGH && title.recovering == PANE_RECOVERY_NOTE;
     SetTextColor(device, recovering ? self->palette.selected_text : self->palette.current_text);
     draw_utf8(device, note, label);
-    if (self->unsaved)
+    if (self->unsaved && label.right > label.left)
     {
         int room = label.right - label.left;
         int text = measure_utf8(device, note);
@@ -11210,8 +11213,14 @@ static void execute_toggle_outline_command(struct folio_window *_Nonnull self,
 
 /* #1264: show or hide the note's top part. The value is a saved setting, one for the whole
  * application; a refused save is reported the way the minimap's is. */
+static bool collapsed_part(enum accessible_kind kind);
+
 static void apply_note_header(struct folio_window *_Nonnull self)
 {
+    /* ノートを開いていない・一覧だけの表示では、上部も山形の釦も出ていない。見えない所で値だけ
+     * 変えると、次にノートを開いたときに黙って畳まれている。切り替えない（ADR 0123 の決定 8）。 */
+    if (!body_shown(self))
+        return;
     enum folio_state_outcome outcome =
         folio_state_set_note_header(self->state, !folio_state_note_header(self->state));
     if (outcome != FOLIO_STATE_READY)
@@ -11225,7 +11234,8 @@ static void apply_note_header(struct folio_window *_Nonnull self)
         return;
     cancel_part_press(self);
     /* 隠れた部品（閲覧／編集・保存・検索・操作・タグ）に focus があったら、山形の釦へ移す。 */
-    if (GetFocus() == self->handle && !accessible_visible(self, self->keyboard_target))
+    if (GetFocus() == self->handle && collapsed_part(self->keyboard_target) &&
+        !accessible_visible(self, self->keyboard_target))
         self->keyboard_target = ACCESSIBLE_NOTE_HEADER;
     rearrange_keeping_line(self);
     InvalidateRect(self->handle, nullptr, FALSE);
