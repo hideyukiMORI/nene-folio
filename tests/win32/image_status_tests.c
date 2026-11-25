@@ -752,19 +752,40 @@ static void expect_notice(struct folio_window *_Nonnull window, const wchar_t *_
             "visible status line");
     require(wcscmp(view.name, expected) == 0, "processing status text");
 }
-static void body_first(struct folio_window *_Nonnull window)
+
+/* Names a row of the index (a category or a note). A row is named by the rows' revision
+ * (folio_state_row_revision), as the product names it. The window's revision
+ * (folio_window_accessible_revision, the index revision) is the value that watches for any
+ * change of the index: it also moves when the layout alone changes (a category folds or
+ * opens), so it is equal to the rows' revision only on some runs. */
+static struct accessible_item index_row(const struct folio_state *_Nonnull state,
+                                        enum accessible_kind kind, struct note_ref ref)
+{
+    return (struct accessible_item){
+        .kind = kind, .ref = ref, .revision = folio_state_row_revision(state)};
+}
+
+/* Focuses, selects or invokes a note of the first category from its row in the index. */
+static void choose_note(struct folio_window *_Nonnull window,
+                        const struct folio_state *_Nonnull state, size_t index,
+                        enum accessible_action operation)
+{
+    struct accessible_request request = {
+        .item = index_row(state, ACCESSIBLE_NOTE, (struct note_ref){.category = 0, .note = index}),
+        .action = operation};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "focus, select or invoke the current public note row");
+    pump(window);
+}
+
+static void body_first(struct folio_window *_Nonnull window,
+                       const struct folio_state *_Nonnull state)
 {
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     require(root != nullptr && body != nullptr, "native windows");
     SetWindowPos(root, nullptr, 20, 20, 1000, 750, SWP_NOZORDER | SWP_NOACTIVATE);
-    struct accessible_request selection = {
-        .item = {.kind = ACCESSIBLE_NOTE,
-                 .ref = {.category = 0, .note = 0},
-                 .revision = folio_window_accessible_revision(window)},
-        .action = ACCESSIBLE_ACTION_SELECT};
-    require(folio_window_accessible_action(window, &selection) == S_OK, "select image note");
-    pump(window);
+    choose_note(window, state, 0, ACCESSIBLE_ACTION_SELECT);
     wchar_t text[1024];
     GetWindowTextW(body, text, 1024);
     require(wcsstr(text, L"Body before images") != nullptr && controlled.requests == 0,
@@ -1259,7 +1280,7 @@ static void run_image_case(struct native_fixture *_Nonnull fixture)
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,
             "real main window");
-    body_first(window);
+    body_first(window, fixture->state);
     move_origin(window, fixture->state);
     completed_image(window, false);
     completed_image(window, true);
@@ -1276,13 +1297,7 @@ static void run_diagram_case(struct native_fixture *_Nonnull fixture)
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     SetWindowPos(root, nullptr, 20, 20, 1000, 750, SWP_NOZORDER | SWP_NOACTIVATE);
-    struct accessible_request selection = {
-        .item = {.kind = ACCESSIBLE_NOTE,
-                 .ref = {.category = 0, .note = 0},
-                 .revision = folio_window_accessible_revision(window)},
-        .action = ACCESSIBLE_ACTION_SELECT};
-    require(folio_window_accessible_action(window, &selection) == S_OK, "select diagram note");
-    pump(window);
+    choose_note(window, fixture->state, 0, ACCESSIBLE_ACTION_SELECT);
     wchar_t text[1024];
     GetWindowTextW(body, text, 1024);
     require(wcsstr(text, L"Body before diagrams") != nullptr && controlled.requests == 0,
@@ -1796,21 +1811,20 @@ static void run_search_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(snapshot.files[version]);
 }
 
-static void expect_note_selection(struct folio_window *_Nonnull window, size_t selected)
+static void expect_note_selection(struct folio_window *_Nonnull window,
+                                  const struct folio_state *_Nonnull state, size_t selected)
 {
     for (size_t index = 0; index < 2; ++index)
     {
-        struct accessible_item row = {.kind = ACCESSIBLE_NOTE,
-                                      .ref = {.category = 0, .note = index},
-                                      .revision = folio_window_accessible_revision(window)};
+        struct accessible_item row =
+            index_row(state, ACCESSIBLE_NOTE, (struct note_ref){.category = 0, .note = index});
         struct accessible_view view = {0};
         require(folio_window_accessible_read(window, &row, &view) == S_OK &&
                     view.selected == (index == selected),
                 "only the selected note exposes IsSelected, independently of focus");
     }
-    struct accessible_item category = {.kind = ACCESSIBLE_CATEGORY,
-                                       .ref = {.category = 0},
-                                       .revision = folio_window_accessible_revision(window)};
+    struct accessible_item category =
+        index_row(state, ACCESSIBLE_CATEGORY, (struct note_ref){.category = 0});
     struct accessible_view view = {0};
     require(folio_window_accessible_read(window, &category, &view) == S_OK && !view.selected,
             "a category does not inherit the selected note state");
@@ -1822,19 +1836,6 @@ static void expect_note_selection(struct folio_window *_Nonnull window, size_t s
             "Tree GetSelection agrees with the selected row");
     require(folio_window_accessible_read(window, &tree, &view) == S_OK && view.selection_required,
             "the tree retains the existing document selection requirement");
-}
-
-static void choose_note(struct folio_window *_Nonnull window, size_t index,
-                        enum accessible_action operation)
-{
-    struct accessible_request request = {
-        .item = {.kind = ACCESSIBLE_NOTE,
-                 .ref = {.category = 0, .note = index},
-                 .revision = folio_window_accessible_revision(window)},
-        .action = operation};
-    require(folio_window_accessible_action(window, &request) == S_OK,
-            "focus, select or invoke the current public note row");
-    pump(window);
 }
 
 static struct note_text *_Nullable switch_other_history[note_history_depth];
@@ -1893,21 +1894,21 @@ static void reselect_unsaved(struct folio_window *_Nonnull window,
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     CHARRANGE before = {.cpMin = 10, .cpMax = 12};
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&before);
-    choose_note(window, 1, ACCESSIBLE_ACTION_FOCUS);
+    choose_note(window, fixture->state, 1, ACCESSIBLE_ACTION_FOCUS);
     struct accessible_item focused = {0};
     require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focused) == S_OK &&
                 focused.kind == ACCESSIBLE_NOTE && focused.ref.category == 0 &&
                 focused.ref.note == 1,
             "Focus actually moves to the other note without selecting it");
-    expect_note_selection(window, 0);
+    expect_note_selection(window, fixture->state, 0);
     expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
     verify_history_unchanged(fixture, snapshot);
     const enum accessible_action operations[] = {ACCESSIBLE_ACTION_SELECT,
                                                  ACCESSIBLE_ACTION_INVOKE};
     for (size_t index = 0; index < sizeof operations / sizeof operations[0]; ++index)
     {
-        choose_note(window, 0, operations[index]);
-        expect_note_selection(window, 0);
+        choose_note(window, fixture->state, 0, operations[index]);
+        expect_note_selection(window, fixture->state, 0);
         expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
         CHARRANGE selected = {0};
         SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selected);
@@ -1928,8 +1929,8 @@ static void switch_and_return(struct folio_window *_Nonnull window,
 {
     append_switch_text(window);
     expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
-    choose_note(window, 1, ACCESSIBLE_ACTION_SELECT);
-    expect_note_selection(window, 1);
+    choose_note(window, fixture->state, 1, ACCESSIBLE_ACTION_SELECT);
+    expect_note_selection(window, fixture->state, 1);
     expect_editor(window, fixture->state, L"> Other 別ノート 🐾", FOLIO_NOTE_SAME);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     require(SendMessageW(body, EM_CANUNDO, 0, 0) == 0,
@@ -1944,8 +1945,8 @@ static void switch_and_return(struct folio_window *_Nonnull window,
     for (size_t version = 1; version <= note_history_depth; ++version)
         expect_history_file(disk, version, snapshot->files[version - 1]);
     expect_other_unchanged(fixture);
-    choose_note(window, 0, ACCESSIBLE_ACTION_INVOKE);
-    expect_note_selection(window, 0);
+    choose_note(window, fixture->state, 0, ACCESSIBLE_ACTION_INVOKE);
+    expect_note_selection(window, fixture->state, 0);
     expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
     require(SendMessageW(body, EM_CANUNDO, 0, 0) == 0 && GetFocus() == body,
             "Invoke focuses the reloaded note with a fresh Undo history");
@@ -1974,7 +1975,7 @@ static void run_note_switch_case(struct native_fixture *_Nonnull fixture)
                 FOLIO_WINDOW_CREATED,
             "real note switching window");
     pump(window);
-    expect_note_selection(window, 0);
+    expect_note_selection(window, fixture->state, 0);
     action(window, ACCESSIBLE_EDIT);
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
     expect_other_unchanged(fixture);
@@ -5742,9 +5743,7 @@ static void expect_rename_row(struct folio_window *_Nonnull window,
                 strcmp(folio_state_note_name(fixture->state, selected),
                        folio_state_document_name(fixture->state)) == 0,
             "the renamed document remains the selected public note");
-    struct accessible_item item = {.kind = ACCESSIBLE_NOTE,
-                                   .ref = selected,
-                                   .revision = folio_window_accessible_revision(window)};
+    struct accessible_item item = index_row(fixture->state, ACCESSIBLE_NOTE, selected);
     struct accessible_view view = {0};
     require(folio_window_accessible_read(window, &item, &view) == S_OK &&
                 wcscmp(view.name, name) == 0,
@@ -5900,12 +5899,12 @@ static void run_rename_case(struct native_fixture *_Nonnull fixture)
 }
 
 /* #721: 実drawerのdragで保存先を移し、未保存本文とnative Undo/Redoを保つ。 */
-static POINT move_row_point(struct folio_window *_Nonnull window, enum accessible_kind kind,
+static POINT move_row_point(struct folio_window *_Nonnull window,
+                            const struct folio_state *_Nonnull state, enum accessible_kind kind,
                             size_t category)
 {
-    struct accessible_item item = {.kind = kind,
-                                   .ref = {.category = category, .note = 0},
-                                   .revision = folio_window_accessible_revision(window)};
+    struct accessible_item item =
+        index_row(state, kind, (struct note_ref){.category = category, .note = 0});
     struct accessible_view view;
     require(folio_window_accessible_read(window, &item, &view) == S_OK && !view.offscreen &&
                 !IsRectEmpty(&view.bounds),
@@ -5920,8 +5919,8 @@ static POINT move_row_point(struct folio_window *_Nonnull window, enum accessibl
 static void drag_edit_note(struct folio_window *_Nonnull window, struct folio_state *_Nonnull state,
                            size_t from, size_t to)
 {
-    POINT source = move_row_point(window, ACCESSIBLE_NOTE, from);
-    POINT target = move_row_point(window, ACCESSIBLE_CATEGORY, to);
+    POINT source = move_row_point(window, state, ACCESSIBLE_NOTE, from);
+    POINT target = move_row_point(window, state, ACCESSIBLE_CATEGORY, to);
     HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
     struct native_body_snapshot before = {0};
     capture_native_body(window, &before);
@@ -12700,24 +12699,6 @@ static void note_tag_tree(struct folio_window *_Nonnull window,
             "the entry follows the last label or the folded element, and nothing follows it");
 }
 
-/* Opens another note of the first category from its row in the index. A row is named by the
- * rows' revision (folio_state_row_revision), as the product names it. The window's revision
- * (folio_window_accessible_revision, the index revision) is the value that watches for any
- * change of the index: it also moves when the layout alone changes (a category folds or
- * opens), so it is equal to the rows' revision only on some runs. */
-static void note_tag_switch(struct folio_window *_Nonnull window,
-                            struct native_fixture *_Nonnull fixture, size_t row)
-{
-    struct accessible_request request = {
-        .item = {.kind = ACCESSIBLE_NOTE,
-                 .ref = {.category = 0, .note = row},
-                 .revision = folio_state_row_revision(fixture->state)},
-        .action = ACCESSIBLE_ACTION_SELECT};
-    require(folio_window_accessible_action(window, &request) == S_OK,
-            "select another note from its row in the index");
-    pump(window);
-}
-
 /* A label belongs to one note's tags: after another note is opened, the labels of the note
  * before do not answer, even where the new note has a label with the same number. */
 static void note_tag_other_note(struct folio_window *_Nonnull window,
@@ -12725,14 +12706,14 @@ static void note_tag_other_note(struct folio_window *_Nonnull window,
                                 const struct accessible_item *_Nonnull old)
 {
     uint64_t watched = folio_window_accessible_note_tag_revision(window);
-    note_tag_switch(window, fixture, 1);
+    choose_note(window, fixture->state, 1, ACCESSIBLE_ACTION_SELECT);
     require(note_tag_gone(window, old[0]) && note_tag_gone(window, old[1]),
             "the labels of the note before do not answer for the note now open");
     require(watched != 0 && folio_window_accessible_note_tag_revision(window) != 0 &&
                 folio_window_accessible_note_tag_revision(window) != watched,
             "the value the host watches changes when another note's tags are shown");
     note_tag_names(window, L"blue", L"green");
-    note_tag_switch(window, fixture, 0);
+    choose_note(window, fixture->state, 0, ACCESSIBLE_ACTION_SELECT);
     require(note_tag_gone(window, old[0]) && note_tag_gone(window, old[1]),
             "coming back makes new labels; the old ones stay gone");
     note_tag_names(window, L"red", L"blue");

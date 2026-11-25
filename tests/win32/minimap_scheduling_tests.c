@@ -181,13 +181,16 @@ static void action(struct folio_window *_Nonnull window, enum accessible_kind ki
     pump_without_timers(window);
 }
 
-static void select_note(struct folio_window *_Nonnull window, size_t note)
+/* A row of the index is named by the rows' revision, as the product names it. The window's
+ * revision (the index revision) watches for any change of the index and also moves when the
+ * layout alone changes, so it is not the value that names a row. */
+static void select_note(struct folio_window *_Nonnull window,
+                        const struct folio_state *_Nonnull state, size_t note)
 {
-    struct accessible_request request = {
-        .item = {.kind = ACCESSIBLE_NOTE,
-                 .ref = {.category = 0, .note = note},
-                 .revision = folio_window_accessible_revision(window)},
-        .action = ACCESSIBLE_ACTION_SELECT};
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_NOTE,
+                                                  .ref = {.category = 0, .note = note},
+                                                  .revision = folio_state_row_revision(state)},
+                                         .action = ACCESSIBLE_ACTION_SELECT};
     require(folio_window_accessible_action(window, &request) == S_OK, "select note through UI");
     if (!folio_window_idle_work_ready(window))
         fprintf(stderr, "selected note %zu has no pending idle work\n", note);
@@ -237,11 +240,12 @@ static void finish(struct folio_window *_Nonnull window, HWND body)
     require(total == expected && slices == (expected + 15) / 16, "one complete bounded snapshot");
 }
 
-static void verify_switches(struct folio_window *_Nonnull window, HWND body)
+static void verify_switches(struct folio_window *_Nonnull window,
+                            const struct folio_state *_Nonnull state, HWND body)
 {
-    select_note(window, 0);
+    select_note(window, state, 0);
     finish(window, body);
-    select_note(window, 1);
+    select_note(window, state, 1);
     require(SendMessageW(body, EM_GETLINECOUNT, 0, 0) >= 256,
             "fixture has at least 256 native display lines without relying on wrapping");
     size_t first = step(window);
@@ -249,25 +253,25 @@ static void verify_switches(struct folio_window *_Nonnull window, HWND body)
         fprintf(stderr, "long document lines=%lld samples=%zu\n",
                 (long long)SendMessageW(body, EM_GETLINECOUNT, 0, 0), first);
     require(first == 16, "long document begins in one slice");
-    select_note(window, 0);
+    select_note(window, state, 0);
     finish(window, body);
-    select_note(window, 1);
+    select_note(window, state, 1);
     fail_sample = true;
     require(step(window) == 1 && !folio_window_idle_work_ready(window),
             "native sample failure ends work");
     fail_sample = false;
-    select_note(window, 0);
+    select_note(window, state, 0);
     finish(window, body);
-    select_note(window, 1);
+    select_note(window, state, 1);
     finish(window, body);
 }
 
 static void verify_shared_idle(struct folio_window *_Nonnull window,
                                struct folio_state *_Nonnull state, HWND body)
 {
-    select_note(window, 0);
+    select_note(window, state, 0);
     finish(window, body);
-    select_note(window, 1);
+    select_note(window, state, 1);
     HWND filter = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
     require(filter != nullptr && SetWindowTextW(filter, L"x"), "start real index input");
     pump_without_timers(window);
@@ -294,7 +298,7 @@ static void verify_shared_idle(struct folio_window *_Nonnull window,
             "both shared tasks finish with one bounded snapshot");
     require(SetWindowTextW(filter, L""), "clear completed filter");
     pump_without_timers(window);
-    select_note(window, 0);
+    select_note(window, state, 0);
     finish(window, body);
 }
 
@@ -302,7 +306,7 @@ static void verify_idle_cancel(struct folio_window *_Nonnull window,
                                struct folio_state *_Nonnull state, HWND root, HWND body)
 {
     HWND filter = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
-    select_note(window, 1);
+    select_note(window, state, 1);
     require(SetWindowTextW(filter, L"x") && folio_state_index_filter_pending(state),
             "start another index request");
     require(SetWindowTextW(filter, L"") && !folio_state_index_filter_pending(state),
@@ -318,15 +322,16 @@ static void verify_idle_cancel(struct folio_window *_Nonnull window,
             "index finishes while the minimap is hidden");
     require(SetWindowTextW(filter, L""), "clear hidden filter");
     layout_key(window, root, '2');
-    select_note(window, 0);
+    select_note(window, state, 0);
     finish(window, body);
-    select_note(window, 1);
+    select_note(window, state, 1);
     finish(window, body);
 }
 
-static void verify_guards(struct folio_window *_Nonnull window, HWND root, HWND body)
+static void verify_guards(struct folio_window *_Nonnull window,
+                          const struct folio_state *_Nonnull state, HWND root, HWND body)
 {
-    select_note(window, 0);
+    select_note(window, state, 0);
     SendMessageW(root, WM_ENTERMENULOOP, 0, 0);
     require(!folio_window_idle_work_ready(window) && step(window) == 0, "native menu pauses work");
     SendMessageW(root, WM_EXITMENULOOP, 0, 0);
@@ -345,11 +350,12 @@ static void verify_guards(struct folio_window *_Nonnull window, HWND root, HWND 
     require(!folio_window_idle_work_ready(window), "hidden pane has no work");
     layout_key(window, root, '2');
     require(!folio_window_idle_work_ready(window), "layout restore retains settle delay");
-    select_note(window, 1);
+    select_note(window, state, 1);
     finish(window, body);
 }
 
-static void verify_edit(struct folio_window *_Nonnull window, HWND root, HWND body)
+static void verify_edit(struct folio_window *_Nonnull window,
+                        const struct folio_state *_Nonnull state, HWND root, HWND body)
 {
     action(window, ACCESSIBLE_EDIT);
     require(folio_window_idle_work_ready(window), "edit document is immediately ready");
@@ -377,9 +383,9 @@ static void verify_edit(struct folio_window *_Nonnull window, HWND root, HWND bo
     require(SendMessageW(body, EM_UNDO, 0, 0) != 0, "native undo works");
     pump_without_timers(window);
     require(!folio_window_idle_work_ready(window), "second change restarts input delay");
-    select_note(window, 0);
+    select_note(window, state, 0);
     finish(window, body);
-    select_note(window, 1);
+    select_note(window, state, 1);
     finish(window, body);
     SetWindowPos(root, nullptr, 0, 0, 1000, 750, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     pump_without_timers(window);
@@ -448,11 +454,11 @@ int main(void)
     pump_without_timers(window);
     original_body = (WNDPROC)SetWindowLongPtrW(body, GWLP_WNDPROC, (LONG_PTR)observe_body);
     require(original_body != nullptr, "observe actual sample queries");
-    verify_switches(window, body);
+    verify_switches(window, fixture.state, body);
     verify_shared_idle(window, fixture.state, body);
     verify_idle_cancel(window, fixture.state, root, body);
-    verify_guards(window, root, body);
-    verify_edit(window, root, body);
+    verify_guards(window, fixture.state, root, body);
+    verify_edit(window, fixture.state, root, body);
     verify_minimap_coordinates(window, root, body);
     SetWindowLongPtrW(body, GWLP_WNDPROC, (LONG_PTR)original_body);
     folio_window_destroy(window);
