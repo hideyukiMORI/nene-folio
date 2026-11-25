@@ -81,3 +81,22 @@ SEARCHのliteral/ASCII大小無視とREPLACEの正規表現・編集中だけと
 既存search_nativeでUndo後のRedo可能状態にも公開FIND/語変更/前後/closeを通し、Undo/Redo可否、本文/dirty/全履歴保持を確認する。
 実Redo/Undoが追記全文と元全文へ戻ることも固定する。検索による一致選択は維持し、selection復帰の新保証は追加しない。
 本文を再投入しない既存契約の回帰で、製品/CMake/selector/API/schema変更なし。[品質記録](../quality/2026-11-05-search-redo.md)。
+
+## 2026-11-25 の補正（#1301 — 帯の言葉を同梱の書体で描く）
+
+[ADR 0036 の 2026-11-25 の補正（#1301）](0036-bundled-fonts.md)で、検索・置換の帯の札・結果の文・釦の名前を、言葉の書体（同梱の Noto Sans）で描き、同じ書体で測る形にした。2026-10-24 の補正の「結果領域は実font/spacing/DPIの最長関連理由から予約し、表示結果で本文高を変えず、最小560×360でも本文の可視行を残す」は、そのまま保つ。
+
+1. **結果の高さは 52 → 48 DIP**（3 行。1 行の高さが切り上がる 144・240 DPI は 52 DIP のまま）。測る文の集合（3 言語の全部の失敗の文・全コマンドの「ノートが要る」・検索と置換の文）は変えていない。帯が開いているあいだの失敗は、保存の失敗を含めて（決定 5 の「検索中Ctrl+Sの保存と欄維持」）、どれも帯の結果の行に出る（`report_outcome`）ので、測る文を絞ると「出るのに入らない」文ができる。
+2. **英語の文 5 本を、3 行に入るように短くした**（決定 6 の「長いエラー文は意味を保って短くできるが、結果表示の省略で失敗理由を隠さない」による。**席の仮決め・hide の判断待ち**）。言葉の書体は行が約 2 割高く、4 行のままだと結果の高さが 64 DIP になって、最小の窓で本文が下限を割る。日本語と简体中文は、どの拡大率でも 3 行までで、変えていない。
+
+   | 文言の ID | 前 | 後 |
+   | --- | --- | --- |
+   | `UI_TEXT_FAILURE_INVALID_NAME` | That name cannot be used. Avoid reserved names, trailing spaces or periods, and separators; keep it within 255 bytes including .md. | That name cannot be used. Avoid reserved names, trailing spaces or periods, and separators; max 255 bytes with .md. |
+   | `UI_TEXT_FAILURE_CATEGORY_NAME_INVALID` | That category name cannot be used. Avoid a leading period, reserved names, trailing spaces or periods, and separators; max 255 bytes. | Invalid category name. Avoid leading periods, reserved names, trailing spaces or periods, and separators; max 255 bytes. |
+   | `UI_TEXT_FAILURE_LEDGER_STALE` | The md was written, but the ledger (index.json) could not be written back. Retry the save, or the next start will align them. | The md was written, but the ledger (index.json) was not. Retry the save, or the next start will align them. |
+   | `UI_TEXT_FAILURE_MOVE_ROLLBACK_PENDING` | The note was not moved, and the destination index could not be restored. The next action will retry index synchronization. | The note was not moved, and the destination index was not restored. The next action will retry the index sync. |
+   | `UI_TEXT_FAILURE_CATEGORY_REMOVE_FAILED` | Could not confirm category folder removal. Check the folder and Recycle Bin; history or the index may already have been processed. | Category folder removal is unconfirmed. Check the folder and Recycle Bin; history or the index may already be processed. |
+
+   どの文も、何が起きたかと、何をすればよいか（保存の再試行・次の起動でそろう・次の操作で再試行・フォルダとごみ箱の確認・避ける字と 255 バイト）を残している。
+3. **3 行目の余り**（幅 288 DIP に対する 3 行目の幅。96〜240 DPI の計算値）: 短くした 5 本は、カテゴリ名の文が 144 DPI で 91%・240 DPI で 88%、ほかは 83% 以下。短くしていない英語の文で 85% を超えるのは、144 DPI の「Could not write the note back. …」（87%）と「Category applied, but categories.json could not be written back. …」（89%）。どれも 3 行に入っているが、言葉を足すと 4 行になりうる。
+4. **守りの試験**: 実窓の試験（`note_status_find`・`note_status_replace`・`body_discovery_native`・`body_discovery_96_native`）が、帯の結果の高さが 52 DIP 以下であることを見る。3 言語のどれかの文が 4 行になると 64 DIP 以上になって落ちる（英語の 1 本を元の文に戻して、落ちることを確かめた）。見ているのは、試験を流す機械の拡大率（必須 CI は 96 DPI）と 96 DPI の窓だけで、**144 DPI 以上で 4 行になる文は、試験では見つからない**（3 の一覧が、その候補）。

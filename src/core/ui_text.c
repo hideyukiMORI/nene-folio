@@ -739,7 +739,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_FAILURE_LEDGER_STALE] =
         {"mdは反映しましたが、台帳（index."
          "json）を書き戻せませんでした。保存を再試行するか、次回の起動で揃います。",
-         "The md was written, but the ledger (index.json) could not be written back. "
+         "The md was written, but the ledger (index.json) was not. "
          "Retry the save, or the next start will align them.",
          "md 已写入，但无法写回台账（index.json）。请重试保存；否则将在下次启动时自动对齐。"},
     [UI_TEXT_FAILURE_LEDGER_UNSYNCED] =
@@ -917,7 +917,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
         {"使えない名前です。予約名・末尾の空白やピリオド・区切りを避け"
          "、.mdを含め255バイト以内で指定してください。",
          "That name cannot be used. Avoid reserved names, trailing spaces or periods, "
-         "and separators; keep it within 255 bytes including .md.",
+         "and separators; max 255 bytes with .md.",
          "该名称不可用。请避开保留名、末尾的空格或句点以及分隔符，并将名称控制在包含 .md 的 255 "
          "字节以内。"},
     [UI_TEXT_FAILURE_ALREADY_NAMED] =
@@ -936,7 +936,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_FAILURE_CATEGORY_NAME_INVALID] =
         {"使えないカテゴリ名です。先頭のピリオド・予約名・末尾の空白やピリオド・区切りを避け、"
          "255バイト以内で指定してください。",
-         "That category name cannot be used. Avoid a leading period, reserved names, trailing "
+         "Invalid category name. Avoid leading periods, reserved names, trailing "
          "spaces or periods, and separators; max 255 bytes.",
          "该分类名不可用。请避开开头的句点、保留名、末尾的空格或句点以及分隔符，并将名称控制在 "
          "255 字节以内。"},
@@ -987,8 +987,8 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_FAILURE_CATEGORY_REMOVE_FAILED] =
         {"カテゴリのフォルダの削除を確認できませんでした。フォルダとごみ箱を確認してください。"
          "履歴や索引だけ処理済みの場合があります。",
-         "Could not confirm category folder removal. Check the folder and Recycle Bin; "
-         "history or the index may already have been processed.",
+         "Category folder removal is unconfirmed. Check the folder and Recycle Bin; "
+         "history or the index may already be processed.",
          "无法确认分类文件夹是否已删除。请检查文件夹和回收站，历史记录或索引可能已处理。"},
     [UI_TEXT_COMMAND_SAVE] = {"保存", "Save", "保存"},
     [UI_TEXT_COMMAND_QUIT] = {"保存済みなら終了", "Quit if saved", "已保存则退出"},
@@ -1017,8 +1017,8 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "Turn off favorites first to reorder notes manually.", "请关闭收藏优先后手动排序。"},
     [UI_TEXT_FAILURE_MOVE_ROLLBACK_PENDING] =
         {"ノートを移動できず、移動先の台帳も戻せませんでした。次の操作で台帳の同期を再試行します。",
-         "The note was not moved, and the destination index could not be restored. The next action "
-         "will retry index synchronization.",
+         "The note was not moved, and the destination index was not restored. The next action "
+         "will retry the index sync.",
          "笔记未移动，目标索引也未能还原。下次操作将重试同步索引。"},
     [UI_TEXT_SETTINGS_FAVORITES_FIRST] = {"お気に入りを先に表示", "Show favorites first",
                                           "优先显示收藏"},
