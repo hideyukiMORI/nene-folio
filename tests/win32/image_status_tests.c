@@ -2727,6 +2727,8 @@ static void settings_done(struct folio_window *_Nonnull window)
     GetClientRect(root, &client);
     POINT outside = {client.right - 6, client.bottom - 6};
     POINT inside = {(layer.left + layer.right) / 2, layer.top + 6};
+    require(!PtInRect(&layer, outside) && PtInRect(&layer, inside),
+            "the test's points are outside and inside the settings surface");
     backdrop_click(window, outside, inside);
     require(folio_window_accessible_read(window, &items[3], &views[3]) == S_OK &&
                 !views[3].offscreen,
@@ -2735,6 +2737,16 @@ static void settings_done(struct folio_window *_Nonnull window)
     require(folio_window_accessible_read(window, &items[3], &views[3]) != S_OK ||
                 views[3].offscreen,
             "a press and a release outside close the settings surface");
+    /* Close itself: the surface is opened again and left by its bottom right button. */
+    struct accessible_request settings = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                          .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &settings) == S_OK, "open the settings again");
+    pump(window);
+    surface_button(window, ACCESSIBLE_SURFACE_DONE);
+    items[3].revision = folio_window_accessible_surface_revision(window);
+    require(folio_window_accessible_read(window, &items[3], &views[3]) != S_OK ||
+                views[3].offscreen,
+            "Close closes the settings surface");
 }
 static void japanese_row_face(struct folio_window *_Nonnull window);
 
@@ -11462,14 +11474,58 @@ static void tags_filter_done(struct folio_window *_Nonnull window,
             "Enter on Close closes the filter surface and leaves the filter as it is");
 }
 
+static HWND backdrop_window(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND backdrop = FindWindowExW(root, nullptr, L"NeNeFolioSettingsBackdrop", nullptr);
+    require(backdrop != nullptr, "the main window owns a backdrop");
+    return backdrop;
+}
+
+/* #1285: the ways a press on the backdrop is given up without closing the open surface. The
+ * backdrop captures the mouse from the press to the release and never keeps it afterwards.
+ * outside and inside are points of the main window's client area. */
+static void backdrop_press_cancels(struct folio_window *_Nonnull window, HWND input, POINT outside,
+                                   POINT inside)
+{
+    HWND backdrop = backdrop_window(window);
+    LPARAM out = MAKELPARAM(outside.x, outside.y), in = MAKELPARAM(inside.x, inside.y);
+    SendMessageW(backdrop, WM_LBUTTONDOWN, MK_LBUTTON, out);
+    require(GetCapture() == backdrop, "a press on the backdrop captures the mouse");
+    SendMessageW(backdrop, WM_LBUTTONUP, 0, in);
+    pump(window);
+    require(GetCapture() == nullptr && IsWindowVisible(input),
+            "a release over the surface frees the mouse and keeps the surface open");
+    SendMessageW(backdrop, WM_LBUTTONDOWN, MK_LBUTTON, out);
+    ReleaseCapture();
+    SendMessageW(backdrop, WM_LBUTTONUP, 0, out);
+    pump(window);
+    require(IsWindowVisible(input), "a press that lost the mouse does not close on its release");
+    SendMessageW(backdrop, WM_LBUTTONUP, 0, out);
+    SendMessageW(backdrop, WM_RBUTTONDOWN, MK_RBUTTON, out);
+    SendMessageW(backdrop, WM_RBUTTONUP, 0, out);
+    pump(window);
+    require(IsWindowVisible(input) && GetCapture() == nullptr,
+            "a release alone and the right button do not close the surface");
+    SendMessageW(backdrop, WM_LBUTTONDOWN, MK_LBUTTON, out);
+    SendMessageW(backdrop, WM_LBUTTONUP, 0, MAKELPARAM((WORD)-5, (WORD)-5));
+    pump(window);
+    require(IsWindowVisible(input) && GetCapture() == nullptr,
+            "a release outside the main window does not close the surface");
+    SendMessageW(backdrop, WM_LBUTTONDOWN, MK_LBUTTON, out);
+    favorite_key(window, VK_ESCAPE);
+    require(!IsWindowVisible(input) && GetCapture() != backdrop,
+            "a surface closed by Escape during a press does not leave the mouse captured");
+    SendMessageW(backdrop, WM_LBUTTONUP, 0, out);
+    pump(window);
+}
+
 /* #1285: a press and a release on the backdrop, at these points of the main window's client
  * area. The backdrop is the main window's own child that dims what is behind a surface. */
 static void backdrop_click(struct folio_window *_Nonnull window, POINT down, POINT up)
 {
-    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
-    HWND backdrop = FindWindowExW(root, nullptr, L"NeNeFolioSettingsBackdrop", nullptr);
-    require(backdrop != nullptr && IsWindowVisible(backdrop),
-            "a framed surface shows its backdrop");
+    HWND backdrop = backdrop_window(window);
+    require(IsWindowVisible(backdrop), "a framed surface shows its backdrop");
     SendMessageW(backdrop, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(down.x, down.y));
     SendMessageW(backdrop, WM_LBUTTONUP, 0, MAKELPARAM(up.x, up.y));
     pump(window);
@@ -11495,8 +11551,14 @@ static void tags_outside_press(struct folio_window *_Nonnull window,
     require(!PtInRect(&layer, outside) && PtInRect(&layer, inside),
             "the test's points are outside and inside the surface");
     size_t shown = folio_state_index_filter_count(fixture->state);
+    backdrop_press_cancels(window, input, outside, inside);
+    tags_open(window, ACCESSIBLE_TAG_FILTER);
+    tags_settle(window, fixture->state);
     backdrop_click(window, outside, inside);
     require(IsWindowVisible(input), "a release over the surface keeps the filter surface open");
+    POINT header = {outside.x, 6};
+    backdrop_click(window, outside, header);
+    require(IsWindowVisible(input), "a release over the common header keeps the surface open");
     backdrop_click(window, outside, outside);
     require(!IsWindowVisible(input) && folio_state_index_filter_count(fixture->state) == shown,
             "a press and a release outside close the filter surface and leave the filter");

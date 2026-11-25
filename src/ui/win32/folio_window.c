@@ -2583,10 +2583,21 @@ static void arrange_command_contents(struct folio_window *_Nonnull self)
     redraw_command_layer(self);
 }
 
+/* 暗幕の上の押下を取り消す（#1285）: 離しを待つ印を下ろし、暗幕が捕まえていれば放す。面が
+ * 変わる・閉じる・OS の対話が開く・離しが届かない、のどれでも、捕まえたままにしない（隠れた
+ * 暗幕が捕まえ続けると、次の押下を吸う）。 */
+static void cancel_backdrop_press(struct folio_window *_Nonnull self)
+{
+    self->backdrop_pressed = false;
+    if (self->settings_backdrop != nullptr && GetCapture() == self->settings_backdrop)
+        ReleaseCapture();
+}
+
 /* 深さはDialogBoxの前後の再入も塞ぐ。準備失敗でもendまでは深さを保持する。 */
 static bool begin_native_modal(struct folio_window *_Nonnull self)
 {
     discovery_motion_settle(self);
+    cancel_backdrop_press(self);
     self->native_modal_depth += 1;
     refresh_modal_availability(self);
     return self->settings_backdrop != nullptr && arrange_settings_backdrop(self);
@@ -8792,6 +8803,7 @@ static void change_surface_mode(struct folio_window *_Nonnull self, enum command
         !preview_theme(self, folio_state_theme_choice(self->state)))
         return false;
     self->surface_tracking = false;
+    cancel_backdrop_press(self);
     bool captured = self->surface_pressed < surface_pointer_count;
     self->surface_hover = surface_pointer_count;
     self->surface_pressed = surface_pointer_count;
@@ -15883,13 +15895,16 @@ static void paint_settings_backdrop(const struct folio_window *_Nonnull self, HW
  * 変換中も、閉じない。 */
 static bool backdrop_dismisses(const struct folio_window *_Nonnull self)
 {
-    if (self->native_modal_depth > 0 || self->command_composing)
+    /* 面の「閉じる」の釦と同じ守り（主窓が有効・読み込みや配置の途中でない・変換中でない…）。 */
+    if (!folio_window_accessible_ready(self) || self->native_modal_depth > 0 ||
+        self->command_composing)
         return false;
     return self->command_surface == COMMAND_SURFACE_TAG_FILTER ||
            self->command_surface == COMMAND_SURFACE_SETTINGS || about_surface(self);
 }
 
-/* 暗幕の上の点か（主窓の client 座標。面の窓の中は、暗幕ではない）。 */
+/* 暗幕の上の点か（主窓の client 座標）。面の窓の中と、上の共通の帯（暗幕が掛かっていない）
+ * は、暗幕ではない。 */
 static bool backdrop_point(const struct folio_window *_Nonnull self, POINT point)
 {
     RECT client;
@@ -15897,11 +15912,13 @@ static bool backdrop_point(const struct folio_window *_Nonnull self, POINT point
     if (!GetClientRect(self->handle, &client) || !GetWindowRect(self->command_layer, &layer))
         return false;
     MapWindowPoints(nullptr, self->handle, (POINT *)&layer, 2);
+    client.top += scale(base_common_header_height, GetDpiForWindow(self->handle));
     return PtInRect(&client, point) && !PtInRect(&layer, point);
 }
 
-/* 押下: これまでどおり入力欄へ focus を戻す。閉じてよい面なら、離しを待つ。 */
-static void backdrop_pressed(struct folio_window *_Nonnull self, HWND window, UINT message)
+/* 押下（左・右・中の釦とホイール）: これまでどおり入力欄へ focus を戻す。左釦で、閉じてよい
+ * 面なら、離しを待つ。 */
+static void backdrop_button_down(struct folio_window *_Nonnull self, HWND window, UINT message)
 {
     focus_command_input(self);
     if (message != WM_LBUTTONDOWN || !backdrop_dismisses(self))
@@ -15911,17 +15928,26 @@ static void backdrop_pressed(struct folio_window *_Nonnull self, HWND window, UI
 }
 
 /* 離し: 押下と離しの両方が暗幕の上のときだけ閉じる。押したまま面の上へ動かして離せば、
- * 閉じない。押下も離しも、下の窓へは通さない。 */
-static void backdrop_released(struct folio_window *_Nonnull self, HWND window, LPARAM lparam)
+ * 閉じない。押下も離しも、下の窓へは通さない。**後始末（印を下ろす・放す）は、入力を止めて
+ * いるあいだ（blocked）でも必ずする。** 閉じるのは、止めていないときだけ。 */
+static void backdrop_released(struct folio_window *_Nonnull self, LPARAM lparam, bool blocked)
 {
-    if (!self->backdrop_pressed)
-        return;
-    self->backdrop_pressed = false;
-    if (GetCapture() == window)
-        ReleaseCapture();
+    bool pressed = self->backdrop_pressed;
+    cancel_backdrop_press(self);
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-    if (backdrop_dismisses(self) && backdrop_point(self, point))
+    if (pressed && !blocked && backdrop_dismisses(self) && backdrop_point(self, point))
         close_command_surface(self);
+}
+
+/* 離しと、捕まえを失った知らせ。入力を止めているあいだも、ここだけは先に通す。 */
+static bool backdrop_release_message(struct folio_window *_Nonnull self, UINT message,
+                                     LPARAM lparam)
+{
+    if (message == WM_LBUTTONUP)
+        backdrop_released(self, lparam, session_blocks_message(self, message));
+    if (message == WM_CAPTURECHANGED)
+        self->backdrop_pressed = false;
+    return message == WM_LBUTTONUP || message == WM_CAPTURECHANGED;
 }
 
 static LRESULT CALLBACK settings_backdrop_procedure(HWND window, UINT message, WPARAM wparam,
@@ -15938,7 +15964,7 @@ static LRESULT CALLBACK settings_backdrop_procedure(HWND window, UINT message, W
     {
         return DefWindowProcW(window, message, wparam, lparam);
     }
-    if (session_blocks_message(self, message))
+    if (backdrop_release_message(self, message, lparam) || session_blocks_message(self, message))
     {
         return 0;
     }
@@ -15958,13 +15984,7 @@ static LRESULT CALLBACK settings_backdrop_procedure(HWND window, UINT message, W
     case WM_RBUTTONDOWN:
     case WM_MBUTTONDOWN:
     case WM_MOUSEWHEEL:
-        backdrop_pressed(self, window, message);
-        return 0;
-    case WM_LBUTTONUP:
-        backdrop_released(self, window, lparam);
-        return 0;
-    case WM_CAPTURECHANGED:
-        self->backdrop_pressed = false;
+        backdrop_button_down(self, window, message);
         return 0;
     default:
         return DefWindowProcW(window, message, wparam, lparam);
