@@ -58,6 +58,8 @@ enum folio_command : unsigned char
     FOLIO_COMMAND_MOVE_NOTE,
     /* #975 / ADR0114: 閲覧表示の横の「見出し」の欄を開く・閉じる。 */
     FOLIO_COMMAND_TOGGLE_OUTLINE,
+    /* #1264: ノートの上部（題・タグ・道具の行）を畳む・戻す。設定に覚える。 */
+    FOLIO_COMMAND_TOGGLE_NOTE_HEADER,
 
 };
 

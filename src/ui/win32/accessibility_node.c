@@ -42,11 +42,11 @@ static bool has_invoke(enum accessible_kind kind)
     return kind == ACCESSIBLE_SETTINGS || accessible_item_shell(kind) ||
            accessible_item_menu(kind) || kind == ACCESSIBLE_NEW_NOTE ||
            kind == ACCESSIBLE_NEW_CATEGORY || kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_SAVE ||
-           kind == ACCESSIBLE_HELP || kind == ACCESSIBLE_FIND || kind == ACCESSIBLE_TAG_EDIT ||
-           kind == ACCESSIBLE_TAG_FILTER || kind == ACCESSIBLE_FILTER_CLEAR ||
-           kind == ACCESSIBLE_FILTER_TAG || kind == ACCESSIBLE_FILTER_MORE ||
-           kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_BUTTON ||
-           kind == ACCESSIBLE_OUTLINE_ITEM;
+           kind == ACCESSIBLE_NOTE_HEADER || kind == ACCESSIBLE_HELP || kind == ACCESSIBLE_FIND ||
+           kind == ACCESSIBLE_TAG_EDIT || kind == ACCESSIBLE_TAG_FILTER ||
+           kind == ACCESSIBLE_FILTER_CLEAR || kind == ACCESSIBLE_FILTER_TAG ||
+           kind == ACCESSIBLE_FILTER_MORE || kind == ACCESSIBLE_SURFACE_CHOICE ||
+           kind == ACCESSIBLE_SURFACE_BUTTON || kind == ACCESSIBLE_OUTLINE_ITEM;
 }
 
 static bool has_selection(enum accessible_kind kind)
@@ -370,6 +370,7 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_ACTION_GROUP] = UIA_GroupControlTypeId,
     [ACCESSIBLE_VIEW] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_EDIT] = UIA_RadioButtonControlTypeId,
+    [ACCESSIBLE_NOTE_HEADER] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_MENU] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_TAG_EDIT] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_TAG_FILTER] = UIA_ButtonControlTypeId,

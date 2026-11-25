@@ -11,12 +11,14 @@ struct folio_settings
     bool number;
     bool minimap;
     bool motion;
+    bool note_header;
     enum note_order order;
     enum folio_theme_choice theme;
     enum folio_language language;
 };
 
-constexpr uint32_t settings_version = 7;
+constexpr uint32_t settings_version = 8;
+constexpr uint32_t settings_version_7 = 7;
 constexpr uint32_t settings_version_6 = 6;
 constexpr uint32_t settings_version_5 = 5;
 constexpr uint32_t settings_version_4 = 4;
@@ -58,6 +60,7 @@ static struct folio_settings defaults(void)
     struct folio_settings values = {.number = false,
                                     .minimap = true,
                                     .motion = true,
+                                    .note_header = true,
                                     .order = NOTE_ORDER_FAVORITES_FIRST,
                                     .theme = FOLIO_THEME_CHOICE_SYSTEM,
                                     .language = FOLIO_LANGUAGE_JA};
@@ -95,6 +98,15 @@ folio_settings_with_motion(const struct folio_settings *_Nonnull settings, bool 
 {
     struct folio_settings values = *settings;
     values.motion = motion;
+    return create(&values, out);
+}
+
+enum folio_settings_outcome
+folio_settings_with_note_header(const struct folio_settings *_Nonnull settings, bool note_header,
+                                struct folio_settings *_Nullable *_Nonnull out)
+{
+    struct folio_settings values = *settings;
+    values.note_header = note_header;
     return create(&values, out);
 }
 
@@ -188,17 +200,25 @@ static bool read_order(struct json_reader *_Nonnull reader, enum note_order *_No
     return false;
 }
 
+/* 真偽値のキーを 1 つ読む（`"<key>": <bool>`）。 */
+static bool read_flag(struct json_reader *_Nonnull reader, const char *_Nonnull key,
+                      bool *_Nonnull value)
+{
+    return expect_key(reader, key) && read_boolean(reader, value);
+}
+
+/* 版 5 から足してきたキー。足した順が文書の中の順である。 */
 static bool read_options(struct json_reader *_Nonnull reader,
                          struct folio_settings *_Nonnull values, uint32_t version)
 {
-    if (version >= settings_version_5 &&
-        (!expect_key(reader, "minimap") || !read_boolean(reader, &values->minimap)))
+    if (version >= settings_version_5 && !read_flag(reader, "minimap", &values->minimap))
         return false;
     if (version >= settings_version_6 &&
         (!expect_key(reader, "note_order") || !read_order(reader, &values->order)))
         return false;
-    return version < settings_version ||
-           (expect_key(reader, "motion") && read_boolean(reader, &values->motion));
+    if (version >= settings_version_7 && !read_flag(reader, "motion", &values->motion))
+        return false;
+    return version < settings_version || read_flag(reader, "note_header", &values->note_header);
 }
 
 static bool document_end(struct json_reader *_Nonnull reader)
@@ -232,7 +252,8 @@ static enum folio_settings_outcome parse_version_2(struct json_reader *_Nonnull 
     return FOLIO_SETTINGS_READY;
 }
 
-/* 版 3〜5 の本体（`"number", "theme", "language"` まで）。順序も形のうち（ADR 0032 の決定 1）。 */
+/* 版 3 以降の本体（`"number", "theme", "language"` と、版ごとに足したキー）。順序も形のうち（ADR
+ * 0032 の決定 1）。 */
 static enum folio_settings_outcome parse_localized(struct json_reader *_Nonnull reader,
                                                    struct folio_settings *_Nonnull values,
                                                    uint32_t version)
@@ -267,7 +288,7 @@ static enum folio_settings_outcome parse_document(struct json_reader *_Nonnull r
     }
     if (version == settings_version_3 || version == settings_version_4 ||
         version == settings_version_5 || version == settings_version_6 ||
-        version == settings_version)
+        version == settings_version_7 || version == settings_version)
     {
         return parse_localized(reader, values, version);
     }
@@ -310,6 +331,8 @@ void folio_settings_write(const struct folio_settings *_Nonnull settings,
     json_writer_string(writer, order_names[settings->order]);
     json_writer_key(writer, "motion");
     json_writer_boolean(writer, settings->motion);
+    json_writer_key(writer, "note_header");
+    json_writer_boolean(writer, settings->note_header);
     json_writer_object_end(writer);
 }
 
@@ -326,6 +349,11 @@ bool folio_settings_minimap(const struct folio_settings *_Nonnull settings)
 bool folio_settings_motion(const struct folio_settings *_Nonnull settings)
 {
     return settings->motion;
+}
+
+bool folio_settings_note_header(const struct folio_settings *_Nonnull settings)
+{
+    return settings->note_header;
 }
 
 enum folio_theme_choice folio_settings_theme(const struct folio_settings *_Nonnull settings)

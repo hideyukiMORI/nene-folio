@@ -190,9 +190,9 @@ static void expect_migration(const char *_Nonnull text, const char *_Nonnull des
     folio_settings_write(settings, writer);
     folio_settings_destroy(settings);
     require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED, "the document is complete");
-    require(strstr(json_writer_text(writer), "\"version\": 7") != nullptr &&
+    require(strstr(json_writer_text(writer), "\"version\": 8") != nullptr &&
                 strstr(json_writer_text(writer), "\"language\": \"ja\"") != nullptr,
-            "writing always produces version 7");
+            "writing always produces version 8");
     json_writer_destroy(writer);
 }
 
@@ -260,7 +260,7 @@ static void verify_parse(void)
 /* 黙って既定値へ落とさない形（決定 1）。無い・壊れているは呼び出し側が区別する。 */
 static void verify_refusals(void)
 {
-    expect_refusal("{\"version\": 8, \"number\": true, \"theme\": \"dark\", "
+    expect_refusal("{\"version\": 9, \"number\": true, \"theme\": \"dark\", "
                    "\"language\": \"ja\"}",
                    FOLIO_SETTINGS_UNSUPPORTED_VERSION,
                    "a newer version is refused, not downgraded");
@@ -353,9 +353,9 @@ static void verify_catalog_schema(void)
     folio_settings_write(settings, writer);
     folio_settings_destroy(settings);
     require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED &&
-                strstr(json_writer_text(writer), "\"version\": 7") != nullptr &&
+                strstr(json_writer_text(writer), "\"version\": 8") != nullptr &&
                 strstr(json_writer_text(writer), "\"language\": \"en\"") != nullptr,
-            "writing migrated version 3 preserves its language in version 7");
+            "writing migrated version 3 preserves its language in version 8");
     json_writer_destroy(writer);
 }
 
@@ -525,7 +525,7 @@ static void verify_motion_refusals(void)
     expect_refusal("{\"version\":7,\"number\":false,\"theme\":\"system\",\"language\":\"ja\","
                    "\"minimap\":true,\"motion\":true,\"note_order\":\"manual\"}",
                    FOLIO_SETTINGS_MALFORMED, "motion cannot precede note order");
-    expect_refusal("{\"version\":8,\"number\":false}", FOLIO_SETTINGS_UNSUPPORTED_VERSION,
+    expect_refusal("{\"version\":9,\"number\":false}", FOLIO_SETTINGS_UNSUPPORTED_VERSION,
                    "a later schema is not interpreted as version seven");
 }
 
@@ -593,8 +593,159 @@ static void verify_motion_allocation(void)
     folio_settings_destroy(original);
 }
 
+/* #1264: 版1〜7は note_header を持たず、読むと true（上部を表示）になる。 */
+static void verify_header_legacy(void)
+{
+    const char *legacy[] = {
+        version_one,
+        version_two,
+        version_three,
+        "{\"version\":4,\"number\":true,\"theme\":\"dark\",\"language\":\"en\"}",
+        "{\"version\":5,\"number\":true,\"theme\":\"dark\",\"language\":\"en\",\"minimap\":false}",
+        "{\"version\":6,\"number\":true,\"theme\":\"dark\",\"language\":\"en\",\"minimap\":false,"
+        "\"note_order\":\"manual\"}",
+        "{\"version\":7,\"number\":true,\"theme\":\"dark\",\"language\":\"en\",\"minimap\":false,"
+        "\"note_order\":\"manual\",\"motion\":false}"};
+    for (size_t at = 0; at < sizeof legacy / sizeof legacy[0]; ++at)
+    {
+        struct folio_settings *settings = nullptr;
+        require(folio_settings_parse(legacy[at], strlen(legacy[at]), &settings) ==
+                        FOLIO_SETTINGS_READY &&
+                    folio_settings_note_header(settings),
+                "all seven legacy schemas gain the visible note header without changing data");
+        folio_settings_destroy(settings);
+    }
+    expect_refusal("{\"version\":7,\"number\":true,\"theme\":\"dark\",\"language\":\"en\","
+                   "\"minimap\":false,\"note_order\":\"manual\",\"motion\":false,"
+                   "\"note_header\":true}",
+                   FOLIO_SETTINGS_MALFORMED, "version seven does not carry the note header key");
+}
+
+static void verify_header_refusals(void)
+{
+    const char *suffixes[] = {"",
+                              ",\"note_header\":1",
+                              ",\"note_header\":null",
+                              ",\"note_header\":\"true\"",
+                              ",\"Note_header\":true",
+                              ",\"note_header\":true,\"note_header\":false",
+                              ",\"note_header\":true,\"extra\":false"};
+    const char *prefix = "{\"version\":8,\"number\":false,\"theme\":\"system\",\"language\":\"ja\","
+                         "\"minimap\":true,\"note_order\":\"manual\",\"motion\":true";
+    for (size_t at = 0; at < sizeof suffixes / sizeof suffixes[0]; ++at)
+    {
+        char text[256];
+        size_t count = strlen(prefix);
+        memcpy(text, prefix, count);
+        memcpy(text + count, suffixes[at], strlen(suffixes[at]));
+        count += strlen(suffixes[at]);
+        text[count++] = '}';
+        text[count] = '\0';
+        expect_refusal(text, FOLIO_SETTINGS_MALFORMED,
+                       "version eight note header has one exact shape");
+    }
+    expect_refusal("{\"version\":8,\"number\":false,\"theme\":\"system\",\"language\":\"ja\","
+                   "\"minimap\":true,\"note_order\":\"manual\",\"note_header\":true,"
+                   "\"motion\":true}",
+                   FOLIO_SETTINGS_MALFORMED, "the note header cannot precede motion");
+    expect_refusal("{\"version\":8,\"number\":false,\"theme\":\"system\",\"language\":\"ja\","
+                   "\"minimap\":true,\"note_order\":\"manual\",\"note_header\":true}",
+                   FOLIO_SETTINGS_MALFORMED, "version eight still requires motion");
+    expect_refusal("{\"version\":9,\"number\":false}", FOLIO_SETTINGS_UNSUPPORTED_VERSION,
+                   "a later schema is not interpreted as version eight");
+}
+
+static void verify_header_copies(const struct folio_settings *_Nonnull settings)
+{
+    struct folio_settings *copies[6] = {nullptr};
+    require(folio_settings_with_number(settings, false, &copies[0]) == FOLIO_SETTINGS_READY &&
+                folio_settings_with_minimap(settings, true, &copies[1]) == FOLIO_SETTINGS_READY &&
+                folio_settings_with_theme(settings, FOLIO_THEME_CHOICE_LIGHT, &copies[2]) ==
+                    FOLIO_SETTINGS_READY &&
+                folio_settings_with_language(settings, FOLIO_LANGUAGE_JA, &copies[3]) ==
+                    FOLIO_SETTINGS_READY &&
+                folio_settings_with_note_order(settings, NOTE_ORDER_FAVORITES_FIRST, &copies[4]) ==
+                    FOLIO_SETTINGS_READY &&
+                folio_settings_with_motion(settings, true, &copies[5]) == FOLIO_SETTINGS_READY,
+            "existing setting changes can derive from a hidden note header");
+    for (size_t at = 0; at < sizeof copies / sizeof copies[0]; ++at)
+    {
+        require(!folio_settings_note_header(copies[at]),
+                "every other setting copy keeps the note header hidden");
+        folio_settings_destroy(copies[at]);
+    }
+}
+
+static void verify_header_roundtrip(void)
+{
+    const char *raw = "{\"version\":8,\"number\":true,\"theme\":\"dark\",\"language\":\"en\","
+                      "\"minimap\":false,\"note_order\":\"manual\",\"motion\":false,"
+                      "\"note_header\":false}";
+    struct folio_settings *settings = nullptr;
+    require(folio_settings_parse(raw, strlen(raw), &settings) == FOLIO_SETTINGS_READY &&
+                !folio_settings_note_header(settings),
+            "a persisted hidden note header is restored");
+    verify_header_copies(settings);
+    struct folio_settings *shown = nullptr;
+    require(folio_settings_with_note_header(settings, true, &shown) == FOLIO_SETTINGS_READY &&
+                folio_settings_note_header(shown) && !folio_settings_note_header(settings) &&
+                !folio_settings_motion(shown) && !folio_settings_minimap(shown),
+            "showing the note header copies every other preference");
+    folio_settings_destroy(shown);
+    struct json_writer *writer = nullptr;
+    require(json_writer_create(&writer) == JSON_WRITER_ACCEPTED, "note header writer");
+    folio_settings_write(settings, writer);
+    require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED, "note header document is complete");
+    const char *motion = strstr(json_writer_text(writer), "\"motion\": false");
+    const char *header = strstr(json_writer_text(writer), "\"note_header\": false");
+    require(motion != nullptr && header != nullptr && motion < header &&
+                strchr(header, ',') == nullptr &&
+                strstr(json_writer_text(writer), "\"version\": 8") != nullptr,
+            "version eight writes the note header last, after motion");
+    struct folio_settings *reread = nullptr;
+    require(folio_settings_parse(json_writer_text(writer), json_writer_length(writer), &reread) ==
+                    FOLIO_SETTINGS_READY &&
+                !folio_settings_note_header(reread) && !folio_settings_motion(reread) &&
+                folio_settings_number(reread) && !folio_settings_minimap(reread) &&
+                folio_settings_theme(reread) == FOLIO_THEME_CHOICE_DARK &&
+                folio_settings_language(reread) == FOLIO_LANGUAGE_EN &&
+                folio_settings_note_order(reread) == NOTE_ORDER_MANUAL,
+            "version eight roundtrip keeps every preference");
+    folio_settings_destroy(reread);
+    json_writer_destroy(writer);
+    verify_token_insertions(raw);
+    folio_settings_destroy(settings);
+}
+
+static void verify_header_allocation(void)
+{
+    struct folio_settings *original = nullptr;
+    require(folio_settings_default(&original) == FOLIO_SETTINGS_READY, "note header source");
+    require(folio_settings_note_header(original), "the note header is shown by default");
+    struct folio_settings *changed = original;
+    allocation_probe_fail_at(1);
+    enum folio_settings_outcome result = folio_settings_with_note_header(original, false, &changed);
+    size_t calls = allocation_probe_calls();
+    allocation_probe_fail_at(0);
+    if (calls != 0)
+        require(result == FOLIO_SETTINGS_OUT_OF_MEMORY && changed == original,
+                "note header allocation refusal preserves the caller's old owner");
+    if (calls == 0)
+    {
+        require(result == FOLIO_SETTINGS_READY && !folio_settings_note_header(changed),
+                "note header copy commits the new preference");
+        folio_settings_destroy(changed);
+    }
+    require(folio_settings_note_header(original), "note header factory never mutates its source");
+    folio_settings_destroy(original);
+}
+
 void run_settings_tests(void)
 {
+    verify_header_legacy();
+    verify_header_refusals();
+    verify_header_roundtrip();
+    verify_header_allocation();
     verify_motion_legacy();
     verify_motion_refusals();
     verify_motion_roundtrip();

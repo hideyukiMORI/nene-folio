@@ -1820,10 +1820,38 @@ static bool minimap_scenario(void)
     return result == FOLIO_STATE_READY;
 }
 
+/* #1264: the note header's copy fails the same typed way and leaves the preference shown. */
+static bool note_header_scenario(void)
+{
+    struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
+    struct persistence_port port = test_adapter_port(adapter);
+    struct appearance_port looks = test_appearance_port();
+    struct regex_port finder = test_regex_port();
+    struct folio_state *state = nullptr;
+    enum folio_state_outcome result =
+        folio_state_create(test_ports(&port, &looks, &finder), &state);
+    if (result == FOLIO_STATE_READY)
+    {
+        const char *pane = folio_state_pane_rtf(state);
+        result = folio_state_set_note_header(state, false);
+        require(result == FOLIO_STATE_READY || result == FOLIO_STATE_OUT_OF_MEMORY,
+                "note header allocation failure is typed");
+        require(folio_state_pane_rtf(state) == pane &&
+                    folio_state_note_header(state) == (result == FOLIO_STATE_OUT_OF_MEMORY),
+                "failed copy keeps preference and body, success commits hidden preference");
+        folio_state_destroy(state);
+    }
+    test_adapter_destroy(adapter);
+    require(result == FOLIO_STATE_READY || result == FOLIO_STATE_OUT_OF_MEMORY,
+            "startup allocation failure is typed");
+    return result == FOLIO_STATE_READY;
+}
+
 void run_minimap_allocation_tests(void)
 {
     require(probe_active(), "minimap allocation selector requires active injection");
     exhaust(minimap_scenario, "minimap scenario never completed");
+    exhaust(note_header_scenario, "note header scenario never completed");
     exhaust(settings_scenario, "settings scenario never completed");
 }
 

@@ -83,6 +83,10 @@ static const struct
                                       UI_TEXT_COMMAND_TOGGLE_OUTLINE,
                                       0,
                                       {"", ""}},
+    [FOLIO_COMMAND_TOGGLE_NOTE_HEADER] = {FOLIO_COMMAND_TOGGLE_NOTE_HEADER,
+                                          UI_TEXT_COMMAND_TOGGLE_NOTE_HEADER,
+                                          0,
+                                          {"", ""}},
     [FOLIO_COMMAND_TOGGLE_NUMBER] = {FOLIO_COMMAND_TOGGLE_NUMBER,
                                      UI_TEXT_COMMAND_TOGGLE_NUMBER,
                                      0,
@@ -194,6 +198,7 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST:
     case FOLIO_COMMAND_TOGGLE_MINIMAP:
     case FOLIO_COMMAND_TOGGLE_OUTLINE:
+    case FOLIO_COMMAND_TOGGLE_NOTE_HEADER:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
     case FOLIO_COMMAND_REPLACE:
     case FOLIO_COMMAND_SETTINGS:
@@ -241,6 +246,7 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST:
     case FOLIO_COMMAND_TOGGLE_MINIMAP:
     case FOLIO_COMMAND_TOGGLE_OUTLINE:
+    case FOLIO_COMMAND_TOGGLE_NOTE_HEADER:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
     case FOLIO_COMMAND_REPLACE:
     case FOLIO_COMMAND_SETTINGS:
@@ -596,6 +602,7 @@ enum folio_command_scope folio_command_scope(enum folio_command command)
     case FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST:
     case FOLIO_COMMAND_TOGGLE_MINIMAP:
     case FOLIO_COMMAND_TOGGLE_OUTLINE:
+    case FOLIO_COMMAND_TOGGLE_NOTE_HEADER:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
         return FOLIO_COMMAND_SCOPE_APP;
     case FOLIO_COMMAND_IMPORT:

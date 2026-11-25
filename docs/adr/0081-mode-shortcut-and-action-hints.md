@@ -44,3 +44,7 @@ auto-repeat・focus・tooltip/UIAを対象に確認する。物理IMEやreader�
 Ctrl+EはRichEditの既定では中央揃えに使われるため、既存HACCEL優先経路でアプリのmode操作として
 受け、通常入力へ落ちないことを確認する。新たな文字装飾機能は設けない。
 [MicrosoftのRich Editキー仕様](https://learn.microsoft.com/en-us/windows/win32/controls/about-rich-edit-controls#rich-edit-shortcut-keys)。
+
+## 2026-11-25 の補正（#1264 — 上部を畳んでいるあいだの Ctrl+M。決定本文は書き換えない）
+
+決定 2 の「操作ボタンが非表示なら何もしない」は、ノートの上部を畳んでいるあいだ（[ADR 0123](0123-collapse-note-header.md)）にも当てはまる。畳んでいるあいだの `Ctrl+M` は何もしない。上部を戻す（山形の釦・`Ctrl+Shift+H`・コマンドパレット）と、これまでどおり開く。
